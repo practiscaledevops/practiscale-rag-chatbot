@@ -6,12 +6,21 @@
 // persist the turn to chat history, and meter tokens.
 
 import { brainChat, type ModelTier } from "@/lib/brain";
+import { isDemo } from "@/lib/demo/mode";
+import { demoChatStreamResponse } from "@/lib/demo/stream";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const { messages, tier } = await req.json();
+
+  // DEMO MODE: don't call the Brain — stream a canned grounded answer.
+  if (isDemo()) {
+    const last = [...(messages ?? [])].reverse().find((m: any) => m.role === "user");
+    return demoChatStreamResponse(last?.content ?? "");
+  }
+
   const upstream = await brainChat(messages ?? [], tier as ModelTier | undefined);
 
   if (!upstream.ok || !upstream.body) {

@@ -14,8 +14,9 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectedFrom = searchParams.get("redirectedFrom") || "/";
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
+  const [email, setEmail] = useState(demo ? "demo@practiscale.co" : "");
+  const [password, setPassword] = useState(demo ? "demo" : "");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -23,6 +24,13 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setPending(true);
+
+    // In demo mode any credentials work — go straight to the workspace.
+    if (demo) {
+      router.replace(redirectedFrom);
+      router.refresh();
+      return;
+    }
 
     const supabase = createSupabaseBrowserClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -44,7 +52,9 @@ function LoginForm() {
         <div className="mb-8 text-center">
           <h1 className="text-xl font-semibold">Practiscale Assistant</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Sign in to continue to your workspace.
+            {demo
+              ? "Demo mode — any credentials work. Just press Sign in."
+              : "Sign in to continue to your workspace."}
           </p>
         </div>
 

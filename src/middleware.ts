@@ -12,6 +12,12 @@ const PUBLIC_PATHS = ["/login"];
  * The session is read via `getUser()` (verified), never trusted from the cookie.
  */
 export async function middleware(request: NextRequest) {
+  // DEMO MODE: no Supabase session — let every route through (getUser() returns
+  // the demo user via the fake client).
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "1" || process.env.DEMO_MODE === "1") {
+    return NextResponse.next({ request });
+  }
+
   // Start from a passthrough response we can attach refreshed cookies to.
   let response = NextResponse.next({ request });
 

@@ -4,6 +4,8 @@
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import { isDemo } from "@/lib/demo/mode";
+import { fakeSupabase } from "@/lib/demo/client";
 
 /**
  * Server-side Supabase client for the chatbot's OWN project, bound to the
@@ -14,6 +16,7 @@ import { createClient } from "@supabase/supabase-js";
  * `cookies()` is async in Next 15, hence the await.
  */
 export async function createSupabaseServerClient() {
+  if (isDemo()) return fakeSupabase() as ReturnType<typeof createServerClient>;
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -51,6 +54,7 @@ export async function createSupabaseServerClient() {
  * not a NEXT_PUBLIC var and so is never bundled for the client.
  */
 export function createSupabaseServiceClient() {
+  if (isDemo()) return fakeSupabase() as ReturnType<typeof createClient>;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
 
