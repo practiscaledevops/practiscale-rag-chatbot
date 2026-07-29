@@ -72,7 +72,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm"
       // Backdrop click closes; clicks inside the panel are stopped below.
       onMouseDown={onClose}
     >
@@ -83,7 +83,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         aria-labelledby={titleId}
         onMouseDown={(e) => e.stopPropagation()}
         className={cn(
-          "w-full max-w-md rounded-xl border border-neutral-200 bg-white p-4 shadow-xl dark:border-neutral-800 dark:bg-neutral-900",
+          "w-full max-w-md rounded-2xl border border-border bg-surface p-5 text-foreground shadow-soft-lg",
           className
         )}
       >

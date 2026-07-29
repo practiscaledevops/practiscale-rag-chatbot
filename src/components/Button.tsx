@@ -1,8 +1,8 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost";
-type Size = "sm" | "md";
+type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md" | "lg";
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -10,22 +10,26 @@ export interface ButtonProps
   size?: Size;
 }
 
+// Every variant maps to the shared Practiscale tokens (see globals.css /
+// tailwind.config) so the button matches the Brain dashboard in light + dark.
 const variants: Record<Variant, string> = {
   primary:
-    "bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200",
+    "bg-accent text-accent-foreground shadow-soft hover:bg-accent-hover",
   secondary:
-    "border border-neutral-300 bg-transparent hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800",
-  ghost: "bg-transparent hover:bg-neutral-100 dark:hover:bg-neutral-800",
+    "border border-border bg-surface text-foreground hover:bg-surface-muted",
+  ghost: "bg-transparent text-foreground hover:bg-surface-muted",
+  danger: "bg-danger text-white shadow-soft hover:bg-danger/90",
 };
 
 const sizes: Record<Size, string> = {
   sm: "h-8 px-3 text-xs",
   md: "h-10 px-4 text-sm",
+  lg: "h-11 px-5 text-sm",
 };
 
 /**
- * Text button with a couple of variants. Keyboard focus is visible; disabled
- * state is dimmed and non-interactive.
+ * Text button in the Practiscale palette. Keyboard focus shows the themed ring
+ * (--ring); disabled state is dimmed and non-interactive.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "primary", size = "md", ...props }, ref) => (
@@ -33,7 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-neutral-950",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "disabled:pointer-events-none disabled:opacity-50",
         variants[variant],
         sizes[size],

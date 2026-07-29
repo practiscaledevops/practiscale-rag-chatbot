@@ -1,152 +1,123 @@
 "use client";
 
-import { Check, ChevronDown, Gauge } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { ModelTier } from "@/lib/brain";
+import { Menu, PanelLeftOpen } from "lucide-react";
+import type { ModelOption, UsageState } from "@/components/AppShell";
+import { ModelSelector } from "@/components/ModelSelector";
+import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
 
-const TIERS: { value: ModelTier; label: string; hint: string }[] = [
-  { value: "fast", label: "Fast", hint: "Quick answers" },
-  { value: "recommended", label: "Recommended", hint: "Balanced" },
-  { value: "max", label: "Max", hint: "Highest quality" },
-];
-
 export interface TopBarProps {
-  /** Selected model tier. Defaults to "recommended" when uncontrolled. */
-  tier?: ModelTier;
-  onTierChange?: (tier: ModelTier) => void;
+  /** Conversation title, or a neutral default. */
+  title?: string | null;
 
-  /** Usage meter. Placeholder values now; wired to real metering later. */
-  usedTokens?: number;
-  tokenLimit?: number;
+  /** Model switcher state. */
+  selection: ModelOption;
+  options: ModelOption[];
+  onSelect: (option: ModelOption) => void;
 
-  /** Optional title shown at the left (e.g. the conversation title). */
-  title?: string;
+  /** Session token usage. */
+  usage: UsageState;
+
+  /** Sidebar controls. */
+  collapsed?: boolean;
+  onOpenMobile?: () => void;
+  onExpand?: () => void;
 
   className?: string;
 }
 
 /**
- * App top bar: a model/tier switcher (Fast / Recommended / Max) and a token
- * usage meter. Both are presentational — the chat/history agents pass the real
- * tier state and metering; sensible placeholders render standalone.
+ * App top bar: sidebar toggles on the left, then the conversation title; a token
+ * usage meter and the provider-grouped model switcher on the right. Usage is fed
+ * by the token counts the Brain reports on each finished turn (see ChatView).
  */
 export function TopBar({
-  tier = "recommended",
-  onTierChange,
-  usedTokens = 0,
-  tokenLimit = 100_000,
   title,
+  selection,
+  options,
+  onSelect,
+  usage,
+  collapsed = false,
+  onOpenMobile,
+  onExpand,
   className,
 }: TopBarProps) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const current = TIERS.find((t) => t.value === tier) ?? TIERS[1];
-
-  // Close the tier menu on outside click / Escape.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const pct =
-    tokenLimit > 0
-      ? Math.min(100, Math.round((usedTokens / tokenLimit) * 100))
-      : 0;
-
   return (
     <header
       className={cn(
-        "flex h-14 shrink-0 items-center justify-between gap-3 border-b border-neutral-200 px-4 dark:border-neutral-800",
+        "flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/80 px-3 backdrop-blur sm:px-4",
         className
       )}
     >
-      <div className="min-w-0">
-        <h1 className="truncate text-sm font-semibold">
-          {title || "Practiscale Assistant"}
+      <div className="flex min-w-0 items-center gap-1.5">
+        {/* Mobile: open the drawer. */}
+        <IconButton
+          aria-label="Open sidebar"
+          className="lg:hidden"
+          onClick={onOpenMobile}
+        >
+          <Menu size={18} />
+        </IconButton>
+        {/* Desktop: reopen a collapsed sidebar. */}
+        {collapsed && (
+          <IconButton
+            aria-label="Expand sidebar"
+            className="hidden lg:inline-flex"
+            onClick={onExpand}
+          >
+            <PanelLeftOpen size={18} />
+          </IconButton>
+        )}
+        <h1 className="truncate text-sm font-semibold text-foreground">
+          {title || "New chat"}
         </h1>
       </div>
 
-      <div className="flex items-center gap-3">
-        {/* Usage meter */}
-        <div
-          className="hidden items-center gap-2 sm:flex"
-          title={`${usedTokens.toLocaleString()} / ${tokenLimit.toLocaleString()} tokens`}
-        >
-          <Gauge size={15} className="text-neutral-400" aria-hidden />
-          <div
-            className="h-1.5 w-24 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800"
-            role="progressbar"
-            aria-label="Token usage"
-            aria-valuenow={pct}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full rounded-full bg-neutral-900 dark:bg-neutral-100"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="tabular-nums text-xs text-neutral-500">{pct}%</span>
-        </div>
-
-        {/* Model / tier switcher */}
-        <div className="relative" ref={menuRef}>
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            {current.label}
-            <ChevronDown size={14} className="text-neutral-400" />
-          </button>
-
-          {open && (
-            <ul
-              role="listbox"
-              aria-label="Model tier"
-              className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-800 dark:bg-neutral-900"
-            >
-              {TIERS.map((t) => {
-                const selected = t.value === tier;
-                return (
-                  <li key={t.value} role="option" aria-selected={selected}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onTierChange?.(t.value);
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    >
-                      <span className="flex flex-col">
-                        <span className="font-medium">{t.label}</span>
-                        <span className="text-xs text-neutral-500">{t.hint}</span>
-                      </span>
-                      {selected && <Check size={15} className="shrink-0" />}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+      <div className="flex items-center gap-2 sm:gap-3">
+        <UsageMeter usage={usage} />
+        <ModelSelector
+          selection={selection}
+          options={options}
+          onSelect={onSelect}
+        />
       </div>
     </header>
+  );
+}
+
+/**
+ * Token meter for the current session. Shows the running token count and a thin
+ * budget bar; the tooltip breaks out the most recent turn and the soft budget.
+ */
+function UsageMeter({ usage }: { usage: UsageState }) {
+  const { sessionTokens, lastTurnTokens, budget } = usage;
+  const pct = budget > 0 ? Math.min(100, (sessionTokens / budget) * 100) : 0;
+  // Warm the bar toward the warning colour as the budget fills.
+  const barColor =
+    pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-accent";
+
+  return (
+    <div
+      className="flex items-center gap-2"
+      title={`${sessionTokens.toLocaleString()} tokens this session · last turn ${lastTurnTokens.toLocaleString()} · soft budget ${budget.toLocaleString()}`}
+    >
+      <span className="hidden tabular-nums text-xs font-medium text-muted-foreground sm:inline">
+        {sessionTokens.toLocaleString()}
+        <span className="ml-1 hidden text-muted-foreground/70 md:inline">tokens</span>
+      </span>
+      <div
+        className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted sm:block"
+        role="progressbar"
+        aria-label="Session token usage"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className={cn("h-full rounded-full transition-all", barColor)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }

@@ -28,7 +28,7 @@ export function Markdown({ content }: { content: string }) {
     blocks.push(
       <pre
         key={`code-${key++}`}
-        className="overflow-x-auto rounded-lg bg-neutral-100 p-3 text-[13px] leading-relaxed dark:bg-neutral-800/70"
+        className="overflow-x-auto rounded-xl border border-border bg-surface-muted p-3 font-mono text-[13px] leading-relaxed"
       >
         <code>{match[2].replace(/\n$/, "")}</code>
       </pre>
@@ -117,7 +117,7 @@ function renderTextBlocks(text: string, keyBase: string, out: ReactNode[]) {
       out.push(
         <blockquote
           key={key}
-          className="border-l-2 border-neutral-300 pl-3 text-neutral-600 dark:border-neutral-600 dark:text-neutral-400"
+          className="border-l-2 border-accent/40 pl-3 text-muted-foreground"
         >
           {renderInline(quote.join("\n"), key)}
         </blockquote>
@@ -191,7 +191,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(
         <code
           key={key}
-          className="rounded bg-neutral-200 px-1 py-0.5 text-[0.85em] dark:bg-neutral-700"
+          className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[0.85em]"
         >
           {best.m[1]}
         </code>
@@ -205,7 +205,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
           href={best.m[2]}
           target="_blank"
           rel="noopener noreferrer"
-          className="underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-300"
+          className="font-medium text-accent underline underline-offset-2 hover:text-accent-hover"
         >
           {best.m[1]}
         </a>
@@ -229,7 +229,7 @@ function CitationChip({ id }: { id: string }) {
   return (
     <sup className="mx-0.5">
       <span
-        className="inline-flex items-center rounded bg-neutral-200 px-1 text-[10px] font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
+        className="inline-flex items-center rounded-md bg-accent/10 px-1.5 text-[10px] font-semibold text-accent ring-1 ring-inset ring-accent/20"
         title={`Source ${id}`}
         aria-label={`Source ${id}`}
       >

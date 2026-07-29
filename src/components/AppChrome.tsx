@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import type { ModelTier } from "@/lib/brain";
+import type { BrainModel } from "@/lib/models";
 
 // Full history/project shapes (a superset of the Sidebar's display items).
 export interface Conversation {
@@ -29,6 +30,12 @@ export interface AppChromeProps {
   initialConversations: Conversation[];
   initialProjects: Project[];
   initialTier?: ModelTier;
+  /** Permitted model catalog (fetched + permission-filtered server-side). */
+  models?: BrainModel[];
+  /** Signed-in user's first name, for the greeting. */
+  firstName?: string;
+  /** Whether to surface the Admin link (role resolved server-side). */
+  isAdmin?: boolean;
   children: React.ReactNode;
 }
 
@@ -66,6 +73,9 @@ export function AppChrome({
   initialConversations,
   initialProjects,
   initialTier = "recommended",
+  models = [],
+  firstName = "",
+  isAdmin = false,
   children,
 }: AppChromeProps) {
   const router = useRouter();
@@ -156,19 +166,30 @@ export function AppChrome({
     setActiveProjectId((cur) => (cur === id ? null : id));
   }, []);
 
-  // Map the rich records down to the Sidebar's display items.
+  // Map the rich records down to the Sidebar's display items (updated_at drives
+  // the Today / Yesterday / Previous 7 days grouping).
   const sidebarConversations = useMemo(
     () =>
       conversations.map((c) => ({
         id: c.id,
         title: c.title ?? "New chat",
         pinned: c.pinned,
+        updatedAt: c.updated_at,
       })),
     [conversations]
   );
   const sidebarProjects = useMemo(
     () => projects.map((p) => ({ id: p.id, name: p.name })),
     [projects]
+  );
+
+  // The open conversation's title for the top bar.
+  const activeTitle = useMemo(
+    () =>
+      activeConversationId
+        ? conversations.find((c) => c.id === activeConversationId)?.title ?? null
+        : null,
+    [conversations, activeConversationId]
   );
 
   return (
@@ -178,6 +199,10 @@ export function AppChrome({
         conversations={sidebarConversations}
         activeConversationId={activeConversationId}
         initialTier={initialTier}
+        models={models}
+        firstName={firstName}
+        isAdmin={isAdmin}
+        title={activeTitle}
         onNewChat={handleNewChat}
         onNewProject={() => setProjectOpen(true)}
         onSelectProject={handleSelectProject}
@@ -284,11 +309,11 @@ function RenameDialog({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             maxLength={200}
-            className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-200 dark:border-neutral-700 dark:focus:ring-neutral-800"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
@@ -334,15 +359,15 @@ function DeleteDialog({
 
   return (
     <Modal open={conversation !== null} onClose={onClose} title="Delete conversation">
-      <p className="text-sm text-neutral-600 dark:text-neutral-300">
+      <p className="text-sm text-muted-foreground">
         Delete{" "}
-        <span className="font-medium text-neutral-900 dark:text-neutral-100">
+        <span className="font-medium text-foreground">
           {conversation?.title || "this conversation"}
         </span>
         ? This also removes its messages and cannot be undone.
       </p>
       {error && (
-        <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="mt-3 text-sm text-danger">
           {error}
         </p>
       )}
@@ -352,10 +377,10 @@ function DeleteDialog({
         </Button>
         <Button
           type="button"
+          variant="danger"
           size="sm"
           onClick={onConfirm}
           disabled={pending}
-          className="bg-red-600 text-white hover:bg-red-500 dark:bg-red-600 dark:text-white dark:hover:bg-red-500"
         >
           {pending ? "Deleting…" : "Delete"}
         </Button>
@@ -426,13 +451,13 @@ function NewProjectDialog({
             onChange={(e) => setName(e.target.value)}
             maxLength={120}
             placeholder="e.g. Q3 Compliance"
-            className="w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-200 dark:border-neutral-700 dark:focus:ring-neutral-800"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <div className="space-y-1.5">
           <label htmlFor="project-prompt" className="block text-sm font-medium">
             System prompt{" "}
-            <span className="font-normal text-neutral-400">(optional)</span>
+            <span className="font-normal text-muted-foreground">(optional)</span>
           </label>
           <textarea
             id="project-prompt"
@@ -441,11 +466,11 @@ function NewProjectDialog({
             rows={4}
             maxLength={8000}
             placeholder="Extra context sent to the Brain for chats in this project."
-            className="w-full resize-y rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-500 focus:ring-2 focus:ring-neutral-200 dark:border-neutral-700 dark:focus:ring-neutral-800"
+            className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         {error && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
