@@ -13,6 +13,7 @@
 // breaks the response.
 
 import { after } from "next/server";
+import { z } from "zod";
 import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
 import {
@@ -29,6 +30,25 @@ export const maxDuration = 60;
 
 /** Tier aliases the Brain accepts in addition to concrete model ids. */
 const TIER_WORDS = new Set(["fast", "recommended", "max"]);
+
+// Bounds mirror /api/conversations and the saveConversationTurn action so the
+// same conversation payload validates identically wherever it enters the app.
+// This is an authenticated-but-untrusted body: without these caps a client could
+// forward an unbounded messages array (and arbitrarily large content) straight to
+// the Brain on the scoped key. Unknown per-message fields (id, createdAt, parts…)
+// are stripped — only { role, content } is forwarded upstream.
+const chatMessageSchema = z.object({
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string().max(100_000),
+});
+
+const chatBodySchema = z.object({
+  messages: z.array(chatMessageSchema).min(1).max(2000),
+  tier: z.string().trim().max(64).optional(),
+  model: z.string().trim().max(200).optional(),
+  conversationId: z.string().uuid().nullish(),
+  conversation_id: z.string().uuid().nullish(),
+});
 
 /** A UUID (with a light shape check) or null — for the optional conversation id. */
 function asUuid(v: unknown): string | null {
@@ -76,11 +96,11 @@ async function isSelectionAllowed(
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { messages, tier, model } = body ?? {};
 
   // DEMO MODE: don't call the Brain or meter — stream a canned grounded answer.
   if (isDemo()) {
-    const last = [...(messages ?? [])].reverse().find((m: any) => m.role === "user");
+    const demoMessages = Array.isArray(body?.messages) ? body.messages : [];
+    const last = [...demoMessages].reverse().find((m: any) => m?.role === "user");
     return demoChatStreamResponse(last?.content ?? "");
   }
 
@@ -90,11 +110,23 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Validate + bound the (authenticated-but-untrusted) body before we do any
+  // work or touch the Brain. Rejects an unbounded/malformed payload cleanly.
+  const parsed = chatBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Invalid request", detail: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+  // Forward only the sanitized { role, content } turns upstream.
+  const safeMessages = parsed.data.messages;
+
   // The client requests a tier ("fast"|"recommended"|"max") or a concrete model
   // id; prefer an explicit model, else the tier, else the default tier.
   const selection: ModelSelection =
-    (typeof model === "string" && model.trim()) ||
-    (typeof tier === "string" && tier.trim()) ||
+    (parsed.data.model && parsed.data.model.trim()) ||
+    (parsed.data.tier && parsed.data.tier.trim()) ||
     "recommended";
 
   // 2. Enforce the user's model/tier permission BEFORE hitting the Brain.
@@ -112,7 +144,7 @@ export async function POST(req: Request) {
 
   // 3. Call the Brain (scoped key stays server-side inside brainChat).
   const startedAt = Date.now();
-  const upstream = await brainChat(messages ?? [], selection);
+  const upstream = await brainChat(safeMessages, selection);
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
@@ -133,7 +165,7 @@ export async function POST(req: Request) {
   const ctx: UsageContext = {
     userId: profile.userId,
     teamId: profile.team?.id ?? null,
-    conversationId: asUuid(body?.conversationId ?? body?.conversation_id),
+    conversationId: asUuid(parsed.data.conversationId ?? parsed.data.conversation_id),
     provider,
     model: resolvedModel,
     tier: String(selection),

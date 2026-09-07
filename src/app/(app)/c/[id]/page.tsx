@@ -17,18 +17,22 @@ export default async function ConversationPage({
   const { id } = await params;
   const supabase = await createSupabaseServerClient();
 
-  const { data: convo } = await supabase
-    .from("conversations")
-    .select("id, title, model_tier")
-    .eq("id", id)
-    .maybeSingle();
+  // Both queries key off the same `id` and don't depend on each other, so fetch
+  // them together. RLS scopes both to the caller; a missing/foreign conversation
+  // resolves to 404 (the parallel messages read just comes back empty).
+  const [{ data: convo }, { data: rows }] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("id, title, model_tier")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("messages")
+      .select("id, role, content")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true }),
+  ]);
   if (!convo) notFound();
-
-  const { data: rows } = await supabase
-    .from("messages")
-    .select("id, role, content")
-    .eq("conversation_id", id)
-    .order("created_at", { ascending: true });
 
   const initialMessages: Message[] = (rows ?? []).map((r) => ({
     id: r.id as string,

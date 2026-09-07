@@ -7,13 +7,27 @@ import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Brand";
 
+/**
+ * Constrain the post-login redirect to a SAME-ORIGIN path. `redirectedFrom`
+ * comes from the query string (attacker-controllable via a crafted /login link),
+ * so an unchecked value would be an open redirect — signing in could bounce the
+ * user to an external phishing page. Only accept a path that starts with a single
+ * "/" and is not protocol-relative ("//host") or a backslash trick ("/\\host");
+ * anything else falls back to the app root.
+ */
+function safeInternalPath(raw: string | null): string {
+  if (!raw || !raw.startsWith("/")) return "/";
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+  return raw;
+}
+
 // PUBLIC route. Email + password sign-in against the chatbot's own Supabase
 // project. On success we route to wherever the middleware bounced us from
 // (or / by default). The middleware sends already-signed-in users away.
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectedFrom = searchParams.get("redirectedFrom") || "/";
+  const redirectedFrom = safeInternalPath(searchParams.get("redirectedFrom"));
 
   const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
   const [email, setEmail] = useState(demo ? "demo@practiscale.co" : "");

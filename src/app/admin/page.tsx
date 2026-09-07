@@ -93,7 +93,7 @@ export default function AdminOverviewPage() {
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Overview</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Fleet activity for the last {data?.range.days ?? 30} days.
+            Workspace activity over the last {data?.range.days ?? 30} days.
           </p>
         </div>
         <button
@@ -131,7 +131,7 @@ export default function AdminOverviewPage() {
               icon={UserCheck}
               label="Active users (30d)"
               value={loading ? null : numberFmt.format(data!.totals.activeUsers)}
-              hint="Distinct users with a metered call"
+              hint="People who sent at least one message"
             />
             <StatCard
               icon={Building2}

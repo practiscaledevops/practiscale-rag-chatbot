@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireChatbotAdmin, AdminError } from "@/lib/admin";
-import { buildSettingsPayload, type SettingsPayload } from "@/app/api/admin/settings/route";
+import { buildSettingsPayload, type SettingsPayload } from "@/lib/settings";
 import { SettingsClient } from "./SettingsClient";
 
 export const metadata: Metadata = {

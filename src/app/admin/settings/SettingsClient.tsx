@@ -21,7 +21,7 @@ import type {
   SettingsPayload,
   Tier,
   WorkspaceSettings,
-} from "@/app/api/admin/settings/route";
+} from "@/lib/settings";
 
 // ---------------------------------------------------------------------------
 // Helpers

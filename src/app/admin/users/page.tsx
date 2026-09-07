@@ -6,7 +6,7 @@
 
 import { redirect } from "next/navigation";
 import { requireChatbotAdmin, AdminError } from "@/lib/admin";
-import { buildAdminUsersPayload } from "@/app/api/admin/users/route";
+import { buildAdminUsersPayload } from "@/lib/admin-users";
 import { UsersClient } from "./UsersClient";
 
 export const dynamic = "force-dynamic";

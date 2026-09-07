@@ -1,6 +1,7 @@
-"use client";
-
 import { Fragment, type ReactNode } from "react";
+
+// No "use client": this is a pure, hook-free renderer, so it stays a shared
+// component (rendered inside the client ChatView today, reusable server-side).
 
 /**
  * A tiny, dependency-free Markdown renderer for assistant messages.

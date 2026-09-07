@@ -39,11 +39,13 @@
 --        update public.profiles set role = 'super_admin'
 --        where email = 'admin@practiscale.co';
 --
---  (No user should ever be able to grant themselves a role from the app: role
---  is written only by service-role code or by a human in the SQL editor. The
---  RLS profiles_update_own policy from chatbot_full.sql lets a user update
---  their own row, but the admin panel and gating logic read role via the
---  service-role client — never trusting a client-supplied claim.)
+--  (No user can grant themselves a role. Two things enforce this: (1) the admin
+--  panel and gating logic read role via the service-role client — never trusting
+--  a client-supplied claim; and (2) Section 5 below revokes column UPDATE on the
+--  privileged profiles columns from `authenticated`, so a user cannot rewrite
+--  their own profiles.role even by calling PostgREST directly with the public
+--  anon key. Reading role server-side is NOT enough on its own — the underlying
+--  row must also be un-writable by the user, which the column grant guarantees.)
 --
 --  RUN ORDER inside the file (top → bottom, do not reorder):
 --    1. Tables            4. Row-Level Security
@@ -339,6 +341,20 @@ grant all on public.usage_events to service_role;
 revoke all on public.teams        from anon;
 revoke all on public.team_members from anon;
 revoke all on public.usage_events from anon;
+
+-- ---------------------------------------------------------------------------
+-- PRIVILEGE-ESCALATION HARDENING (profiles)
+-- chatbot_full.sql grants `authenticated` table-wide UPDATE on public.profiles,
+-- and profiles_update_own only checks row ownership (auth.uid() = id) — not
+-- which columns change. With the privileged columns added above (role,
+-- is_active, permissions, can_use_all_models, team_id), that table-wide grant
+-- would let any signed-in user set their OWN profiles.role = 'super_admin' by
+-- calling PostgREST directly with the public anon key + their session JWT,
+-- bypassing this app entirely. Restrict end-user UPDATE to display_name only;
+-- every privileged write goes through the service-role client (BYPASSRLS).
+-- Idempotent. (Also shipped as migration 0003 for existing databases.)
+revoke update on public.profiles from authenticated;
+grant  update (display_name) on public.profiles to authenticated;
 
 
 -- ===========================================================================

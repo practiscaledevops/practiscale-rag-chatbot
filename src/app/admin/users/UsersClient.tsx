@@ -31,7 +31,7 @@ import type {
   AdminModelOption,
   AdminFeature,
   PermissionsShape,
-} from "@/app/api/admin/users/route";
+} from "@/lib/admin-users";
 
 type Tier = "fast" | "recommended" | "max";
 

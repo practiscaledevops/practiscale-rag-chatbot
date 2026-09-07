@@ -22,16 +22,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Resolve identity + role server-side (never a client claim). Doubles as the
-  // auth gate: a signed-out user has no profile.
-  const profile = await getSessionProfile();
-  if (!profile) redirect("/login");
-
   const supabase = await createSupabaseServerClient();
 
-  // Fetch history, projects, and the model catalog in parallel. RLS scopes the
-  // first two to the signed-in user; ordering mirrors /api/conversations.
-  const [conversationsRes, projectsRes, catalog] = await Promise.all([
+  // Resolve identity in parallel with the history/projects/catalog fetches.
+  // RLS scopes history + projects to the signed-in user (empty for a signed-out
+  // caller), and the catalog needs no session — so all four can race, and we
+  // gate on the profile right after. Ordering mirrors /api/conversations.
+  const [profile, conversationsRes, projectsRes, catalog] = await Promise.all([
+    getSessionProfile(),
     supabase
       .from("conversations")
       .select("id, title, pinned, project_id, model_tier, created_at, updated_at")
@@ -43,6 +41,9 @@ export default async function AppLayout({
       .order("created_at", { ascending: false }),
     fetchBrainModels(),
   ]);
+
+  // Auth gate (defense in depth alongside middleware): no profile → /login.
+  if (!profile) redirect("/login");
 
   // Hide models the user isn't permitted to select; unavailable ones stay in the
   // list (the switcher renders them disabled).

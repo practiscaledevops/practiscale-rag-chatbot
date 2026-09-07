@@ -23,7 +23,7 @@ import {
   countOtherActiveSuperAdmins,
   permissionsSchema,
   roleSchema,
-} from "../route";
+} from "@/lib/admin-users";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

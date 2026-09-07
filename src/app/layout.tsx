@@ -8,7 +8,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://assistant.practisca
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "Practiscale Assistant",
-  description: "Grounded conversational AI powered by the Practiscale Brain.",
+  description: "Grounded, sourced answers from your Practiscale knowledge base.",
   icons: {
     icon: [
       { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },

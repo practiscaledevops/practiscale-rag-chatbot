@@ -27,14 +27,14 @@ import { saveConversationTurn } from "./actions";
 const SUGGESTIONS = [
   {
     icon: Database,
-    title: "Synthesize data",
+    title: "Summarize reports",
     hint: "Pull the key trends together",
     prompt:
       "Summarize the key trends across our latest reports and highlight what changed.",
   },
   {
     icon: Wand2,
-    title: "Creative brainstorm",
+    title: "Brainstorm ideas",
     hint: "Explore fresh angles",
     prompt:
       "Brainstorm five fresh angles for our next customer outreach campaign.",
@@ -302,7 +302,7 @@ export function ChatView({
                 </span>
               </h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                How can I assist you today?
+                What are you working on today?
               </p>
             </div>
 

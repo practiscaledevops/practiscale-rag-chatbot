@@ -540,7 +540,11 @@ create policy messages_delete_own on public.messages
 -- ===========================================================================
 grant usage on schema public to authenticated, service_role;
 
-grant select, insert, update, delete on public.profiles      to authenticated;
+-- profiles: UPDATE is column-scoped to display_name (see the escalation note in
+-- admin.sql / migration 0003). A user must never be able to rewrite privileged
+-- columns (role/permissions/…) on their own row via a direct PostgREST call.
+grant select, insert, delete on public.profiles              to authenticated;
+grant update (display_name)  on public.profiles              to authenticated;
 grant select, insert, update, delete on public.projects      to authenticated;
 grant select, insert, update, delete on public.conversations to authenticated;
 grant select, insert, update, delete on public.messages      to authenticated;
