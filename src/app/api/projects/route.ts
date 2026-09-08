@@ -18,6 +18,7 @@ import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
 const PROJECT_COLUMNS = "id, name, system_prompt, created_at";

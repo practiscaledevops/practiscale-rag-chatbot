@@ -3,6 +3,8 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getSessionProfile } from "@/lib/admin";
 import { fetchBrainModels, filterModelsByPermissions } from "@/lib/models";
 import { AppChrome, type Conversation, type Project } from "@/components/AppChrome";
+// Pin this route group to Singapore (co-located with Supabase + the Brain).
+export const preferredRegion = ["sin1"];
 
 /**
  * Authenticated shell for every route in the (app) group. Enforces auth

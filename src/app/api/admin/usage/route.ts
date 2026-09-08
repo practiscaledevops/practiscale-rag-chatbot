@@ -28,6 +28,7 @@ import { requireChatbotAdmin, AdminError } from "@/lib/admin";
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 // Reads the session cookie (for gating) and always reflects live data.
 export const dynamic = "force-dynamic";
 

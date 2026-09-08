@@ -32,6 +32,7 @@ import {
 } from "@/lib/admin-users";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
 // ---------------------------------------------------------------------------

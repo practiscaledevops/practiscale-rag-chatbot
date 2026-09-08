@@ -16,6 +16,7 @@ import { requireChatbotAdmin, AdminError } from "@/lib/admin";
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
 /** Shared admin gate: NextResponse to short-circuit on denial, else null. */

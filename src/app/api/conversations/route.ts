@@ -24,6 +24,7 @@ import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 // Reads/writes the session cookie, so this route is always dynamic.
 export const dynamic = "force-dynamic";
 

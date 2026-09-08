@@ -18,6 +18,7 @@ import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
 const COLUMNS = "id, title, body, is_pinned, created_at, updated_at";

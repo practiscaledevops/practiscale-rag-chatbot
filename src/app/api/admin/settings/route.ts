@@ -38,6 +38,7 @@ import {
 } from "@/lib/settings";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 // Reads the session cookie (for gating) and always reflects live settings.
 export const dynamic = "force-dynamic";
 

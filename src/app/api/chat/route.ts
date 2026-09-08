@@ -26,6 +26,9 @@ import { isDemo } from "@/lib/demo/mode";
 import { demoChatStreamResponse } from "@/lib/demo/stream";
 
 export const runtime = "nodejs";
+// Co-locate with the Brain + this app's Supabase (all Singapore) so auth, the
+// profile read, and the Brain call don't pay cross-region round trips.
+export const preferredRegion = ["sin1"];
 export const maxDuration = 60;
 
 /** Tier aliases the Brain accepts in addition to concrete model ids. */

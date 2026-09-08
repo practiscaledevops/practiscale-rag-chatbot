@@ -15,6 +15,7 @@ import { fetchBrainModels, filterModelsByPermissions } from "@/lib/models";
 import { isDemo } from "@/lib/demo/mode";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 // Reads the session cookie, so this route is always dynamic.
 export const dynamic = "force-dynamic";
 

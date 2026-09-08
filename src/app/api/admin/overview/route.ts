@@ -16,6 +16,7 @@ import { AdminError, requireChatbotAdmin } from "@/lib/admin";
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
+export const preferredRegion = ["sin1"];
 // Reads the session cookie (via requireChatbotAdmin) and live aggregates, so
 // this route is always dynamic and must never be cached.
 export const dynamic = "force-dynamic";
