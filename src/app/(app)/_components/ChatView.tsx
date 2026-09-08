@@ -2,7 +2,6 @@
 
 import { useChat, type Message } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   ArrowUp,
   BookMarked,
@@ -91,7 +90,6 @@ export function ChatView({
   initialTier,
   initialMessages,
 }: ChatViewProps) {
-  const router = useRouter();
   const { selection, setSelection, addUsage, firstName } = useAppShell();
 
   // What we forward to the Brain as `model`. We send it under both `model`
@@ -196,17 +194,21 @@ export function ChatView({
       if (!result.ok) return;
       conversationIdRef.current = result.conversationId;
       if (wasNew) {
-        // Reflect the new thread in the URL without a Next navigation, so this
-        // view keeps its in-memory stream while a refresh lands on /c/[id].
+        // Reflect the new thread in the URL WITHOUT a router refresh/navigation.
+        // A router.refresh() here reconciles to the new /c/[id] URL and remounts
+        // ChatView from a server DB read — any timing gap there flashes an empty
+        // thread and the just-streamed answer disappears. replaceState alone keeps
+        // the in-memory messages on screen; a later reload/nav loads them from the
+        // DB (they're already persisted above). The sidebar picks up the new
+        // thread on the next navigation.
         window.history.replaceState(null, "", `/c/${result.conversationId}`);
-        router.refresh();
       }
     } catch {
       // Best-effort save; the conversation still works if persistence fails.
     } finally {
       savingRef.current = false;
     }
-  }, [messages, selection.tier, router]);
+  }, [messages, selection.tier]);
 
   // Fire persistence on the streaming -> ready transition (covers Stop too).
   const prevStatus = useRef(status);
