@@ -49,7 +49,7 @@ function renderTextBlocks(text: string, keyBase: string, out: ReactNode[]) {
   let i = 0;
   let k = 0;
 
-  const isHeading = (l: string) => /^(#{1,3})\s+/.test(l);
+  const isHeading = (l: string) => /^(#{1,6})\s+/.test(l);
   const isListItem = (l: string) => /^\s*([-*]|\d+\.)\s+/.test(l);
   const isQuote = (l: string) => /^\s*>\s?/.test(l);
 
@@ -61,17 +61,17 @@ function renderTextBlocks(text: string, keyBase: string, out: ReactNode[]) {
       continue;
     }
 
-    // Heading (#, ##, ###)
-    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    // Heading (# through ######)
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
     if (h) {
       const level = h[1].length;
       const key = `${keyBase}-h${k++}`;
       const cls =
         level === 1
-          ? "text-lg font-semibold"
+          ? "mt-1 text-lg font-semibold"
           : level === 2
-            ? "text-base font-semibold"
-            : "text-sm font-semibold";
+            ? "mt-1 text-base font-semibold"
+            : "text-sm font-semibold text-foreground/90";
       out.push(
         <p key={key} className={cls}>
           {renderInline(h[2], key)}

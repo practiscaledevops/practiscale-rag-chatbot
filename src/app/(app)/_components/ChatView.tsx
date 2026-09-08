@@ -112,6 +112,8 @@ export function ChatView({
     stop,
     reload,
     error,
+    data,
+    setData,
   } = useChat({
     api: "/api/chat",
     body: chatBody,
@@ -135,6 +137,22 @@ export function ChatView({
   });
 
   const busy = status === "submitted" || status === "streaming";
+
+  // Live activity from the Brain's status/sources data events (see /api/v1/chat).
+  // `data` is reset at the start of each send, so it only reflects the current turn.
+  const activity = useMemo(() => {
+    const items = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
+    let label: string | null = null;
+    let sourcesCount: number | null = null;
+    for (const it of items) {
+      if (it?.type === "status" && typeof it.label === "string") label = it.label;
+      if (it?.type === "sources" && Array.isArray(it.sources)) sourcesCount = it.sources.length;
+      if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
+        sourcesCount = it.count as number;
+      }
+    }
+    return { label, sourcesCount };
+  }, [data]);
 
   // Track the persisted id in a ref so the first save of a new chat can flip it
   // without re-rendering mid-stream.
@@ -238,8 +256,15 @@ export function ChatView({
   const submit = useCallback(() => {
     if (!input.trim() || busy) return;
     stickRef.current = true;
+    setData(undefined); // clear last turn's status/sources so `activity` is per-turn
     handleSubmit(undefined, { body: chatBody });
-  }, [input, busy, handleSubmit, chatBody]);
+  }, [input, busy, handleSubmit, chatBody, setData]);
+
+  const regenerate = useCallback(() => {
+    stickRef.current = true;
+    setData(undefined);
+    reload({ body: chatBody });
+  }, [reload, chatBody, setData]);
 
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -383,8 +408,17 @@ export function ChatView({
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="text-sm leading-relaxed text-foreground">
-                            <Markdown content={m.content} />
+                            <StreamingMarkdown
+                              content={m.content}
+                              animate={idx === lastIndex && busy}
+                            />
                           </div>
+                          {idx === lastIndex && !busy && activity.sourcesCount ? (
+                            <p className="mt-1.5 text-xs text-muted-foreground">
+                              Grounded in {activity.sourcesCount} source
+                              {activity.sourcesCount === 1 ? "" : "s"}
+                            </p>
+                          ) : null}
                           <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                             <IconButton
                               aria-label={copiedId === m.id ? "Copied" : "Copy message"}
@@ -401,10 +435,7 @@ export function ChatView({
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  stickRef.current = true;
-                                  reload({ body: chatBody });
-                                }}
+                                onClick={regenerate}
                               >
                                 <RefreshCw size={14} />
                                 Regenerate
@@ -417,16 +448,16 @@ export function ChatView({
                   </li>
                 ))}
 
-                {/* Awaiting the first streamed token. */}
+                {/* Awaiting the first streamed token — show live pipeline activity. */}
                 {status === "submitted" && (
-                  <li aria-live="polite" aria-label="Assistant is thinking" className="flex gap-3">
+                  <li aria-live="polite" aria-label="Assistant is working" className="flex gap-3">
                     <span
                       className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-soft"
                       aria-hidden
                     >
                       <Sparkles size={15} />
                     </span>
-                    <TypingDots />
+                    <ActivityLine label={activity.label} />
                   </li>
                 )}
               </ul>
@@ -437,7 +468,7 @@ export function ChatView({
                   className="mt-6 flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
                 >
                   <span>Something went wrong reaching the assistant.</span>
-                  <Button variant="secondary" size="sm" onClick={() => reload({ body: chatBody })}>
+                  <Button variant="secondary" size="sm" onClick={regenerate}>
                     Retry
                   </Button>
                 </div>
@@ -544,12 +575,62 @@ function Composer({
   );
 }
 
-function TypingDots() {
+/** Progressive character reveal for a smooth typewriter effect while streaming. */
+function useSmoothText(text: string, active: boolean): string {
+  const textRef = useRef(text);
+  textRef.current = text;
+  const [shown, setShown] = useState(text);
+
+  useEffect(() => {
+    if (!active) {
+      setShown(textRef.current);
+      return;
+    }
+    let pos = 0;
+    let raf = 0;
+    const tick = () => {
+      const full = textRef.current;
+      if (pos < full.length) {
+        // Reveal proportional to the backlog so it glides and always catches up.
+        const step = Math.max(2, Math.ceil((full.length - pos) / 6));
+        pos = Math.min(full.length, pos + step);
+        setShown(full.slice(0, pos));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [active]);
+
+  return active ? shown : text;
+}
+
+/** Markdown that reveals smoothly while streaming, then renders in full. */
+function StreamingMarkdown({ content, animate }: { content: string; animate: boolean }) {
+  const shown = useSmoothText(content, animate);
   return (
-    <div className="flex items-center gap-1 py-2 text-muted-foreground" aria-hidden>
-      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-      <span className="h-2 w-2 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-      <span className="h-2 w-2 animate-bounce rounded-full bg-current" />
+    <>
+      <Markdown content={shown} />
+      {animate && (
+        <span
+          className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-accent align-text-bottom"
+          aria-hidden
+        />
+      )}
+    </>
+  );
+}
+
+/** A live, single-line pipeline activity indicator ("Searching…", "Writing…"). */
+function ActivityLine({ label }: { label: string | null }) {
+  return (
+    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground" aria-live="polite">
+      <span className="flex gap-1" aria-hidden>
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+      </span>
+      <span>{label ?? "Thinking"}…</span>
     </div>
   );
 }
