@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
+  BookMarked,
   Check,
   Copy,
   Database,
@@ -22,6 +23,7 @@ import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
+import { PromptLibrary } from "./PromptLibrary";
 
 // Suggested-prompt cards on the empty state — each prefills the composer.
 const SUGGESTIONS = [
@@ -277,6 +279,8 @@ export function ChatView({
   const empty = messages.length === 0;
   const lastIndex = messages.length - 1;
 
+  const [promptsOpen, setPromptsOpen] = useState(false);
+
   const composer = (
     <Composer
       textareaRef={taRef}
@@ -286,11 +290,17 @@ export function ChatView({
       onSubmit={onFormSubmit}
       busy={busy}
       onStop={stop}
+      onOpenPrompts={() => setPromptsOpen(true)}
     />
   );
 
   return (
     <div className="flex h-full flex-col bg-background">
+      <PromptLibrary
+        open={promptsOpen}
+        onClose={() => setPromptsOpen(false)}
+        onInsert={prefill}
+      />
       {empty ? (
         // -------- Empty state: centered greeting + composer + suggestions --
         <div className="flex-1 overflow-y-auto">
@@ -465,6 +475,7 @@ function Composer({
   onSubmit,
   busy,
   onStop,
+  onOpenPrompts,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -473,10 +484,20 @@ function Composer({
   onSubmit: (e: React.FormEvent) => void;
   busy: boolean;
   onStop: () => void;
+  onOpenPrompts: () => void;
 }) {
   return (
     <form onSubmit={onSubmit}>
       <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface px-2.5 py-2 shadow-soft transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
+        <IconButton
+          aria-label="Prompt library"
+          type="button"
+          title="Prompt library — insert a saved prompt"
+          className="shrink-0"
+          onClick={onOpenPrompts}
+        >
+          <BookMarked size={17} />
+        </IconButton>
         <IconButton
           aria-label="Attach a file (coming soon)"
           type="button"
