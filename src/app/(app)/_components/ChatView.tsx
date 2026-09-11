@@ -1,14 +1,12 @@
 "use client";
 
 import { useChat, type Message } from "@ai-sdk/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
-  BookMarked,
   Check,
   Copy,
   Database,
-  Paperclip,
   RefreshCw,
   SearchCheck,
   Sparkles,
@@ -19,10 +17,8 @@ import type { ModelTier } from "@/lib/brain";
 import { useAppShell, tierPreset } from "@/components/AppShell";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
-import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
-import { PromptLibrary } from "./PromptLibrary";
 
 // Suggested-prompt cards on the empty state — each prefills the composer.
 const SUGGESTIONS = [
@@ -74,6 +70,30 @@ export interface ChatViewProps {
 function titleCase(name: string): string {
   if (!name) return "there";
   return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * Turn a useChat error into a readable, non-alarming sentence. The upstream
+ * /api/chat returns JSON like {error, status, detail} on a non-200, and a plain
+ * string on a mid-stream failure; extract the most useful human part of either.
+ */
+function friendlyError(err: Error | undefined): string {
+  const fallback = "Something went wrong reaching the assistant. Please try again.";
+  const raw = err?.message?.trim();
+  if (!raw) return fallback;
+  let msg = raw;
+  try {
+    const parsed = JSON.parse(raw) as { error?: unknown; detail?: unknown };
+    const detail =
+      typeof parsed.detail === "string" && parsed.detail.trim() ? parsed.detail.trim() : "";
+    const error =
+      typeof parsed.error === "string" && parsed.error.trim() ? parsed.error.trim() : "";
+    msg = detail || error || raw;
+  } catch {
+    // Not JSON — use the string as-is.
+  }
+  if (!msg) return fallback;
+  return msg.length > 280 ? `${msg.slice(0, 280)}…` : msg;
 }
 
 /**
@@ -219,7 +239,10 @@ export function ChatView({
       (was === "streaming" || was === "submitted") && status === "ready";
     if (!justFinished) return;
     const last = messages[messages.length - 1];
-    if (last?.role === "assistant") void persistTurn();
+    // Only persist a real answer. An empty assistant turn (upstream 200 that
+    // errored mid-stream and yielded no tokens) must NOT be saved, or the thread
+    // would reload blank forever.
+    if (last?.role === "assistant" && last.content.trim()) void persistTurn();
     // Keyed on status only: re-running on every `messages` update would fire
     // mid-stream. persistTurn reads the latest messages via closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,6 +291,16 @@ export function ChatView({
     reload({ body: chatBody });
   }, [reload, chatBody, setData]);
 
+  // Recovery path: switch to the Recommended tier (always available, Brain-
+  // resolved) and retry. Useful when a specific model failed for this turn.
+  const retryWithRecommended = useCallback(() => {
+    const rec = tierPreset("recommended");
+    setSelection(rec);
+    stickRef.current = true;
+    setData(undefined);
+    reload({ body: { model: rec.value, tier: rec.value } });
+  }, [setSelection, reload, setData]);
+
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
     submit();
@@ -306,7 +339,15 @@ export function ChatView({
   const empty = messages.length === 0;
   const lastIndex = messages.length - 1;
 
-  const [promptsOpen, setPromptsOpen] = useState(false);
+  // The upstream returned 200 but produced no text (e.g. a mid-stream provider
+  // error). Surface it explicitly instead of leaving a blank bubble.
+  const lastMsg = messages[lastIndex];
+  const emptyOutput =
+    !busy &&
+    !error &&
+    !!lastMsg &&
+    lastMsg.role === "assistant" &&
+    !lastMsg.content.trim();
 
   const composer = (
     <Composer
@@ -317,17 +358,11 @@ export function ChatView({
       onSubmit={onFormSubmit}
       busy={busy}
       onStop={stop}
-      onOpenPrompts={() => setPromptsOpen(true)}
     />
   );
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <PromptLibrary
-        open={promptsOpen}
-        onClose={() => setPromptsOpen(false)}
-        onInsert={prefill}
-      />
       {empty ? (
         // -------- Empty state: centered greeting + composer + suggestions --
         <div className="flex-1 overflow-y-auto">
@@ -467,12 +502,45 @@ export function ChatView({
               {error && (
                 <div
                   role="alert"
-                  className="mt-6 flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
+                  className="mt-6 flex flex-col gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-sm text-danger"
                 >
-                  <span>Something went wrong reaching the assistant.</span>
-                  <Button variant="secondary" size="sm" onClick={regenerate}>
-                    Retry
-                  </Button>
+                  <div className="flex items-start gap-2">
+                    <span className="font-medium">Couldn’t generate a response.</span>
+                  </div>
+                  <p className="text-danger/90">{friendlyError(error)}</p>
+                  <div className="mt-0.5 flex flex-wrap gap-2">
+                    <Button variant="secondary" size="sm" onClick={regenerate}>
+                      <RefreshCw size={14} />
+                      Retry
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
+                      Try Recommended model
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {emptyOutput && (
+                <div
+                  role="alert"
+                  className="mt-6 flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-sm text-foreground"
+                >
+                  <span className="font-medium text-foreground">
+                    The model returned no output.
+                  </span>
+                  <p className="text-muted-foreground">
+                    This can happen with a specific model. Try again, or switch to the
+                    Recommended model.
+                  </p>
+                  <div className="mt-0.5 flex flex-wrap gap-2">
+                    <Button variant="secondary" size="sm" onClick={regenerate}>
+                      <RefreshCw size={14} />
+                      Retry
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
+                      Try Recommended model
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -508,7 +576,6 @@ function Composer({
   onSubmit,
   busy,
   onStop,
-  onOpenPrompts,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -517,29 +584,10 @@ function Composer({
   onSubmit: (e: React.FormEvent) => void;
   busy: boolean;
   onStop: () => void;
-  onOpenPrompts: () => void;
 }) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface px-2.5 py-2 shadow-soft transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
-        <IconButton
-          aria-label="Prompt library"
-          type="button"
-          title="Prompt library — insert a saved prompt"
-          className="shrink-0"
-          onClick={onOpenPrompts}
-        >
-          <BookMarked size={17} />
-        </IconButton>
-        <IconButton
-          aria-label="Attach a file (coming soon)"
-          type="button"
-          title="Attachments coming soon"
-          className="shrink-0"
-          disabled
-        >
-          <Paperclip size={17} />
-        </IconButton>
+      <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-soft transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
         <label htmlFor="chat-input" className="sr-only">
           Message the assistant
         </label>
@@ -607,12 +655,16 @@ function useSmoothText(text: string, active: boolean): string {
   return active ? shown : text;
 }
 
+// Memoized so that when one message streams, the other (settled) messages don't
+// re-parse their markdown on every animation frame.
+const MemoMarkdown = memo(Markdown);
+
 /** Markdown that reveals smoothly while streaming, then renders in full. */
 function StreamingMarkdown({ content, animate }: { content: string; animate: boolean }) {
   const shown = useSmoothText(content, animate);
   return (
     <>
-      <Markdown content={shown} />
+      <MemoMarkdown content={shown} />
       {animate && (
         <span
           className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-accent align-text-bottom"
