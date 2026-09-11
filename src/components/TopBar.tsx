@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, PanelLeftOpen } from "lucide-react";
+import { Menu, PanelLeftOpen, Sparkles } from "lucide-react";
 import type { ModelOption, UsageState } from "@/components/AppShell";
 import { ModelSelector } from "@/components/ModelSelector";
 import { IconButton } from "@/components/IconButton";
@@ -86,39 +86,23 @@ export function TopBar({
 }
 
 /**
- * Token meter for the current month. Seeded from the user's persisted
- * month-to-date usage and incremented live per turn; the tooltip breaks out the
- * most recent turn and the soft budget.
+ * Token counter for the current month. Seeded from the user's persisted
+ * month-to-date usage and incremented live per turn. Informational only — there
+ * is no budget cap or limit bar.
  */
 function UsageMeter({ usage }: { usage: UsageState }) {
-  const { sessionTokens, lastTurnTokens, budget } = usage;
-  const pct = budget > 0 ? Math.min(100, (sessionTokens / budget) * 100) : 0;
-  // Warm the bar toward the warning colour as the budget fills.
-  const barColor =
-    pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-accent";
+  const { sessionTokens, lastTurnTokens } = usage;
 
   return (
     <div
-      className="flex items-center gap-2"
-      title={`${sessionTokens.toLocaleString()} tokens this month · last turn ${lastTurnTokens.toLocaleString()} · soft budget ${budget.toLocaleString()}`}
+      className="hidden items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 sm:flex"
+      title={`${sessionTokens.toLocaleString()} tokens this month · last turn ${lastTurnTokens.toLocaleString()}`}
     >
-      <span className="hidden tabular-nums text-xs font-medium text-muted-foreground sm:inline">
+      <Sparkles size={13} className="text-accent" aria-hidden />
+      <span className="tabular-nums text-xs font-medium text-muted-foreground">
         {sessionTokens.toLocaleString()}
-        <span className="ml-1 hidden text-muted-foreground/70 md:inline">tokens</span>
+        <span className="ml-1 hidden text-muted-foreground/70 md:inline">tokens this month</span>
       </span>
-      <div
-        className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted sm:block"
-        role="progressbar"
-        aria-label="Monthly token usage"
-        aria-valuenow={Math.round(pct)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        <div
-          className={cn("h-full rounded-full transition-all", barColor)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
     </div>
   );
 }
