@@ -22,6 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { loadConversations } from "@/lib/conversations-read";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -54,6 +55,7 @@ const patchSchema = z
     id: z.string().uuid(),
     title: z.string().trim().min(1).max(200).optional(),
     pinned: z.boolean().optional(),
+    archived: z.boolean().optional(),
     projectId: z.string().uuid().nullable().optional(),
     modelTier: modelTier.optional(),
   })
@@ -62,6 +64,7 @@ const patchSchema = z
     (v) =>
       v.title !== undefined ||
       v.pinned !== undefined ||
+      v.archived !== undefined ||
       v.projectId !== undefined ||
       v.modelTier !== undefined,
     { message: "No fields to update" }
@@ -153,20 +156,10 @@ export async function GET(req: Request) {
 
   const projectId = new URL(req.url).searchParams.get("projectId");
 
-  let query = supabase
-    .from("conversations")
-    .select(CONVERSATION_COLUMNS)
-    .eq("user_id", user.id)
-    .order("pinned", { ascending: false })
-    .order("updated_at", { ascending: false });
-
-  if (projectId) query = query.eq("project_id", projectId);
-
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-  return NextResponse.json({ conversations: data ?? [] });
+  // Defensive read: includes `archived`, falling back if the column predates
+  // migration 0005 (see lib/conversations-read).
+  const conversations = await loadConversations(supabase, user.id, { projectId });
+  return NextResponse.json({ conversations });
 }
 
 // POST /api/conversations — create a conversation and/or persist its turns.
@@ -279,12 +272,13 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { id, title, pinned, projectId, modelTier: tier } = parsed.data;
+  const { id, title, pinned, archived, projectId, modelTier: tier } = parsed.data;
 
   // Only the fields that were actually provided get written.
   const patch: Record<string, unknown> = {};
   if (title !== undefined) patch.title = title;
   if (pinned !== undefined) patch.pinned = pinned;
+  if (archived !== undefined) patch.archived = archived;
   if (projectId !== undefined) patch.project_id = projectId;
   if (tier !== undefined) patch.model_tier = tier;
 
@@ -297,7 +291,12 @@ export async function PATCH(req: Request) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Before migration 0005 the `archived` column doesn't exist; surface a
+    // clear, non-fatal message so the optimistic UI can revert.
+    const msg = /archived/i.test(error.message)
+      ? "Archiving isn't enabled yet (run migration 0005)."
+      : error.message;
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
   if (!data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

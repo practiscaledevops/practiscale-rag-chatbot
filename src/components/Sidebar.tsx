@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
   Compass,
   FolderOpen,
   FolderPlus,
@@ -32,6 +35,8 @@ export interface ConversationItem {
   pinned?: boolean;
   /** ISO timestamp used to bucket the thread by recency. */
   updatedAt?: string;
+  /** Archived threads live in a separate, collapsed section. */
+  archived?: boolean;
 }
 
 export interface SidebarProps {
@@ -55,6 +60,7 @@ export interface SidebarProps {
   onSelectConversation?: (id: string) => void;
   onRenameConversation?: (id: string) => void;
   onPinConversation?: (id: string, pinned: boolean) => void;
+  onArchiveConversation?: (id: string, archived: boolean) => void;
   onDeleteConversation?: (id: string) => void;
 
   className?: string;
@@ -117,23 +123,31 @@ export function Sidebar({
   onSelectConversation,
   onRenameConversation,
   onPinConversation,
+  onArchiveConversation,
   onDeleteConversation,
   className,
 }: SidebarProps) {
   const [query, setQuery] = useState("");
+  const [archivedOpen, setArchivedOpen] = useState(false);
 
   const trimmed = query.trim().toLowerCase();
   const searching = trimmed.length > 0;
 
-  // Instant title matches (client-side).
+  // Split archived out of the main history; it lives in its own section.
+  const active = useMemo(() => conversations.filter((c) => !c.archived), [conversations]);
+  const archivedList = useMemo(() => conversations.filter((c) => c.archived), [conversations]);
+
+  // Non-search view: active threads grouped by recency.
+  const groups = useMemo(() => groupConversations(active), [active]);
+
+  // Search title matches span ALL threads (including archived) so nothing is lost.
   const titleMatches = useMemo(
     () =>
       trimmed
         ? conversations.filter((c) => (c.title || "").toLowerCase().includes(trimmed))
-        : conversations,
+        : [],
     [conversations, trimmed]
   );
-  const groups = useMemo(() => groupConversations(titleMatches), [titleMatches]);
 
   // Message-body matches (debounced server search over message content), keyed
   // by conversation id with a snippet around the match.
@@ -329,12 +343,13 @@ export function Sidebar({
                     onSelect={onSelectConversation}
                     onRename={onRenameConversation}
                     onPin={onPinConversation}
+                    onArchive={onArchiveConversation}
                     onDelete={onDeleteConversation}
                   />
                 ))}
               </ul>
             )
-          ) : conversations.length === 0 ? (
+          ) : active.length === 0 ? (
             <p className="px-2 py-1 text-xs text-sidebar-muted/80">
               Your conversations will appear here.
             </p>
@@ -354,6 +369,7 @@ export function Sidebar({
                         onSelect={onSelectConversation}
                         onRename={onRenameConversation}
                         onPin={onPinConversation}
+                        onArchive={onArchiveConversation}
                         onDelete={onDeleteConversation}
                       />
                     ))}
@@ -363,6 +379,41 @@ export function Sidebar({
             </div>
           )}
         </section>
+
+        {/* Archived (collapsible; hidden while searching) */}
+        {!searching && archivedList.length > 0 && (
+          <section className="mt-2" aria-labelledby="sidebar-archived-heading">
+            <button
+              type="button"
+              onClick={() => setArchivedOpen((o) => !o)}
+              aria-expanded={archivedOpen}
+              className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted transition-colors hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronRight
+                size={12}
+                className={cn("transition-transform", archivedOpen && "rotate-90")}
+                aria-hidden
+              />
+              <span id="sidebar-archived-heading">Archived ({archivedList.length})</span>
+            </button>
+            {archivedOpen && (
+              <ul className="space-y-0.5">
+                {archivedList.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    active={c.id === activeConversationId}
+                    onSelect={onSelectConversation}
+                    onRename={onRenameConversation}
+                    onPin={onPinConversation}
+                    onArchive={onArchiveConversation}
+                    onDelete={onDeleteConversation}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
       </nav>
 
       {/* Footer: admin + account */}
@@ -434,6 +485,7 @@ function ConversationRow({
   onSelect,
   onRename,
   onPin,
+  onArchive,
   onDelete,
 }: {
   conversation: ConversationItem;
@@ -443,6 +495,7 @@ function ConversationRow({
   onSelect?: (id: string) => void;
   onRename?: (id: string) => void;
   onPin?: (id: string, pinned: boolean) => void;
+  onArchive?: (id: string, archived: boolean) => void;
   onDelete?: (id: string) => void;
 }) {
   return (
@@ -451,7 +504,7 @@ function ConversationRow({
         type="button"
         onClick={() => onSelect?.(c.id)}
         className={cn(
-          "flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-1.5 pr-16 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-1.5 pr-[5.75rem] text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           active
             ? "bg-white/[0.12] text-sidebar-foreground"
             : "text-sidebar-foreground/85 hover:bg-white/[0.07]"
@@ -477,6 +530,14 @@ function ConversationRow({
         <RowAction label="Rename conversation" onClick={() => onRename?.(c.id)}>
           <Pencil size={13} />
         </RowAction>
+        {onArchive && (
+          <RowAction
+            label={c.archived ? "Unarchive conversation" : "Archive conversation"}
+            onClick={() => onArchive(c.id, !c.archived)}
+          >
+            {c.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+          </RowAction>
+        )}
         <RowAction label="Delete conversation" onClick={() => onDelete?.(c.id)}>
           <Trash2 size={13} />
         </RowAction>

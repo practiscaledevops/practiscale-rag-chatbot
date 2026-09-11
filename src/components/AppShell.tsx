@@ -150,6 +150,7 @@ export interface AppShellProps
     | "onSelectConversation"
     | "onRenameConversation"
     | "onPinConversation"
+    | "onArchiveConversation"
     | "onDeleteConversation"
   > {
   children: React.ReactNode;
@@ -188,6 +189,7 @@ export function AppShell({
   onSelectConversation,
   onRenameConversation,
   onPinConversation,
+  onArchiveConversation,
   onDeleteConversation,
 }: AppShellProps) {
   const router = useRouter();
@@ -253,6 +255,7 @@ export function AppShell({
           onSelectConversation={onSelectConversation}
           onRenameConversation={onRenameConversation}
           onPinConversation={onPinConversation}
+          onArchiveConversation={onArchiveConversation}
           onDeleteConversation={onDeleteConversation}
         />
 

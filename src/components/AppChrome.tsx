@@ -17,6 +17,8 @@ export interface Conversation {
   model_tier: ModelTier;
   created_at: string;
   updated_at: string;
+  /** Archived threads are hidden from the main history list. */
+  archived?: boolean;
 }
 
 export interface Project {
@@ -163,6 +165,28 @@ export function AppChrome({
     [conversations]
   );
 
+  const handleArchive = useCallback(
+    async (id: string, archived: boolean) => {
+      const snapshot = conversations;
+      // Optimistic: flip the flag (and unpin when archiving).
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c.id === id ? { ...c, archived, pinned: archived ? false : c.pinned } : c
+          )
+        )
+      );
+      // If the open thread is being archived, leave it.
+      if (archived && activeConversationId === id) router.push("/");
+      try {
+        await mutate("/api/conversations", "PATCH", { id, archived });
+      } catch {
+        setConversations(snapshot); // revert (e.g. before migration 0005)
+      }
+    },
+    [conversations, activeConversationId, router]
+  );
+
   // --- project handlers ---------------------------------------------------
   const handleSelectProject = useCallback((id: string) => {
     // Toggle: click the active project again to clear the scope.
@@ -178,6 +202,7 @@ export function AppChrome({
         title: c.title ?? "New chat",
         pinned: c.pinned,
         updatedAt: c.updated_at,
+        archived: c.archived ?? false,
       })),
     [conversations]
   );
@@ -215,6 +240,7 @@ export function AppChrome({
           setRenameTarget(conversations.find((c) => c.id === id) ?? null)
         }
         onPinConversation={handlePin}
+        onArchiveConversation={handleArchive}
         onDeleteConversation={(id) =>
           setDeleteTarget(conversations.find((c) => c.id === id) ?? null)
         }

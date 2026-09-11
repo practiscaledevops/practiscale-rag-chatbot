@@ -3,8 +3,9 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getUser } from "@/lib/auth";
 import { getSessionProfile } from "@/lib/admin";
 import { getMonthlyUsageTokens } from "@/lib/usage-read";
+import { loadConversations } from "@/lib/conversations-read";
 import { fetchBrainModels, filterModelsByPermissions } from "@/lib/models";
-import { AppChrome, type Conversation, type Project } from "@/components/AppChrome";
+import { AppChrome, type Project } from "@/components/AppChrome";
 // Pin this route group to Singapore (co-located with Supabase + the Brain).
 export const preferredRegion = ["sin1"];
 
@@ -37,13 +38,9 @@ export default async function AppLayout({
   // RLS scopes history + projects to the signed-in user (empty for a signed-out
   // caller), and the catalog needs no session — so all can race, and we gate on
   // the profile right after. Ordering mirrors /api/conversations.
-  const [profile, conversationsRes, projectsRes, catalog, monthTokens] = await Promise.all([
+  const [profile, conversations, projectsRes, catalog, monthTokens] = await Promise.all([
     getSessionProfile(),
-    supabase
-      .from("conversations")
-      .select("id, title, pinned, project_id, model_tier, created_at, updated_at")
-      .order("pinned", { ascending: false })
-      .order("updated_at", { ascending: false }),
+    loadConversations(supabase, user.id),
     supabase
       .from("projects")
       .select("id, name, system_prompt, created_at")
@@ -71,7 +68,7 @@ export default async function AppLayout({
 
   return (
     <AppChrome
-      initialConversations={(conversationsRes.data ?? []) as Conversation[]}
+      initialConversations={conversations}
       initialProjects={(projectsRes.data ?? []) as Project[]}
       models={models}
       firstName={firstName}
