@@ -7,11 +7,13 @@ import {
   Check,
   Copy,
   Database,
+  Pencil,
   RefreshCw,
   SearchCheck,
   Sparkles,
   Square,
   Wand2,
+  X,
 } from "lucide-react";
 import type { ModelTier } from "@/lib/brain";
 import { useAppShell, tierPreset } from "@/components/AppShell";
@@ -122,6 +124,8 @@ export function ChatView({
 
   const {
     messages,
+    setMessages,
+    append,
     input,
     setInput,
     handleInputChange,
@@ -301,6 +305,34 @@ export function ChatView({
     reload({ body: { model: rec.value, tier: rec.value } });
   }, [setSelection, reload, setData]);
 
+  // --- Edit & resend a user message --------------------------------------
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingSend, setPendingSend] = useState<string | null>(null);
+
+  const submitEdit = useCallback(
+    (id: string, newContent: string) => {
+      const text = newContent.trim();
+      const idx = messages.findIndex((m) => m.id === id);
+      setEditingId(null);
+      if (idx === -1 || !text) return;
+      // Drop the edited message and everything after it, then resend the edit
+      // once the truncation has committed (so `append` builds on the trimmed
+      // history, not the stale one).
+      setMessages(messages.slice(0, idx));
+      stickRef.current = true;
+      setData(undefined);
+      setPendingSend(text);
+    },
+    [messages, setMessages, setData]
+  );
+
+  useEffect(() => {
+    if (pendingSend == null || status !== "ready") return;
+    const content = pendingSend;
+    setPendingSend(null);
+    void append({ role: "user", content }, { body: chatBody });
+  }, [pendingSend, status, append, chatBody]);
+
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
     submit();
@@ -430,11 +462,41 @@ export function ChatView({
                 {messages.map((m, idx) => (
                   <li key={m.id}>
                     {m.role === "user" ? (
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border bg-surface-muted px-4 py-2.5 text-sm text-foreground">
-                          {m.content}
+                      editingId === m.id ? (
+                        <EditBox
+                          initial={m.content}
+                          onCancel={() => setEditingId(null)}
+                          onSave={(text) => submitEdit(m.id, text)}
+                        />
+                      ) : (
+                        <div className="group flex flex-col items-end gap-1">
+                          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border bg-surface-muted px-4 py-2.5 text-sm text-foreground">
+                            {m.content}
+                          </div>
+                          {!busy && (
+                            <div className="flex items-center gap-1 pr-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                              <IconButton
+                                aria-label={copiedId === m.id ? "Copied" : "Copy message"}
+                                size="sm"
+                                onClick={() => copy(m.id, m.content)}
+                              >
+                                {copiedId === m.id ? (
+                                  <Check size={14} className="text-success" />
+                                ) : (
+                                  <Copy size={14} />
+                                )}
+                              </IconButton>
+                              <IconButton
+                                aria-label="Edit and resend"
+                                size="sm"
+                                onClick={() => setEditingId(m.id)}
+                              >
+                                <Pencil size={14} />
+                              </IconButton>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )
                     ) : (
                       <div className="group flex gap-3">
                         <span
@@ -622,6 +684,66 @@ function Composer({
         )}
       </div>
     </form>
+  );
+}
+
+/** Inline editor for a user message: edit the text, then resend from that point. */
+function EditBox({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Focus + caret to end + size to content on open.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  // Auto-grow.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+  }, [value]);
+
+  return (
+    <div className="ml-auto w-full max-w-[85%] rounded-2xl border border-accent/40 bg-surface p-2 shadow-soft">
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSave(value);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        rows={1}
+        className="max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-sm text-foreground outline-none"
+        aria-label="Edit your message"
+      />
+      <div className="mt-1 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          <X size={14} />
+          Cancel
+        </Button>
+        <Button variant="primary" size="sm" onClick={() => onSave(value)} disabled={!value.trim()}>
+          Send
+        </Button>
+      </div>
+    </div>
   );
 }
 

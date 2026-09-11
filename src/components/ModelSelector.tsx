@@ -42,9 +42,11 @@ export function ModelSelector({
   className,
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click / Escape.
+  // Close on outside click.
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
@@ -52,15 +54,8 @@ export function ModelSelector({
         setOpen(false);
       }
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
   // Group options by provider, in a stable order.
@@ -83,14 +78,97 @@ export function ModelSelector({
     }));
   }, [options]);
 
+  // Flat, render-order list for keyboard navigation (skips disabled on move).
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+
   const isSelected = (o: ModelOption) =>
     o.value === selection.value && o.kind === selection.kind;
+
+  const optionId = (i: number) => `model-opt-${i}`;
+
+  const commit = (opt: ModelOption) => {
+    if (!opt.available) return;
+    onSelect(opt);
+    setOpen(false);
+  };
+
+  // Move the active highlight to the next/prev enabled option.
+  const move = (dir: 1 | -1) => {
+    if (flat.length === 0) return;
+    let i = activeIndex;
+    for (let step = 0; step < flat.length; step++) {
+      i = (i + dir + flat.length) % flat.length;
+      if (flat[i]?.available) {
+        setActiveIndex(i);
+        return;
+      }
+    }
+  };
+
+  // Open the menu and highlight the current selection (or the first enabled).
+  const openMenu = () => {
+    const sel = flat.findIndex((o) => isSelected(o) && o.available);
+    const first = flat.findIndex((o) => o.available);
+    setActiveIndex(sel >= 0 ? sel : first);
+    setOpen(true);
+    requestAnimationFrame(() => listRef.current?.focus());
+  };
+
+  const onTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openMenu();
+    }
+  };
+
+  const onListKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        move(1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        move(-1);
+        break;
+      case "Home":
+        e.preventDefault();
+        setActiveIndex(flat.findIndex((o) => o.available));
+        break;
+      case "End":
+        e.preventDefault();
+        for (let i = flat.length - 1; i >= 0; i--) {
+          if (flat[i]?.available) { setActiveIndex(i); break; }
+        }
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (flat[activeIndex]) commit(flat[activeIndex]);
+        break;
+      case "Escape":
+        e.preventDefault();
+        setOpen(false);
+        break;
+      case "Tab":
+        setOpen(false);
+        break;
+    }
+  };
+
+  // Keep the active option scrolled into view.
+  useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    const el = document.getElementById(optionId(activeIndex));
+    el?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex]);
 
   return (
     <div className={cn("relative", className)} ref={rootRef}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onTriggerKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
         className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground shadow-soft transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -106,9 +184,13 @@ export function ModelSelector({
 
       {open && (
         <div
+          ref={listRef}
           role="listbox"
           aria-label="Model"
-          className="absolute right-0 z-30 mt-1.5 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg"
+          tabIndex={-1}
+          aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
+          onKeyDown={onListKeyDown}
+          className="absolute right-0 z-30 mt-1.5 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg focus:outline-none"
         >
           {groups.map((group) => (
             <div key={group.provider} className="py-1">
@@ -116,26 +198,23 @@ export function ModelSelector({
                 {group.label}
               </p>
               {group.items.map((opt) => {
+                const flatIndex = flat.indexOf(opt);
                 const selected = isSelected(opt);
+                const active = flatIndex === activeIndex;
                 const disabled = !opt.available;
                 return (
-                  <button
+                  <div
                     key={`${opt.kind}-${opt.value}`}
-                    type="button"
+                    id={optionId(flatIndex)}
                     role="option"
                     aria-selected={selected}
                     aria-disabled={disabled}
-                    disabled={disabled}
-                    onClick={() => {
-                      if (disabled) return;
-                      onSelect(opt);
-                      setOpen(false);
-                    }}
+                    onClick={() => commit(opt)}
+                    onMouseMove={() => !disabled && setActiveIndex(flatIndex)}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                      disabled
-                        ? "cursor-not-allowed opacity-55"
-                        : "hover:bg-surface-muted",
+                      "flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                      disabled && "cursor-not-allowed opacity-55",
+                      active && !disabled && "bg-surface-muted",
                       selected && "bg-accent/10"
                     )}
                   >
@@ -163,7 +242,7 @@ export function ModelSelector({
                         <Check size={15} className="shrink-0 text-accent" aria-hidden />
                       )
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
