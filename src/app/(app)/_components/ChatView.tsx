@@ -5,8 +5,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Database,
+  FileText,
   Pencil,
   RefreshCw,
   SearchCheck,
@@ -16,9 +19,10 @@ import {
   X,
 } from "lucide-react";
 import type { ModelTier } from "@/lib/brain";
-import { useAppShell, tierPreset } from "@/components/AppShell";
+import { useAppShell, tierPreset, type ModelOption } from "@/components/AppShell";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
+import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
 
@@ -56,6 +60,14 @@ const PILLS: { label: string; prompt: string }[] = [
 ];
 
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
+
+/** A retrieved source the Brain streamed for the current answer. */
+interface SourceItem {
+  id: string;
+  source_type?: string | null;
+  document_id?: string | null;
+  snippet?: string;
+}
 
 export interface ChatViewProps {
   /** Existing conversation id, or null for a brand-new chat. */
@@ -112,7 +124,7 @@ export function ChatView({
   initialTier,
   initialMessages,
 }: ChatViewProps) {
-  const { selection, setSelection, addUsage, firstName } = useAppShell();
+  const { selection, setSelection, options, addUsage, firstName } = useAppShell();
 
   // What we forward to the Brain as `model`. We send it under both `model`
   // (the forward-looking field) and `tier` (which the current /api/chat reads
@@ -166,14 +178,18 @@ export function ChatView({
     const items = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
     let label: string | null = null;
     let sourcesCount: number | null = null;
+    let sources: SourceItem[] = [];
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
-      if (it?.type === "sources" && Array.isArray(it.sources)) sourcesCount = it.sources.length;
+      if (it?.type === "sources" && Array.isArray(it.sources)) {
+        sources = (it.sources as SourceItem[]).filter((s) => s && typeof s.id === "string");
+        sourcesCount = sources.length;
+      }
       if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount };
+    return { label, sourcesCount, sources };
   }, [data]);
 
   // Track the persisted id in a ref so the first save of a new chat can flip it
@@ -294,6 +310,19 @@ export function ChatView({
     setData(undefined);
     reload({ body: chatBody });
   }, [reload, chatBody, setData]);
+
+  // Regenerate the last answer with a DIFFERENT model (also makes it the
+  // selection going forward, like the top-bar switcher).
+  const regenerateWith = useCallback(
+    (value: string, tier: ModelTier) => {
+      const opt = options.find((o) => o.value === value) ?? tierPreset(tier);
+      setSelection(opt);
+      stickRef.current = true;
+      setData(undefined);
+      reload({ body: { model: value, tier: value } });
+    },
+    [options, setSelection, reload, setData]
+  );
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
   // resolved) and retry. Useful when a specific model failed for this turn.
@@ -513,10 +542,10 @@ export function ChatView({
                             />
                           </div>
                           {idx === lastIndex && !busy && activity.sourcesCount ? (
-                            <p className="mt-1.5 text-xs text-muted-foreground">
-                              Grounded in {activity.sourcesCount} source
-                              {activity.sourcesCount === 1 ? "" : "s"}
-                            </p>
+                            <SourcesDisclosure
+                              count={activity.sourcesCount}
+                              sources={activity.sources}
+                            />
                           ) : null}
                           <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                             <IconButton
@@ -531,14 +560,11 @@ export function ChatView({
                               )}
                             </IconButton>
                             {idx === lastIndex && !busy && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={regenerate}
-                              >
-                                <RefreshCw size={14} />
-                                Regenerate
-                              </Button>
+                              <RegenerateMenu
+                                options={options}
+                                onRegenerate={regenerate}
+                                onRegenerateWith={regenerateWith}
+                              />
                             )}
                           </div>
                         </div>
@@ -743,6 +769,133 @@ function EditBox({
           Send
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Regenerate the last answer — same model on click, or pick another from the menu. */
+function RegenerateMenu({
+  options,
+  onRegenerate,
+  onRegenerateWith,
+}: {
+  options: ModelOption[];
+  onRegenerate: () => void;
+  onRegenerateWith: (value: string, tier: ModelTier) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const available = options.filter((o) => o.available);
+
+  return (
+    <div className="relative flex items-center" ref={ref}>
+      <Button variant="ghost" size="sm" onClick={onRegenerate}>
+        <RefreshCw size={14} />
+        Regenerate
+      </Button>
+      {available.length > 0 && (
+        <IconButton
+          aria-label="Regenerate with a different model"
+          size="sm"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <ChevronDown size={14} />
+        </IconButton>
+      )}
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 z-30 mb-1 max-h-[60vh] w-56 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg"
+        >
+          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Regenerate with
+          </p>
+          {available.map((o) => (
+            <button
+              key={`${o.kind}-${o.value}`}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onRegenerateWith(o.value, o.tier);
+              }}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="truncate">{o.label}</span>
+              {o.kind === "tier" && (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  preset
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The "Grounded in N sources" line, expandable to the retrieved source snippets. */
+function SourcesDisclosure({ count, sources }: { count: number; sources: SourceItem[] }) {
+  const [open, setOpen] = useState(false);
+  const has = sources.length > 0;
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => has && setOpen((o) => !o)}
+        aria-expanded={has ? open : undefined}
+        className={cn(
+          "inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors",
+          has && "hover:text-foreground"
+        )}
+      >
+        {has && (
+          <ChevronRight
+            size={12}
+            className={cn("transition-transform", open && "rotate-90")}
+            aria-hidden
+          />
+        )}
+        Grounded in {count} source{count === 1 ? "" : "s"}
+      </button>
+      {open && has && (
+        <ul className="mt-1.5 space-y-1.5">
+          {sources.map((s, i) => (
+            <li
+              key={s.id}
+              className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs"
+            >
+              <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <FileText size={11} aria-hidden />
+                <span>
+                  {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
+                </span>
+              </div>
+              <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
