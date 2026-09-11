@@ -69,6 +69,30 @@ interface SourceItem {
   snippet?: string;
 }
 
+/**
+ * Split an assistant message into display text + selectable options. The Brain
+ * emits choices as a fenced ```options block (see the chat prompt); we lift them
+ * out so the UI can render clickable chips instead of a code block. Handles an
+ * unclosed block mid-stream by hiding the partial block until it completes.
+ */
+function parseOptions(content: string): { text: string; options: string[] } {
+  const closed = content.match(/```options[^\n]*\r?\n([\s\S]*?)```/);
+  if (closed) {
+    const options = closed[1]
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*[-*\d.]+\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    return { text: content.replace(closed[0], "").trimEnd(), options };
+  }
+  // Unclosed block while streaming: hide it until the closing fence arrives.
+  const open = content.match(/```options[\s\S]*$/);
+  if (open && open.index !== undefined) {
+    return { text: content.slice(0, open.index).trimEnd(), options: [] };
+  }
+  return { text: content, options: [] };
+}
+
 export interface ChatViewProps {
   /** Existing conversation id, or null for a brand-new chat. */
   conversationId?: string | null;
@@ -334,6 +358,18 @@ export function ChatView({
     reload({ body: { model: rec.value, tier: rec.value } });
   }, [setSelection, reload, setData]);
 
+  // Send a picked option (or an "Other" answer) as the next user message.
+  const pickOption = useCallback(
+    (text: string) => {
+      const content = text.trim();
+      if (!content || busy) return;
+      stickRef.current = true;
+      setData(undefined);
+      void append({ role: "user", content }, { body: chatBody });
+    },
+    [busy, append, chatBody, setData]
+  );
+
   // --- Edit & resend a user message --------------------------------------
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pendingSend, setPendingSend] = useState<string | null>(null);
@@ -535,12 +571,26 @@ export function ChatView({
                           <Sparkles size={15} />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm leading-relaxed text-foreground">
-                            <StreamingMarkdown
-                              content={m.content}
-                              animate={idx === lastIndex && busy}
-                            />
-                          </div>
+                          {(() => {
+                            const { text, options } = parseOptions(m.content);
+                            return (
+                              <>
+                                <div className="text-sm leading-relaxed text-foreground">
+                                  <StreamingMarkdown
+                                    content={text}
+                                    animate={idx === lastIndex && busy}
+                                  />
+                                </div>
+                                {idx === lastIndex && !busy && options.length > 0 && (
+                                  <OptionsPicker
+                                    options={options}
+                                    onPick={pickOption}
+                                    disabled={busy}
+                                  />
+                                )}
+                              </>
+                            );
+                          })()}
                           {idx === lastIndex && !busy && activity.sourcesCount ? (
                             <SourcesDisclosure
                               count={activity.sourcesCount}
@@ -895,6 +945,88 @@ function SourcesDisclosure({ count, sources }: { count: number; sources: SourceI
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Clickable choices for an assistant question (parsed from its ```options block).
+ * Each chip sends that option as the next message; the "Other" chip reveals an
+ * inline field for a custom answer.
+ */
+function OptionsPicker({
+  options,
+  onPick,
+  disabled,
+}: {
+  options: string[];
+  onPick: (text: string) => void;
+  disabled?: boolean;
+}) {
+  const [otherOpen, setOtherOpen] = useState(false);
+  const [other, setOther] = useState("");
+
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      {options.map((o, i) => (
+        <button
+          key={i}
+          type="button"
+          disabled={disabled}
+          onClick={() => onPick(o)}
+          className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground shadow-soft transition-colors hover:border-accent/50 hover:bg-surface-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {o}
+        </button>
+      ))}
+      {!otherOpen ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOtherOpen(true)}
+          className="rounded-full border border-dashed border-border bg-transparent px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Other…
+        </button>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = other.trim();
+            if (v) {
+              onPick(v);
+              setOther("");
+              setOtherOpen(false);
+            }
+          }}
+          className="flex items-center gap-1 rounded-full border border-accent/50 bg-surface px-2 py-1 shadow-soft"
+        >
+          <input
+            autoFocus
+            value={other}
+            onChange={(e) => setOther(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setOther("");
+                setOtherOpen(false);
+              }
+            }}
+            disabled={disabled}
+            placeholder="Type your answer…"
+            aria-label="Your answer"
+            className="w-40 bg-transparent px-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <IconButton
+            type="submit"
+            aria-label="Send answer"
+            size="sm"
+            disabled={disabled || !other.trim()}
+            className="bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground disabled:opacity-40"
+          >
+            <ArrowUp size={15} />
+          </IconButton>
+        </form>
       )}
     </div>
   );
