@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { getUser } from "@/lib/auth";
 import { getSessionProfile } from "@/lib/admin";
+import { getMonthlyUsageTokens } from "@/lib/usage-read";
 import { fetchBrainModels, filterModelsByPermissions } from "@/lib/models";
 import { AppChrome, type Conversation, type Project } from "@/components/AppChrome";
 // Pin this route group to Singapore (co-located with Supabase + the Brain).
@@ -26,11 +28,16 @@ export default async function AppLayout({
 }) {
   const supabase = await createSupabaseServerClient();
 
-  // Resolve identity in parallel with the history/projects/catalog fetches.
+  // Resolve the user id first (cached for the rest of the request) so the
+  // monthly-usage read can race with everything else.
+  const user = await getUser();
+  if (!user) redirect("/login");
+
+  // Resolve identity in parallel with the history/projects/catalog/usage fetches.
   // RLS scopes history + projects to the signed-in user (empty for a signed-out
-  // caller), and the catalog needs no session — so all four can race, and we
-  // gate on the profile right after. Ordering mirrors /api/conversations.
-  const [profile, conversationsRes, projectsRes, catalog] = await Promise.all([
+  // caller), and the catalog needs no session — so all can race, and we gate on
+  // the profile right after. Ordering mirrors /api/conversations.
+  const [profile, conversationsRes, projectsRes, catalog, monthTokens] = await Promise.all([
     getSessionProfile(),
     supabase
       .from("conversations")
@@ -42,6 +49,7 @@ export default async function AppLayout({
       .select("id, name, system_prompt, created_at")
       .order("created_at", { ascending: false }),
     fetchBrainModels(),
+    getMonthlyUsageTokens(user.id),
   ]);
 
   // Auth gate (defense in depth alongside middleware): no profile → /login.
@@ -68,6 +76,7 @@ export default async function AppLayout({
       models={models}
       firstName={firstName}
       isAdmin={isAdmin}
+      initialTokens={monthTokens}
     >
       {children}
     </AppChrome>

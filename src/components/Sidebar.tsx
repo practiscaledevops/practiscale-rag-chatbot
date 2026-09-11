@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Compass,
   FolderOpen,
@@ -123,16 +123,67 @@ export function Sidebar({
   const [query, setQuery] = useState("");
 
   const trimmed = query.trim().toLowerCase();
-  const filtered = useMemo(
+  const searching = trimmed.length > 0;
+
+  // Instant title matches (client-side).
+  const titleMatches = useMemo(
     () =>
       trimmed
-        ? conversations.filter((c) =>
-            (c.title || "").toLowerCase().includes(trimmed)
-          )
+        ? conversations.filter((c) => (c.title || "").toLowerCase().includes(trimmed))
         : conversations,
     [conversations, trimmed]
   );
-  const groups = useMemo(() => groupConversations(filtered), [filtered]);
+  const groups = useMemo(() => groupConversations(titleMatches), [titleMatches]);
+
+  // Message-body matches (debounced server search over message content), keyed
+  // by conversation id with a snippet around the match.
+  const [bodyMatches, setBodyMatches] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setBodyMatches(new Map());
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { results?: { conversationId: string; snippet: string }[] };
+        setBodyMatches(new Map((data.results ?? []).map((r) => [r.conversationId, r.snippet])));
+      } catch {
+        /* aborted or offline — keep title matches only */
+      }
+    }, 250);
+    return () => {
+      ctrl.abort();
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  // Combined, de-duplicated search results: title matches first (no snippet),
+  // then body-only matches (with a snippet), resolving each id to its thread.
+  const searchResults = useMemo(() => {
+    if (!searching) return [];
+    const byId = new Map(conversations.map((c) => [c.id, c]));
+    const seen = new Set<string>();
+    const out: { conversation: ConversationItem; snippet?: string }[] = [];
+    for (const c of titleMatches) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push({ conversation: c });
+    }
+    for (const [id, snippet] of bodyMatches) {
+      if (seen.has(id)) continue;
+      const c = byId.get(id);
+      if (!c) continue;
+      seen.add(id);
+      out.push({ conversation: c, snippet });
+    }
+    return out;
+  }, [searching, conversations, titleMatches, bodyMatches]);
 
   return (
     <aside
@@ -262,9 +313,30 @@ export function Sidebar({
             History
           </h2>
 
-          {filtered.length === 0 ? (
+          {searching ? (
+            searchResults.length === 0 ? (
+              <p className="px-2 py-1 text-xs text-sidebar-muted/80">
+                No chats match your search.
+              </p>
+            ) : (
+              <ul className="space-y-0.5">
+                {searchResults.map(({ conversation, snippet }) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    snippet={snippet}
+                    active={conversation.id === activeConversationId}
+                    onSelect={onSelectConversation}
+                    onRename={onRenameConversation}
+                    onPin={onPinConversation}
+                    onDelete={onDeleteConversation}
+                  />
+                ))}
+              </ul>
+            )
+          ) : conversations.length === 0 ? (
             <p className="px-2 py-1 text-xs text-sidebar-muted/80">
-              {trimmed ? "No chats match your search." : "Your conversations will appear here."}
+              Your conversations will appear here.
             </p>
           ) : (
             <div className="space-y-2">
@@ -358,6 +430,7 @@ function NavItem({
 function ConversationRow({
   conversation: c,
   active,
+  snippet,
   onSelect,
   onRename,
   onPin,
@@ -365,6 +438,8 @@ function ConversationRow({
 }: {
   conversation: ConversationItem;
   active: boolean;
+  /** When present (search results), a match snippet shown under the title. */
+  snippet?: string;
   onSelect?: (id: string) => void;
   onRename?: (id: string) => void;
   onPin?: (id: string, pinned: boolean) => void;
@@ -376,14 +451,19 @@ function ConversationRow({
         type="button"
         onClick={() => onSelect?.(c.id)}
         className={cn(
-          "flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 pr-16 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-1.5 pr-16 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           active
             ? "bg-white/[0.12] text-sidebar-foreground"
             : "text-sidebar-foreground/85 hover:bg-white/[0.07]"
         )}
       >
-        {c.pinned && <Pin size={12} className="shrink-0 text-accent" aria-hidden />}
-        <span className="truncate">{c.title || "Untitled"}</span>
+        <span className="flex items-center gap-1.5">
+          {c.pinned && <Pin size={12} className="shrink-0 text-accent" aria-hidden />}
+          <span className="truncate">{c.title || "Untitled"}</span>
+        </span>
+        {snippet && (
+          <span className="truncate text-xs text-sidebar-muted/80">{snippet}</span>
+        )}
       </button>
 
       {/* Hover / focus-within affordances. A dark-rail-tuned control set. */}

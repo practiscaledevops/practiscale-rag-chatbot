@@ -86,8 +86,9 @@ export function TopBar({
 }
 
 /**
- * Token meter for the current session. Shows the running token count and a thin
- * budget bar; the tooltip breaks out the most recent turn and the soft budget.
+ * Token meter for the current month. Seeded from the user's persisted
+ * month-to-date usage and incremented live per turn; the tooltip breaks out the
+ * most recent turn and the soft budget.
  */
 function UsageMeter({ usage }: { usage: UsageState }) {
   const { sessionTokens, lastTurnTokens, budget } = usage;
@@ -99,7 +100,7 @@ function UsageMeter({ usage }: { usage: UsageState }) {
   return (
     <div
       className="flex items-center gap-2"
-      title={`${sessionTokens.toLocaleString()} tokens this session · last turn ${lastTurnTokens.toLocaleString()} · soft budget ${budget.toLocaleString()}`}
+      title={`${sessionTokens.toLocaleString()} tokens this month · last turn ${lastTurnTokens.toLocaleString()} · soft budget ${budget.toLocaleString()}`}
     >
       <span className="hidden tabular-nums text-xs font-medium text-muted-foreground sm:inline">
         {sessionTokens.toLocaleString()}
@@ -108,7 +109,7 @@ function UsageMeter({ usage }: { usage: UsageState }) {
       <div
         className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted sm:block"
         role="progressbar"
-        aria-label="Session token usage"
+        aria-label="Monthly token usage"
         aria-valuenow={Math.round(pct)}
         aria-valuemin={0}
         aria-valuemax={100}

@@ -36,6 +36,8 @@ export interface AppChromeProps {
   firstName?: string;
   /** Whether to surface the Admin link (role resolved server-side). */
   isAdmin?: boolean;
+  /** Tokens the user has already spent this month, for the persisted meter. */
+  initialTokens?: number;
   children: React.ReactNode;
 }
 
@@ -76,6 +78,7 @@ export function AppChrome({
   models = [],
   firstName = "",
   isAdmin = false,
+  initialTokens = 0,
   children,
 }: AppChromeProps) {
   const router = useRouter();
@@ -202,6 +205,7 @@ export function AppChrome({
         models={models}
         firstName={firstName}
         isAdmin={isAdmin}
+        initialTokens={initialTokens}
         title={activeTitle}
         onNewChat={handleNewChat}
         onNewProject={() => setProjectOpen(true)}

@@ -161,6 +161,8 @@ export interface AppShellProps
   title?: string | null;
   firstName?: string;
   isAdmin?: boolean;
+  /** Tokens already spent this month (persisted), used to seed the meter. */
+  initialTokens?: number;
 }
 
 /**
@@ -179,6 +181,7 @@ export function AppShell({
   title = null,
   firstName = "",
   isAdmin = false,
+  initialTokens = 0,
   onNewChat,
   onNewProject,
   onSelectProject,
@@ -193,8 +196,10 @@ export function AppShell({
   const [selection, setSelection] = useState<ModelOption>(() =>
     tierPreset(initialTier)
   );
+  // Seed with the user's persisted month-to-date tokens so the meter reflects
+  // real cumulative usage across reloads; live turns add on top of it.
   const [usage, setUsage] = useState<UsageState>({
-    sessionTokens: 0,
+    sessionTokens: Math.max(0, initialTokens),
     lastTurnTokens: 0,
     budget: 200_000,
   });
