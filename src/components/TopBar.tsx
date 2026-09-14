@@ -3,6 +3,7 @@
 import { Menu, PanelLeftOpen, Sparkles } from "lucide-react";
 import type { ModelOption, UsageState } from "@/components/AppShell";
 import { ModelSelector } from "@/components/ModelSelector";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,7 @@ export function TopBar({
 
       <div className="flex items-center gap-2 sm:gap-3">
         <UsageMeter usage={usage} />
+        <NotificationsBell />
         <ModelSelector
           selection={selection}
           options={options}

@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { notifyAdmins } from "@/lib/notifications";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -54,5 +55,21 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  // QA loop: a thumbs-DOWN is worth an admin's attention. Notify admins (never
+  // the rater themselves). Best-effort and non-blocking.
+  if (d.rating === "down") {
+    const snippet = d.prompt?.replace(/\s+/g, " ").trim().slice(0, 140);
+    void notifyAdmins(
+      {
+        category: "action",
+        title: "Answer rated not helpful",
+        body: snippet ? `Prompt: “${snippet}”` : undefined,
+        href: "/admin/feedback",
+      },
+      user.id
+    );
+  }
+
   return NextResponse.json({ ok: true });
 }
