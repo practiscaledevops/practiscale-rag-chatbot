@@ -16,6 +16,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  Loader2,
   Mail,
   PanelRight,
   Pencil,
@@ -42,6 +43,15 @@ import {
   type OutputType,
 } from "@/lib/output-types";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
+import {
+  exportMarkdown,
+  exportCsv,
+  exportXlsx,
+  exportDocx,
+  exportPdf,
+  tablesFrom,
+  type ExportMessage,
+} from "@/lib/export-doc";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
 
@@ -550,23 +560,34 @@ export function ChatView({
     [mode]
   );
 
-  // Export the conversation as a Markdown file.
-  const exportChat = useCallback(() => {
-    if (messages.length === 0) return;
-    const body = messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => `## ${m.role === "user" ? "You" : "Assistant"}\n\n${parseOptions(m.content).text}`)
-      .join("\n\n---\n\n");
-    const doc = `# ${title || "Conversation"}\n\n${body}\n`;
-    const url = URL.createObjectURL(new Blob([doc], { type: "text/markdown" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(title || "conversation").replace(/[^\w-]+/g, "-").slice(0, 60) || "conversation"}.md`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, [messages, title]);
+  // Export the conversation in a chosen format. The heavy libraries (docx/jspdf/
+  // xlsx) load on demand inside the exporters, so they never bloat the bundle.
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
+  const exportAs = useCallback(
+    async (fmt: ExportFormat) => {
+      if (messages.length === 0 || exporting) return;
+      const turns = messages as unknown as ExportMessage[];
+      setExporting(fmt);
+      try {
+        if (fmt === "md") exportMarkdown(title, turns);
+        else if (fmt === "csv") exportCsv(title, turns);
+        else if (fmt === "xlsx") await exportXlsx(title, turns);
+        else if (fmt === "docx") await exportDocx(title, turns);
+        else if (fmt === "pdf") await exportPdf(title, turns);
+      } catch (e) {
+        console.error("[export] failed:", e);
+      } finally {
+        setExporting(null);
+      }
+    },
+    [messages, title, exporting]
+  );
+  // Whether the current conversation contains any table (enables CSV/Excel of
+  // the actual data rather than a plain transcript).
+  const hasTables = useMemo(
+    () => tablesFrom(messages as unknown as ExportMessage[]).length > 0,
+    [messages]
+  );
 
   // --- Feedback (thumbs up/down) for the QA loop ------------------------
   const [feedback, setFeedback] = useState<Record<string, "up" | "down">>({});
@@ -956,14 +977,7 @@ export function ChatView({
                     {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={exportChat}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Download size={13} />
-                  Export
-                </button>
+                <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
               </div>
             </div>
           </div>
@@ -1177,6 +1191,97 @@ function EditBox({
 }
 
 /** Regenerate the last answer — same model on click, or pick another from the menu. */
+/** Export formats the composer bar offers. */
+type ExportFormat = "md" | "pdf" | "docx" | "csv" | "xlsx";
+
+/** Dropdown that exports the conversation in one of several formats. */
+function ExportMenu({
+  onExport,
+  exporting,
+  hasTables,
+}: {
+  onExport: (fmt: ExportFormat) => void;
+  exporting: ExportFormat | null;
+  hasTables: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const items: { fmt: ExportFormat; label: string; note?: string }[] = [
+    { fmt: "pdf", label: "PDF" },
+    { fmt: "docx", label: "Word (.docx)" },
+    { fmt: "md", label: "Markdown" },
+    { fmt: "csv", label: "CSV", note: hasTables ? "tables" : "transcript" },
+    { fmt: "xlsx", label: "Excel (.xlsx)", note: hasTables ? "tables" : "transcript" },
+  ];
+
+  return (
+    <div className="relative inline-flex items-center" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {exporting ? (
+          <Loader2 size={13} className="animate-spin" aria-hidden />
+        ) : (
+          <Download size={13} aria-hidden />
+        )}
+        Export
+        <ChevronDown size={12} aria-hidden />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full right-0 z-30 mb-1 w-52 rounded-xl border border-border bg-surface p-1 shadow-soft-lg"
+        >
+          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Export as
+          </p>
+          {items.map((it) => (
+            <button
+              key={it.fmt}
+              type="button"
+              role="menuitem"
+              disabled={!!exporting}
+              onClick={() => {
+                setOpen(false);
+                onExport(it.fmt);
+              }}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            >
+              <span>{it.label}</span>
+              {it.note && (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {it.note}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RegenerateMenu({
   options,
   onRegenerate,
