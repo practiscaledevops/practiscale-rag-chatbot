@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import type { ModelTier } from "@/lib/brain";
 import type { BrainModel } from "@/lib/models";
+import { WORK_MODES, DEFAULT_MODE, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
 import { Sidebar, type SidebarProps } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 
@@ -122,6 +123,11 @@ interface AppShellContextValue {
   firstName: string;
   /** Whether the user may see the Admin link. */
   isAdmin: boolean;
+  /** Active work mode (persona), forwarded to /api/chat. */
+  mode: WorkMode;
+  setMode: (m: WorkMode) => void;
+  /** Work modes this user is allowed to select (restricted ones need admin). */
+  modeDefs: WorkModeDef[];
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -219,13 +225,21 @@ export function AppShell({
     []
   );
 
+  // Work mode (persona). Restricted modes are gated by role: the API downgrades
+  // a disallowed mode, and here we only offer the ones this user may use.
+  const modeDefs = useMemo(
+    () => WORK_MODES.filter((m) => isAdmin || !m.restricted),
+    [isAdmin]
+  );
+  const [mode, setMode] = useState<WorkMode>(DEFAULT_MODE);
+
   // Responsive sidebar: a drawer on mobile, collapsible on desktop.
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   const value = useMemo<AppShellContextValue>(
-    () => ({ selection, setSelection, options, usage, addUsage, firstName, isAdmin }),
-    [selection, options, usage, addUsage, firstName, isAdmin]
+    () => ({ selection, setSelection, options, usage, addUsage, firstName, isAdmin, mode, setMode, modeDefs }),
+    [selection, options, usage, addUsage, firstName, isAdmin, mode, modeDefs]
   );
 
   return (
@@ -245,6 +259,9 @@ export function AppShell({
           conversations={conversations}
           activeConversationId={activeConversationId}
           isAdmin={isAdmin}
+          modes={modeDefs}
+          activeMode={mode}
+          onSelectMode={setMode}
           mobileOpen={mobileOpen}
           collapsed={collapsed}
           onCloseMobile={() => setMobileOpen(false)}

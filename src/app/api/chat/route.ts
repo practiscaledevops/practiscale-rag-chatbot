@@ -16,6 +16,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
+import { resolveMode } from "@/lib/work-modes";
 import {
   fetchBrainModels,
   filterModelsByPermissions,
@@ -49,6 +50,8 @@ const chatBodySchema = z.object({
   messages: z.array(chatMessageSchema).min(1).max(2000),
   tier: z.string().trim().max(64).optional(),
   model: z.string().trim().max(200).optional(),
+  // Persona/work mode — validated + role-gated server-side below.
+  mode: z.string().trim().max(32).optional(),
   conversationId: z.string().uuid().nullish(),
   conversation_id: z.string().uuid().nullish(),
 });
@@ -145,9 +148,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // 3. Call the Brain (scoped key stays server-side inside brainChat).
+  // 3. Resolve the work mode against the user's ROLE (restricted personas need
+  //    an admin/super_admin; a disallowed request silently downgrades to General
+  //    — the persona is enforced here, never trusted from the client alone).
+  const mode = resolveMode(parsed.data.mode, profile.role);
+
+  // 4. Call the Brain (scoped key stays server-side inside brainChat).
   const startedAt = Date.now();
-  const upstream = await brainChat(safeMessages, selection);
+  const upstream = await brainChat(safeMessages, selection, mode);
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");

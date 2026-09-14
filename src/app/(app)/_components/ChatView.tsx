@@ -15,6 +15,8 @@ import {
   SearchCheck,
   Sparkles,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   Wand2,
   X,
 } from "lucide-react";
@@ -62,6 +64,27 @@ const PILLS: { label: string; prompt: string }[] = [
 
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
 
+// Slash-command templates: type "/" in the composer to insert a parameterized
+// prompt. `template` is inserted into the input for the user to complete.
+interface SlashCommand {
+  name: string;
+  hint: string;
+  template: string;
+}
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: "ad", hint: "Write ad copy", template: "Write ad copy for: " },
+  { name: "caption", hint: "Instagram caption", template: "Write an Instagram caption about: " },
+  { name: "carousel", hint: "10 carousel ideas", template: "Create 10 carousel ideas from this: " },
+  { name: "quotes", hint: "10 standalone quotes", template: "Extract 10 short, standalone quotes from this: " },
+  { name: "hooks", hint: "5 short-form hooks", template: "Write 5 scroll-stopping hooks for: " },
+  { name: "video-ideas", hint: "5 follow-up video ideas", template: "Give me 5 follow-up video ideas based on: " },
+  { name: "email", hint: "Draft an email", template: "Draft a short, on-brand email that " },
+  { name: "objection", hint: "Handle a sales objection", template: "How should a consultant handle this objection: " },
+  { name: "summarize-call", hint: "Summarize call scores", template: "Summarize the key patterns across our recent call scores, with the top fixes." },
+  { name: "brief", hint: "Creative brief", template: "Create a creative brief for: " },
+  { name: "decision", hint: "Decision memo", template: "Write a decision memo on: " },
+];
+
 /** A retrieved source the Brain streamed for the current answer. */
 interface SourceItem {
   id: string;
@@ -103,14 +126,15 @@ export function ChatView({
   initialTier,
   initialMessages,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName } = useAppShell();
+  const { selection, setSelection, options, addUsage, firstName, mode } = useAppShell();
 
   // What we forward to the Brain as `model`. We send it under both `model`
   // (the forward-looking field) and `tier` (which the current /api/chat reads
   // and forwards straight through), so the selection takes effect either way.
+  // `mode` is the persona/work mode (role-gated server-side).
   const chatBody = useMemo(
-    () => ({ model: selection.value, tier: selection.value }),
-    [selection.value]
+    () => ({ model: selection.value, tier: selection.value, mode }),
+    [selection.value, mode]
   );
 
   const {
@@ -298,9 +322,9 @@ export function ChatView({
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value } });
+      reload({ body: { model: value, tier: value, mode } });
     },
-    [options, setSelection, reload, setData]
+    [options, setSelection, reload, setData, mode]
   );
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
@@ -310,8 +334,8 @@ export function ChatView({
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value } });
-  }, [setSelection, reload, setData]);
+    reload({ body: { model: rec.value, tier: rec.value, mode } });
+  }, [setSelection, reload, setData, mode]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
@@ -388,6 +412,30 @@ export function ChatView({
     }
   }, []);
 
+  // --- Feedback (thumbs up/down) for the QA loop ------------------------
+  const [feedback, setFeedback] = useState<Record<string, "up" | "down">>({});
+  const sendFeedback = useCallback(
+    (message: Message, idx: number, rating: "up" | "down") => {
+      setFeedback((f) => ({ ...f, [message.id]: rating }));
+      const prior = messages[idx - 1];
+      void fetch("/api/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rating,
+          conversationId: conversationIdRef.current,
+          content: message.content?.slice(0, 20000),
+          prompt: prior?.role === "user" ? prior.content?.slice(0, 20000) : undefined,
+          mode,
+          model: selection.value,
+        }),
+      }).catch(() => {
+        /* best-effort; the optimistic state stays */
+      });
+    },
+    [messages, mode, selection.value]
+  );
+
   const empty = messages.length === 0;
   const lastIndex = messages.length - 1;
 
@@ -410,6 +458,7 @@ export function ChatView({
       onSubmit={onFormSubmit}
       busy={busy}
       onStop={stop}
+      onSlashSelect={prefill}
     />
   );
 
@@ -564,6 +613,32 @@ export function ChatView({
                                 <Copy size={14} />
                               )}
                             </IconButton>
+                            {m.content.trim() && (
+                              <>
+                                <IconButton
+                                  aria-label="Good response"
+                                  size="sm"
+                                  onClick={() => sendFeedback(m, idx, "up")}
+                                  className={feedback[m.id] === "up" ? "text-success" : undefined}
+                                >
+                                  <ThumbsUp
+                                    size={14}
+                                    className={feedback[m.id] === "up" ? "fill-current" : ""}
+                                  />
+                                </IconButton>
+                                <IconButton
+                                  aria-label="Bad response"
+                                  size="sm"
+                                  onClick={() => sendFeedback(m, idx, "down")}
+                                  className={feedback[m.id] === "down" ? "text-danger" : undefined}
+                                >
+                                  <ThumbsDown
+                                    size={14}
+                                    className={feedback[m.id] === "down" ? "fill-current" : ""}
+                                  />
+                                </IconButton>
+                              </>
+                            )}
                             {idx === lastIndex && !busy && (
                               <RegenerateMenu
                                 options={options}
@@ -669,6 +744,7 @@ function Composer({
   onSubmit,
   busy,
   onStop,
+  onSlashSelect,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -677,9 +753,80 @@ function Composer({
   onSubmit: (e: React.FormEvent) => void;
   busy: boolean;
   onStop: () => void;
+  onSlashSelect: (text: string) => void;
 }) {
+  const [active, setActive] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+
+  // Slash menu is open when the input is a bare "/word" (no space yet).
+  const m = /^\/([\w-]*)$/.exec(value);
+  const matches = m ? SLASH_COMMANDS.filter((c) => c.name.startsWith(m[1].toLowerCase())) : [];
+  const slashOpen = matches.length > 0 && !dismissed;
+  const activeIdx = Math.min(active, matches.length - 1);
+
+  const select = (cmd: SlashCommand) => {
+    setActive(0);
+    setDismissed(false);
+    onSlashSelect(cmd.template);
+  };
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (slashOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActive((a) => (a + 1) % matches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive((a) => (a - 1 + matches.length) % matches.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        select(matches[activeIdx]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDismissed(true);
+        return;
+      }
+    }
+    onKeyDown(e);
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    if (dismissed) setDismissed(false);
+    setActive(0);
+    onChange(e);
+  }
+
   return (
-    <form onSubmit={onSubmit}>
+    <form onSubmit={onSubmit} className="relative">
+      {slashOpen && (
+        <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg">
+          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Templates
+          </p>
+          {matches.map((cmd, i) => (
+            <button
+              key={cmd.name}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => select(cmd)}
+              onMouseMove={() => setActive(i)}
+              className={cn(
+                "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
+                i === activeIdx ? "bg-surface-muted" : "hover:bg-surface-muted"
+              )}
+            >
+              <span className="font-medium text-foreground">/{cmd.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{cmd.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-soft transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
         <label htmlFor="chat-input" className="sr-only">
           Message the assistant
@@ -688,10 +835,10 @@ function Composer({
           id="chat-input"
           ref={textareaRef}
           value={value}
-          onChange={onChange}
-          onKeyDown={onKeyDown}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
           rows={1}
-          placeholder="Message the assistant…"
+          placeholder="Message the assistant…  (type / for templates)"
           className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
         {busy ? (

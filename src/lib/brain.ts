@@ -45,7 +45,8 @@ function authHeaders(): Record<string, string> {
  */
 export async function brainChat(
   messages: BrainMessage[],
-  model?: ModelSelection
+  model?: ModelSelection,
+  mode?: string
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -53,6 +54,8 @@ export async function brainChat(
     body: JSON.stringify({
       messages,
       model: model ?? process.env.DEFAULT_MODEL_TIER ?? "recommended",
+      // Persona overlay (resolved + gated server-side in this app's /api/chat).
+      ...(mode ? { mode } : {}),
     }),
   });
 }
