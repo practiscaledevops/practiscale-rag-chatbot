@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Brand";
@@ -34,6 +34,15 @@ function LoginForm() {
   const [password, setPassword] = useState(demo ? "demo" : "");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Second-factor step: set once a password sign-in needs an authenticator code.
+  const [mfa, setMfa] = useState<{ factorId: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+
+  function complete() {
+    // Full navigation so Server Components re-read the fresh session cookie.
+    router.replace(redirectedFrom);
+    router.refresh();
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,8 +51,7 @@ function LoginForm() {
 
     // In demo mode any credentials work — go straight to the workspace.
     if (demo) {
-      router.replace(redirectedFrom);
-      router.refresh();
+      complete();
       return;
     }
 
@@ -56,9 +64,56 @@ function LoginForm() {
       return;
     }
 
-    // Full navigation so Server Components re-read the fresh session cookie.
-    router.replace(redirectedFrom);
-    router.refresh();
+    // If the account has a verified authenticator, Supabase raises the required
+    // assurance level to aal2 — collect the second factor before proceeding.
+    try {
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal && aal.nextLevel === "aal2" && aal.nextLevel !== aal.currentLevel) {
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totp = factors?.totp?.[0];
+        if (totp) {
+          setMfa({ factorId: totp.id });
+          setMfaCode("");
+          setPending(false);
+          return;
+        }
+      }
+    } catch {
+      /* if the AAL check fails, fall through — the session is already aal1 */
+    }
+
+    complete();
+  }
+
+  async function onSubmitMfa(e: React.FormEvent) {
+    e.preventDefault();
+    if (!mfa || mfaCode.trim().length < 6) return;
+    setError(null);
+    setPending(true);
+
+    const supabase = createSupabaseBrowserClient();
+    try {
+      const challenge = await supabase.auth.mfa.challenge({ factorId: mfa.factorId });
+      if (challenge.error || !challenge.data) {
+        setError(challenge.error?.message || "Couldn't verify the code. Try again.");
+        setPending(false);
+        return;
+      }
+      const { error } = await supabase.auth.mfa.verify({
+        factorId: mfa.factorId,
+        challengeId: challenge.data.id,
+        code: mfaCode.trim(),
+      });
+      if (error) {
+        setError(error.message || "That code didn't match. Try again.");
+        setPending(false);
+        return;
+      }
+      complete();
+    } catch {
+      setError("Couldn't verify the code. Try again.");
+      setPending(false);
+    }
   }
 
   return (
@@ -75,12 +130,59 @@ function LoginForm() {
             <Logo variant="light" className="h-8 dark:hidden" />
             <Logo variant="dark" className="hidden h-8 dark:block" />
             <p className="mt-4 text-sm text-muted-foreground">
-              {demo
-                ? "Demo mode — any credentials work. Just press Sign in."
-                : "Sign in to continue to your workspace."}
+              {mfa
+                ? "Enter the 6-digit code from your authenticator app."
+                : demo
+                  ? "Demo mode — any credentials work. Just press Sign in."
+                  : "Sign in to continue to your workspace."}
             </p>
           </div>
 
+          {mfa ? (
+            <form onSubmit={onSubmitMfa} className="space-y-4" noValidate>
+              <div className="space-y-1.5">
+                <label htmlFor="mfa-code" className="flex items-center gap-1.5 text-sm font-medium">
+                  <ShieldCheck size={14} className="text-accent" />
+                  Verification code
+                </label>
+                <input
+                  id="mfa-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-center font-mono text-lg tracking-[0.4em] outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40"
+                />
+              </div>
+
+              {error && (
+                <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {error}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                disabled={pending || mfaCode.length < 6}
+                className="w-full bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
+              >
+                {pending ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Verifying…
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} />
+                    Verify
+                  </>
+                )}
+              </Button>
+            </form>
+          ) : (
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="email" className="block text-sm font-medium">
@@ -139,6 +241,7 @@ function LoginForm() {
               )}
             </Button>
           </form>
+          )}
         </div>
       </div>
     </main>

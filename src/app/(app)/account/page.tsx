@@ -5,6 +5,7 @@ import { getUser } from "@/lib/auth";
 import { getSessionProfile } from "@/lib/admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { AccountClient } from "./AccountClient";
+import { MfaSection } from "./MfaSection";
 
 export const metadata: Metadata = { title: "Account · Practiscale" };
 
@@ -212,6 +213,9 @@ export default async function AccountPage() {
               )}
             </dl>
           </section>
+
+          {/* Security: two-factor authentication (self-managed). */}
+          <MfaSection />
 
           {/* Admin shortcut (only for admins) */}
           {isAdmin && (
