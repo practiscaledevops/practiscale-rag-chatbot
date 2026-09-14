@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignLeft,
   ArrowUp,
+  BarChart3,
   Check,
   ChevronDown,
   ChevronRight,
@@ -156,6 +157,7 @@ const TIER_FRIENDLY: Record<string, string> = {
 const OUTPUT_ICONS: Record<OutputType, typeof AlignLeft> = {
   answer: AlignLeft,
   table: Table,
+  chart: BarChart3,
   summary: List,
   checklist: ListChecks,
   steps: ListOrdered,

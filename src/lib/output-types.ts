@@ -6,6 +6,7 @@
 export type OutputType =
   | "answer"
   | "table"
+  | "chart"
   | "memo"
   | "email"
   | "checklist"
@@ -21,6 +22,7 @@ export interface OutputTypeDef {
 export const OUTPUT_TYPES: OutputTypeDef[] = [
   { id: "answer", label: "Answer", hint: "Free-form response" },
   { id: "table", label: "Table", hint: "Rows & columns" },
+  { id: "chart", label: "Chart", hint: "Chart-ready data table" },
   { id: "summary", label: "Summary", hint: "Headline + tight bullets" },
   { id: "checklist", label: "Checklist", hint: "Actionable items" },
   { id: "steps", label: "Steps", hint: "Numbered how-to" },

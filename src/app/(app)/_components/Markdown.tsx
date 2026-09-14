@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { CopyCodeButton } from "./CopyCodeButton";
+import { TableBlock } from "./TableBlock";
 
 // No "use client": this is a pure, hook-free renderer, so it stays a shared
 // component (rendered inside the client ChatView today, reusable server-side).
@@ -118,8 +119,10 @@ function renderTextBlocks(
         i++;
       }
       const key = `${keyBase}-t${k++}`;
-      out.push(
-        <div key={key} className="overflow-x-auto">
+      // Raw (unformatted) cell strings, for charting the exact values shown.
+      const rawRows = rows.map((r) => header.map((_, ci) => (r[ci] ?? "").trim()));
+      const tableNode = (
+        <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border">
@@ -143,6 +146,9 @@ function renderTextBlocks(
             </tbody>
           </table>
         </div>
+      );
+      out.push(
+        <TableBlock key={key} table={tableNode} headers={header.map((h) => h.trim())} rows={rawRows} />
       );
       continue;
     }
