@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   Copy,
   Crown,
   Database,
@@ -615,6 +616,54 @@ export function ChatView({
     [messages, mode, selection.value]
   );
 
+  // --- Submit an answer for approval ------------------------------------
+  const [approvalFor, setApprovalFor] = useState<{ message: Message; idx: number } | null>(null);
+  const [approvalTitle, setApprovalTitle] = useState("");
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+
+  const openApproval = useCallback((message: Message, idx: number) => {
+    const firstLine =
+      parseOptions(message.content).text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+    setApprovalTitle(firstLine.replace(/^#+\s*/, "").slice(0, 120));
+    setApprovalError(null);
+    setApprovalFor({ message, idx });
+  }, []);
+
+  const submitApproval = useCallback(async () => {
+    if (!approvalFor || approvalBusy) return;
+    setApprovalBusy(true);
+    setApprovalError(null);
+    const { message, idx } = approvalFor;
+    const prior = messages[idx - 1];
+    try {
+      const res = await fetch("/api/approvals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: parseOptions(message.content).text.slice(0, 50000),
+          title: approvalTitle.trim() || undefined,
+          prompt: prior?.role === "user" ? prior.content?.slice(0, 20000) : undefined,
+          mode,
+          model: selection.value,
+          conversationId: conversationIdRef.current,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        setApprovalError(data.error || "Couldn't submit for approval. Try again.");
+        return;
+      }
+      setApprovedIds((prev) => new Set(prev).add(message.id));
+      setApprovalFor(null);
+    } catch {
+      setApprovalError("Couldn't submit for approval. Try again.");
+    } finally {
+      setApprovalBusy(false);
+    }
+  }, [approvalFor, approvalBusy, approvalTitle, messages, mode, selection.value]);
+
   const empty = messages.length === 0;
   const lastIndex = messages.length - 1;
 
@@ -646,6 +695,16 @@ export function ChatView({
       {isCeoMode && (
         <CeoMemoryModal open={memoryOpen} onClose={() => setMemoryOpen(false)} />
       )}
+      <ApprovalSubmitModal
+        open={!!approvalFor}
+        title={approvalTitle}
+        onTitleChange={setApprovalTitle}
+        busy={approvalBusy}
+        error={approvalError}
+        content={approvalFor ? parseOptions(approvalFor.message.content).text : ""}
+        onSubmit={submitApproval}
+        onClose={() => (approvalBusy ? undefined : setApprovalFor(null))}
+      />
       {empty ? (
         // -------- Empty state: centered greeting + composer + suggestions --
         <div className="flex-1 overflow-y-auto">
@@ -849,6 +908,19 @@ export function ChatView({
                                     size={14}
                                     className={feedback[m.id] === "down" ? "fill-current" : ""}
                                   />
+                                </IconButton>
+                                <IconButton
+                                  aria-label={approvedIds.has(m.id) ? "Submitted for approval" : "Submit for approval"}
+                                  size="sm"
+                                  disabled={approvedIds.has(m.id)}
+                                  onClick={() => openApproval(m, idx)}
+                                  className={approvedIds.has(m.id) ? "text-success" : undefined}
+                                >
+                                  {approvedIds.has(m.id) ? (
+                                    <Check size={14} />
+                                  ) : (
+                                    <ClipboardCheck size={14} />
+                                  )}
                                 </IconButton>
                               </>
                             )}
@@ -1579,6 +1651,66 @@ function EvidencePanel({
 }
 
 /** Editor for the executive's private memory (super-admin only, /api/ceo/memory). */
+/** Confirm + title an answer before submitting it to the approval queue. */
+function ApprovalSubmitModal({
+  open,
+  title,
+  onTitleChange,
+  content,
+  busy,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  onTitleChange: (v: string) => void;
+  content: string;
+  busy: boolean;
+  error: string | null;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} title="Submit for approval">
+      <p className="text-xs text-muted-foreground">
+        Send this answer to your workspace reviewers. You&apos;ll be notified when
+        it&apos;s approved or sent back.
+      </p>
+
+      <label className="mt-3 block text-xs font-medium text-muted-foreground">
+        Title
+        <input
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          placeholder="Short label for reviewers"
+          maxLength={120}
+          className="mt-1 w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </label>
+
+      <div className="mt-3">
+        <p className="mb-1 text-xs font-medium text-muted-foreground">Preview</p>
+        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-muted/60 p-2.5 text-xs text-foreground/90">
+          {content.slice(0, 2000) || "(empty)"}
+        </div>
+      </div>
+
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={onSubmit} disabled={busy || !content.trim()}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+          Submit
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);

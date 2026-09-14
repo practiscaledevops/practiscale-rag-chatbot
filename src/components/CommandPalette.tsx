@@ -16,6 +16,7 @@ import {
   Bug,
   User,
   MessagesSquare,
+  ClipboardCheck,
   CornerDownLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -104,6 +105,24 @@ export function CommandPalette({
           run: () => go(() => router.push("/admin/rag")),
         }
       );
+    }
+    cmds.push({
+      id: "my-approvals",
+      label: "My approvals",
+      hint: "Submissions & status",
+      group: "Navigate",
+      icon: ClipboardCheck,
+      run: () => go(() => router.push("/approvals")),
+    });
+    if (isAdmin) {
+      cmds.push({
+        id: "admin-approvals",
+        label: "Approvals queue",
+        hint: "Review submissions",
+        group: "Navigate",
+        icon: ClipboardCheck,
+        run: () => go(() => router.push("/admin/approvals")),
+      });
     }
     cmds.push({
       id: "account",
