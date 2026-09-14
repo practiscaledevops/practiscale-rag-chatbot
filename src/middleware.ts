@@ -65,8 +65,35 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Authenticated user hitting the login page -> send them into the app.
-  if (user && pathname === "/login") {
+  // MFA step-up: an authenticated user who has enrolled a second factor but has
+  // only completed the first (aal1) must finish the challenge before reaching the
+  // app. This ONLY affects users who chose to enroll MFA — anyone without a
+  // verified factor stays at aal1==aal1 and is untouched. FAIL OPEN: any error in
+  // the check is treated as "no step-up needed", so a hiccup can never lock users
+  // out of the app.
+  let needsMfa = false;
+  if (user) {
+    try {
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      needsMfa = !!aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal2";
+    } catch {
+      needsMfa = false;
+    }
+  }
+
+  // Needs MFA + on a protected route -> bounce to /login to complete the second
+  // factor (the login page detects the pending step-up and shows the code form).
+  if (user && needsMfa && !isPublic) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("redirectedFrom", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Authenticated user hitting the login page -> send them into the app, UNLESS a
+  // second factor is still pending (then let them stay on /login to complete it,
+  // otherwise they'd bounce between /login and the app).
+  if (user && !needsMfa && pathname === "/login") {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";

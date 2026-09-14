@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -41,6 +41,49 @@ function LoginForm() {
   function complete() {
     // Full navigation so Server Components re-read the fresh session cookie.
     router.replace(redirectedFrom);
+    router.refresh();
+  }
+
+  // If the user arrives with a session that has a SECOND factor still pending
+  // (e.g. the middleware bounced them here from a protected route, or they
+  // reloaded mid-challenge), jump straight to the code step.
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (!aal || aal.currentLevel !== "aal1" || aal.nextLevel !== "aal2") return;
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totp = factors?.totp?.[0];
+        if (totp && !cancelled) {
+          setMfa({ factorId: totp.id });
+          setMfaCode("");
+        }
+      } catch {
+        /* no pending step-up, or MFA unavailable — show the password form */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
+
+  // Escape hatch from the code step: drop the half-authenticated (aal1) session
+  // and return to the password form, so a user is never trapped on this screen.
+  async function cancelMfa() {
+    setPending(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } catch {
+      /* ignore — we still reset the UI below */
+    }
+    setMfa(null);
+    setMfaCode("");
+    setError(null);
+    setPending(false);
     router.refresh();
   }
 
@@ -181,6 +224,15 @@ function LoginForm() {
                   </>
                 )}
               </Button>
+
+              <button
+                type="button"
+                onClick={cancelMfa}
+                disabled={pending}
+                className="w-full text-center text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
+              >
+                Use a different account
+              </button>
             </form>
           ) : (
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
