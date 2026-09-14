@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
+  Bug,
   Building2,
   LayoutDashboard,
   Loader2,
@@ -55,6 +56,7 @@ const NAV: ReadonlyArray<NavItem> = [
   { href: "/admin/teams", label: "Teams", icon: Building2 },
   { href: "/admin/usage", label: "Usage & Cost", icon: BarChart3 },
   { href: "/admin/feedback", label: "Feedback & QA", icon: MessageSquareText },
+  { href: "/admin/rag", label: "RAG debugger", icon: Bug },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];

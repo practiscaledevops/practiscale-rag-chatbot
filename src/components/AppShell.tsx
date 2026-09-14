@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -13,6 +14,7 @@ import type { BrainModel } from "@/lib/models";
 import { allowedModeDefs, DEFAULT_MODE, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
 import { Sidebar, type SidebarProps } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { CommandPalette } from "@/components/CommandPalette";
 
 // ---------------------------------------------------------------------------
 // Model selection
@@ -274,6 +276,19 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  // Command palette (⌘K / Ctrl+K). Global toggle from anywhere in the shell.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const value = useMemo<AppShellContextValue>(
     () => ({ selection, setSelection, options, usage, addUsage, firstName, isAdmin, mode, setMode, modeDefs }),
     [selection, options, usage, addUsage, firstName, isAdmin, mode, modeDefs]
@@ -327,6 +342,20 @@ export function AppShell({
           <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
         </div>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        isAdmin={isAdmin}
+        conversations={conversations}
+        modeDefs={modeDefs}
+        activeMode={mode}
+        onSelectMode={setMode}
+        options={options}
+        onSelectModel={setSelection}
+        onNewChat={onNewChat ?? (() => router.push("/"))}
+        onSelectConversation={onSelectConversation}
+      />
     </AppShellContext.Provider>
   );
 }

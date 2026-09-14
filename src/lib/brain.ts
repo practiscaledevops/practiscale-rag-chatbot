@@ -98,3 +98,70 @@ export async function brainRetrieve(query: string, matchCount = 8) {
   if (!res.ok) throw new Error(`Brain retrieve failed: ${res.status}`);
   return res.json();
 }
+
+/** One retrieved chunk as the RAG debugger renders it. */
+export interface DebugRetrievedItem {
+  id: string;
+  content: string;
+  source_type: string | null;
+  document_id: string;
+  score: number | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface DebugRetrieveResult {
+  ok: boolean;
+  status: number;
+  /** Effective (possibly rewritten) query the Brain searched. */
+  query?: string;
+  rewritten?: boolean;
+  confidence?: number | null;
+  results: DebugRetrievedItem[];
+  /** Set when ok is false — a human-readable reason (e.g. missing capability). */
+  error?: string;
+}
+
+/**
+ * Retrieval for the admin RAG debugger — never throws; returns the status and a
+ * readable error so the UI can explain (e.g. the scoped key lacks the "retrieve"
+ * capability). Requests NO parent expansion so the reranker scores survive.
+ */
+export async function brainRetrieveDebug(
+  query: string,
+  matchCount = 12
+): Promise<DebugRetrieveResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${BRAIN_URL}/api/v1/retrieve`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ query, matchCount, expandParents: false }),
+    });
+  } catch (e) {
+    return { ok: false, status: 0, results: [], error: (e as Error).message };
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const error =
+      res.status === 403
+        ? "The Brain API key isn't allowed to use retrieval (needs the 'retrieve' capability)."
+        : `Brain retrieve failed (${res.status}). ${detail}`.trim();
+    return { ok: false, status: res.status, results: [], error };
+  }
+
+  const json = (await res.json().catch(() => ({}))) as {
+    query?: string;
+    rewritten?: boolean;
+    confidence?: number | null;
+    results?: DebugRetrievedItem[];
+  };
+  return {
+    ok: true,
+    status: res.status,
+    query: json.query,
+    rewritten: json.rewritten,
+    confidence: json.confidence ?? null,
+    results: Array.isArray(json.results) ? json.results : [],
+  };
+}
