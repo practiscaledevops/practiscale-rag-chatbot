@@ -11,6 +11,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  MessageSquareText,
   Settings,
   Users,
   X,
@@ -52,6 +53,7 @@ const NAV: ReadonlyArray<NavItem> = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/teams", label: "Teams", icon: Building2 },
   { href: "/admin/usage", label: "Usage & Cost", icon: BarChart3 },
+  { href: "/admin/feedback", label: "Feedback & QA", icon: MessageSquareText },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
