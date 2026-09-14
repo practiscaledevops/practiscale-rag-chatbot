@@ -29,6 +29,7 @@ import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
+import { WORK_MODES, DEFAULT_MODE } from "@/lib/work-modes";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
@@ -106,6 +107,21 @@ interface SourceItem {
   /** ISO date of the source document, for a freshness indicator. */
   date?: string | null;
   snippet?: string;
+}
+
+/**
+ * Turn a retrieval confidence in [0,1] into a human label + tone. High confidence
+ * means the knowledge base clearly covered the question; low means the answer
+ * leaned on weak matches and should be read with more caution.
+ */
+function confidenceMeta(
+  c: number | null | undefined
+): { label: string; tone: "high" | "medium" | "low"; pct: number } | null {
+  if (typeof c !== "number" || !Number.isFinite(c)) return null;
+  const pct = Math.round(Math.max(0, Math.min(1, c)) * 100);
+  if (pct >= 66) return { label: "High confidence", tone: "high", pct };
+  if (pct >= 33) return { label: "Medium confidence", tone: "medium", pct };
+  return { label: "Low confidence", tone: "low", pct };
 }
 
 /** "Updated 3 days ago" style label from an ISO date, or null. */
@@ -212,17 +228,19 @@ export function ChatView({
     let label: string | null = null;
     let sourcesCount: number | null = null;
     let sources: SourceItem[] = [];
+    let confidence: number | null = null;
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
       if (it?.type === "sources" && Array.isArray(it.sources)) {
         sources = (it.sources as SourceItem[]).filter((s) => s && typeof s.id === "string");
         sourcesCount = sources.length;
+        if (typeof it.confidence === "number") confidence = it.confidence as number;
       }
       if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount, sources };
+    return { label, sourcesCount, sources, confidence };
   }, [data]);
 
   // Track the persisted id in a ref so the first save of a new chat can flip it
@@ -447,6 +465,12 @@ export function ChatView({
   // Executive (CEO) private-memory editor.
   const [memoryOpen, setMemoryOpen] = useState(false);
   const isCeoMode = mode === "ceo";
+  // The active work-mode def, for the visible composer chip (so the user can
+  // always see which persona a message will be sent in).
+  const modeDef = useMemo(
+    () => WORK_MODES.find((m) => m.id === mode) ?? WORK_MODES.find((m) => m.id === DEFAULT_MODE)!,
+    [mode]
+  );
 
   // Export the conversation as a Markdown file.
   const exportChat = useCallback(() => {
@@ -807,6 +831,29 @@ export function ChatView({
           {/* Docked composer */}
           <div className="border-t border-border bg-background/80 backdrop-blur">
             <div className="mx-auto w-full max-w-3xl px-4 py-3">
+              {/* Active work-mode chip — always visible so the user knows which
+                  persona this message is sent in (backend enforces it). */}
+              <div className="mb-2 flex items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
+                    mode === "ceo"
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : mode === "general"
+                        ? "border-border bg-surface-muted text-muted-foreground"
+                        : "border-accent/30 bg-accent/5 text-foreground"
+                  )}
+                  title={`Answering in ${modeDef.label} mode — ${modeDef.hint}. Change it from the Work Mode menu in the sidebar.`}
+                >
+                  {mode === "ceo" ? <Crown size={12} /> : <Sparkles size={12} />}
+                  {modeDef.label} mode
+                </span>
+                {mode !== "general" && (
+                  <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                    {modeDef.hint}
+                  </span>
+                )}
+              </div>
               {composer}
               <div className="mt-2 flex items-center justify-center gap-3 text-xs text-muted-foreground">
                 <span className="hidden sm:inline">
@@ -838,6 +885,7 @@ export function ChatView({
             <EvidencePanel
               count={activity.sourcesCount ?? 0}
               sources={activity.sources}
+              confidence={activity.confidence}
               onClose={() => setEvidenceOpen(false)}
             />
           )}
@@ -1254,12 +1302,15 @@ function OptionsPicker({
 function EvidencePanel({
   count,
   sources,
+  confidence,
   onClose,
 }: {
   count: number;
   sources: SourceItem[];
+  confidence?: number | null;
   onClose: () => void;
 }) {
+  const conf = confidenceMeta(confidence);
   return (
     <aside
       aria-label="Evidence"
@@ -1276,6 +1327,29 @@ function EvidencePanel({
           </IconButton>
         </div>
       </div>
+      {conf && (
+        <div
+          className={cn(
+            "flex items-center gap-2 border-b border-border px-4 py-2 text-[11px] font-medium",
+            conf.tone === "high" && "text-emerald-600 dark:text-emerald-400",
+            conf.tone === "medium" && "text-amber-600 dark:text-amber-400",
+            conf.tone === "low" && "text-rose-600 dark:text-rose-400"
+          )}
+          title="How well the retrieved sources matched your question. Low confidence means the answer leaned on weaker matches — verify before relying on it."
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              conf.tone === "high" && "bg-emerald-500",
+              conf.tone === "medium" && "bg-amber-500",
+              conf.tone === "low" && "bg-rose-500"
+            )}
+          />
+          {conf.label}
+          <span className="text-muted-foreground/70">· {conf.pct}% match</span>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {sources.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
