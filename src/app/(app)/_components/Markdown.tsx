@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { CopyCodeButton } from "./CopyCodeButton";
 
 // No "use client": this is a pure, hook-free renderer, so it stays a shared
@@ -155,6 +156,39 @@ function renderTextBlocks(
         i++;
       }
       const key = `${keyBase}-l${k++}`;
+      // GFM task list: every item is "[ ] …" or "[x] …" → render as a checklist.
+      const taskMatches = items.map((it) => /^\[( |x|X)\]\s+(.*)$/.exec(it));
+      const isTaskList = items.length > 0 && taskMatches.every(Boolean);
+
+      if (isTaskList) {
+        out.push(
+          <ul key={key} className="space-y-1.5">
+            {taskMatches.map((m, idx) => {
+              const checked = (m![1] ?? "").toLowerCase() === "x";
+              return (
+                <li key={`${key}-${idx}`} className="flex items-start gap-2">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px]",
+                      checked
+                        ? "border-accent bg-accent/15 text-accent"
+                        : "border-border text-transparent"
+                    )}
+                  >
+                    ✓
+                  </span>
+                  <span className={cn(checked && "text-muted-foreground line-through")}>
+                    {renderInline(m![2], `${key}-${idx}`, citeMap)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        );
+        continue;
+      }
+
       const inner = items.map((it, idx) => (
         <li key={`${key}-${idx}`}>{renderInline(it, `${key}-${idx}`, citeMap)}</li>
       ));

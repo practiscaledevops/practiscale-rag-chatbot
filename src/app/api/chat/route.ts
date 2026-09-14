@@ -55,6 +55,8 @@ const chatBodySchema = z.object({
   model: z.string().trim().max(200).optional(),
   // Persona/work mode — validated + role-gated server-side below.
   mode: z.string().trim().max(32).optional(),
+  // Response format (table/memo/email/…) — validated by the Brain; forwarded as-is.
+  outputType: z.string().trim().max(32).optional(),
   conversationId: z.string().uuid().nullish(),
   conversation_id: z.string().uuid().nullish(),
 });
@@ -198,7 +200,8 @@ export async function POST(req: Request) {
     selection,
     mode,
     sourceTypes ? { sourceTypes } : undefined,
-    directives
+    directives,
+    parsed.data.outputType
   );
 
   if (!upstream.ok || !upstream.body) {

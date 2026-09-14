@@ -3,6 +3,7 @@
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignLeft,
   ArrowUp,
   Check,
   ChevronDown,
@@ -12,12 +13,17 @@ import {
   Database,
   Download,
   FileText,
+  List,
+  ListChecks,
+  ListOrdered,
+  Mail,
   PanelRight,
   Pencil,
   RefreshCw,
   SearchCheck,
   Sparkles,
   Square,
+  Table,
   ThumbsDown,
   ThumbsUp,
   Wand2,
@@ -30,6 +36,11 @@ import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import { WORK_MODES, DEFAULT_MODE } from "@/lib/work-modes";
+import {
+  OUTPUT_TYPES,
+  DEFAULT_OUTPUT_TYPE,
+  type OutputType,
+} from "@/lib/output-types";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
@@ -131,6 +142,58 @@ const TIER_FRIENDLY: Record<string, string> = {
   max: "Best quality",
 };
 
+/** Icon per output type, for the format selector above the composer. */
+const OUTPUT_ICONS: Record<OutputType, typeof AlignLeft> = {
+  answer: AlignLeft,
+  table: Table,
+  summary: List,
+  checklist: ListChecks,
+  steps: ListOrdered,
+  memo: FileText,
+  email: Mail,
+};
+
+/** The format selector shown above the message box. Purely presentational. */
+function OutputTypePicker({
+  value,
+  onChange,
+}: {
+  value: OutputType;
+  onChange: (t: OutputType) => void;
+}) {
+  return (
+    <div
+      className="-mx-1 mb-2 flex items-center gap-1 overflow-x-auto px-1 pb-0.5"
+      role="radiogroup"
+      aria-label="Response format"
+    >
+      {OUTPUT_TYPES.map((o) => {
+        const Icon = OUTPUT_ICONS[o.id];
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.id)}
+            title={o.hint}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+            )}
+          >
+            <Icon size={13} aria-hidden />
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** "Updated 3 days ago" style label from an ISO date, or null. */
 function freshness(iso?: string | null): string | null {
   if (!iso) return null;
@@ -185,9 +248,13 @@ export function ChatView({
   // (the forward-looking field) and `tier` (which the current /api/chat reads
   // and forwards straight through), so the selection takes effect either way.
   // `mode` is the persona/work mode (role-gated server-side).
+  // Output type (response format), chosen above the composer. Forwarded to the
+  // Brain, which enforces the format server-side. Per-turn, local to the chat.
+  const [outputType, setOutputType] = useState<OutputType>(DEFAULT_OUTPUT_TYPE);
+
   const chatBody = useMemo(
-    () => ({ model: selection.value, tier: selection.value, mode }),
-    [selection.value, mode]
+    () => ({ model: selection.value, tier: selection.value, mode, outputType }),
+    [selection.value, mode, outputType]
   );
 
   const {
@@ -381,9 +448,9 @@ export function ChatView({
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value, mode } });
+      reload({ body: { model: value, tier: value, mode, outputType } });
     },
-    [options, setSelection, reload, setData, mode]
+    [options, setSelection, reload, setData, mode, outputType]
   );
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
@@ -393,8 +460,8 @@ export function ChatView({
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value, mode } });
-  }, [setSelection, reload, setData, mode]);
+    reload({ body: { model: rec.value, tier: rec.value, mode, outputType } });
+  }, [setSelection, reload, setData, mode, outputType]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
@@ -842,6 +909,9 @@ export function ChatView({
           {/* Docked composer */}
           <div className="border-t border-border bg-background/80 backdrop-blur">
             <div className="mx-auto w-full max-w-3xl px-4 py-3">
+              {/* Response-format selector — shapes the answer's shape (backend
+                  enforces it). */}
+              <OutputTypePicker value={outputType} onChange={setOutputType} />
               {/* Active work-mode chip — always visible so the user knows which
                   persona this message is sent in (backend enforces it). */}
               <div className="mb-2 flex items-center gap-2">
