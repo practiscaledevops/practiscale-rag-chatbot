@@ -43,10 +43,17 @@ function authHeaders(): Record<string, string> {
  * @param model    a tier alias OR a concrete model id, forwarded verbatim as the
  *                 Brain's `model` field (defaults to the configured tier).
  */
+/** Optional knowledge-scope narrowing (role-based partitioning). Restrict only. */
+export interface BrainScope {
+  sourceTypes?: string[];
+  collectionIds?: string[];
+}
+
 export async function brainChat(
   messages: BrainMessage[],
   model?: ModelSelection,
-  mode?: string
+  mode?: string,
+  scope?: BrainScope
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -54,8 +61,11 @@ export async function brainChat(
     body: JSON.stringify({
       messages,
       model: model ?? process.env.DEFAULT_MODEL_TIER ?? "recommended",
-      // Persona overlay (resolved + gated server-side in this app's /api/chat).
+      // Persona overlay + knowledge scope (both resolved + gated server-side in
+      // this app's /api/chat; the Brain re-checks and can only narrow the scope).
       ...(mode ? { mode } : {}),
+      ...(scope?.sourceTypes ? { sourceTypes: scope.sourceTypes } : {}),
+      ...(scope?.collectionIds ? { collectionIds: scope.collectionIds } : {}),
     }),
   });
 }

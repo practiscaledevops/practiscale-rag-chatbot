@@ -17,6 +17,7 @@ import { z } from "zod";
 import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
 import { resolveMode } from "@/lib/work-modes";
+import { allowedSourceTypes } from "@/lib/access";
 import {
   fetchBrainModels,
   filterModelsByPermissions,
@@ -153,9 +154,14 @@ export async function POST(req: Request) {
   //    — the persona is enforced here, never trusted from the client alone).
   const mode = resolveMode(parsed.data.mode, profile.role);
 
+  // 3b. Role-based knowledge partitioning: regular users retrieve only general
+  //     company knowledge; admins/decision-makers also see sensitive sources
+  //     (AI call-scoring). Enforced server-side here AND re-narrowed by the Brain.
+  const sourceTypes = allowedSourceTypes(profile.role);
+
   // 4. Call the Brain (scoped key stays server-side inside brainChat).
   const startedAt = Date.now();
-  const upstream = await brainChat(safeMessages, selection, mode);
+  const upstream = await brainChat(safeMessages, selection, mode, sourceTypes ? { sourceTypes } : undefined);
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");
