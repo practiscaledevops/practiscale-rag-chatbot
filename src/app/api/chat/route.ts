@@ -84,19 +84,28 @@ async function isSelectionAllowed(
   if (canUseAllModels) return true;
 
   const sel = selection.toLowerCase();
+  const tiers = perms.allowed_tiers;
+  const unrestrictedTiers = !Array.isArray(tiers) || tiers.length === 0;
+
+  // Smart Route may resolve to ANY tier, so only offer it to users with no tier
+  // restriction (restricted users pick a specific tier instead).
+  if (sel === "smart" || sel === "auto") return unrestrictedTiers;
+
+  // Deep analysis runs on the strongest tier — gate it exactly like "max".
+  if (sel === "deep") {
+    return unrestrictedTiers || (tiers as readonly string[]).includes("max");
+  }
 
   // Tier alias → gated only by allowed_tiers (absent = unrestricted).
   if (TIER_WORDS.has(sel)) {
-    const tiers = perms.allowed_tiers;
-    if (!Array.isArray(tiers) || tiers.length === 0) return true;
+    if (unrestrictedTiers) return true;
     return (tiers as readonly string[]).includes(sel);
   }
 
   // Concrete model id. With no model/tier restriction, any id the Brain accepts
   // is allowed; otherwise the id must survive the permission filter.
   const hasModelAllow = Array.isArray(perms.models) && perms.models.length > 0;
-  const hasTierAllow = Array.isArray(perms.allowed_tiers) && perms.allowed_tiers.length > 0;
-  if (!hasModelAllow && !hasTierAllow) return true;
+  if (!hasModelAllow && unrestrictedTiers) return true;
 
   const catalog = await fetchBrainModels();
   const allowed = filterModelsByPermissions(catalog, perms, canUseAllModels);

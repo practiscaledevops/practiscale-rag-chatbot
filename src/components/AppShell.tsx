@@ -43,13 +43,42 @@ export interface ModelOption {
   kind: "tier" | "model";
 }
 
+// Friendly names for the three tiers (the concrete model still resolves in the
+// Brain). "value" is the token forwarded to the Brain as `model`.
 const TIER_LABELS: Record<ModelTier, { label: string; hint: string }> = {
-  fast: { label: "Fast", hint: "Fastest, lightweight answers" },
-  recommended: { label: "Recommended", hint: "Balanced speed & quality" },
-  max: { label: "Max", hint: "Deepest reasoning" },
+  fast: { label: "Fast", hint: "Quick, lightweight answers" },
+  recommended: { label: "Balanced", hint: "Balanced speed & quality" },
+  max: { label: "Best quality", hint: "Deepest reasoning" },
 };
 
 const TIERS: ModelTier[] = ["fast", "recommended", "max"];
+
+/**
+ * "Routed" presets that resolve SERVER-SIDE, not to a fixed model:
+ *   Smart Route — the Brain picks Fast/Balanced/Best quality per question.
+ *   Deep analysis — strongest tier + a thorough, structured analysis posture.
+ * `tier` is only the persistable bucket; the real behaviour lives in the Brain.
+ */
+const ROUTED_PRESETS: ModelOption[] = [
+  {
+    value: "smart",
+    label: "Smart Route",
+    hint: "Auto-pick the best model per question",
+    tier: "recommended",
+    provider: "preset",
+    available: true,
+    kind: "tier",
+  },
+  {
+    value: "deep",
+    label: "Deep analysis",
+    hint: "Thorough, structured, multi-angle",
+    tier: "max",
+    provider: "preset",
+    available: true,
+    kind: "tier",
+  },
+];
 
 /** Build the tier-preset option for a tier token. */
 export function tierPreset(tier: ModelTier): ModelOption {
@@ -83,7 +112,11 @@ function bucketFor(model: BrainModel): ModelTier {
  * ones OpenAI/Anthropic can't currently serve.
  */
 export function buildModelOptions(catalog: BrainModel[]): ModelOption[] {
-  const presets = TIERS.map(tierPreset);
+  // Smart Route first (the recommended default experience), then the three named
+  // tiers, then Deep analysis, then every permitted concrete model.
+  const smart = ROUTED_PRESETS.find((p) => p.value === "smart")!;
+  const deep = ROUTED_PRESETS.find((p) => p.value === "deep")!;
+  const tiers = TIERS.map(tierPreset);
   const models: ModelOption[] = catalog.map((m) => ({
     value: m.id,
     label: m.label || m.id,
@@ -94,7 +127,7 @@ export function buildModelOptions(catalog: BrainModel[]): ModelOption[] {
     reason: m.reason,
     kind: "model",
   }));
-  return [...presets, ...models];
+  return [smart, ...tiers, deep, ...models];
 }
 
 // ---------------------------------------------------------------------------

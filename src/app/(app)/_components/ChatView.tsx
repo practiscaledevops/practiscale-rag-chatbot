@@ -124,6 +124,13 @@ function confidenceMeta(
   return { label: "Low confidence", tone: "low", pct };
 }
 
+/** Friendly names for the tiers Smart Route can resolve to (matches the switcher). */
+const TIER_FRIENDLY: Record<string, string> = {
+  fast: "Fast",
+  recommended: "Balanced",
+  max: "Best quality",
+};
+
 /** "Updated 3 days ago" style label from an ISO date, or null. */
 function freshness(iso?: string | null): string | null {
   if (!iso) return null;
@@ -229,6 +236,7 @@ export function ChatView({
     let sourcesCount: number | null = null;
     let sources: SourceItem[] = [];
     let confidence: number | null = null;
+    let routedTier: string | null = null;
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
       if (it?.type === "sources" && Array.isArray(it.sources)) {
@@ -236,11 +244,14 @@ export function ChatView({
         sourcesCount = sources.length;
         if (typeof it.confidence === "number") confidence = it.confidence as number;
       }
+      if (it?.type === "route" && typeof it.tier === "string") {
+        routedTier = it.tier as string;
+      }
       if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount, sources, confidence };
+    return { label, sourcesCount, sources, confidence, routedTier };
   }, [data]);
 
   // Track the persisted id in a ref so the first save of a new chat can flip it
@@ -851,6 +862,12 @@ export function ChatView({
                 {mode !== "general" && (
                   <span className="hidden text-[11px] text-muted-foreground sm:inline">
                     {modeDef.hint}
+                  </span>
+                )}
+                {/* When Smart Route is active, show which tier it chose last turn. */}
+                {selection.value === "smart" && activity.routedTier && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11px] text-muted-foreground">
+                    Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
                   </span>
                 )}
               </div>
