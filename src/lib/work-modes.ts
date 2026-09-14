@@ -31,6 +31,18 @@ export const WORK_MODES: WorkModeDef[] = [
 
 export const DEFAULT_MODE: WorkMode = "general";
 
+/** Who is asking — their role and their granted feature permissions. */
+export interface Access {
+  role?: string | null;
+  features?: string[] | null;
+}
+
+// A restricted mode is unlocked by an exec role OR by this granted feature.
+const MODE_FEATURE: Partial<Record<WorkMode, string>> = {
+  decision_maker: "decisions",
+  ceo: "executive",
+};
+
 export function isWorkMode(v: unknown): v is WorkMode {
   return typeof v === "string" && WORK_MODES.some((m) => m.id === v);
 }
@@ -39,18 +51,35 @@ function isExecRole(role: string | undefined | null): boolean {
   return role === "admin" || role === "super_admin";
 }
 
-/** The mode ids a role may select (restricted modes need an exec role). */
-export function allowedModes(role: string | undefined | null): WorkMode[] {
-  return WORK_MODES.filter((m) => isExecRole(role) || !m.restricted).map((m) => m.id);
+function hasFeature(features: string[] | null | undefined, key: string): boolean {
+  return Array.isArray(features) && features.includes(key);
 }
 
-/** Mode defs a role may see, for rendering the selector. */
-export function allowedModeDefs(role: string | undefined | null): WorkModeDef[] {
-  return WORK_MODES.filter((m) => isExecRole(role) || !m.restricted);
+/** Whether this access may use a given mode (restricted modes need role or feature). */
+export function canUseMode(mode: WorkModeDef, access: Access): boolean {
+  if (!mode.restricted) return true;
+  if (isExecRole(access.role)) return true;
+  const feat = MODE_FEATURE[mode.id];
+  return !!feat && hasFeature(access.features, feat);
 }
 
-/** Resolve a requested mode against a role, downgrading to General if not allowed. */
-export function resolveMode(requested: unknown, role: string | undefined | null): WorkMode {
+/** Whether this access may use the private Executive (CEO) mode + memory. */
+export function canUseExecutive(access: Access): boolean {
+  return isExecRole(access.role) || hasFeature(access.features, "executive");
+}
+
+/** The mode ids this access may select. */
+export function allowedModes(access: Access): WorkMode[] {
+  return WORK_MODES.filter((m) => canUseMode(m, access)).map((m) => m.id);
+}
+
+/** Mode defs this access may see, for rendering the selector. */
+export function allowedModeDefs(access: Access): WorkModeDef[] {
+  return WORK_MODES.filter((m) => canUseMode(m, access));
+}
+
+/** Resolve a requested mode against access, downgrading to General if not allowed. */
+export function resolveMode(requested: unknown, access: Access): WorkMode {
   if (!isWorkMode(requested)) return DEFAULT_MODE;
-  return allowedModes(role).includes(requested) ? requested : DEFAULT_MODE;
+  return allowedModes(access).includes(requested) ? requested : DEFAULT_MODE;
 }

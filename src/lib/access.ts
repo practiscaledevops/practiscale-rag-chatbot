@@ -11,22 +11,27 @@
 const SENSITIVE_SOURCE_TYPES = ["call_score"];
 const GENERAL_SOURCE_TYPES = ["document"];
 
+interface Access {
+  role?: string | null;
+  features?: string[] | null;
+}
+
 function isExecRole(role: string | undefined | null): boolean {
   return role === "admin" || role === "super_admin";
 }
 
-/**
- * The source_types this role may retrieve, or `undefined` for "no narrowing"
- * (full key scope, including the sensitive sources). Passed to the Brain as
- * `sourceTypes`. Returning `["document"]` for a regular user excludes call_score.
- */
-export function allowedSourceTypes(role: string | undefined | null): string[] | undefined {
-  return isExecRole(role) ? undefined : [...GENERAL_SOURCE_TYPES];
+/** Whether this access may retrieve the sensitive sources (exec role OR the grant). */
+export function canAccessSensitive(access: Access): boolean {
+  return isExecRole(access.role) || (Array.isArray(access.features) && access.features.includes("sensitive"));
 }
 
-/** Whether a role may access the sensitive sources (for UI hints/labels). */
-export function canAccessSensitive(role: string | undefined | null): boolean {
-  return isExecRole(role);
+/**
+ * The source_types this access may retrieve, or `undefined` for "no narrowing"
+ * (full key scope, including the sensitive sources). Passed to the Brain as
+ * `sourceTypes`. Returning `["document"]` excludes the sensitive call_score data.
+ */
+export function allowedSourceTypes(access: Access): string[] | undefined {
+  return canAccessSensitive(access) ? undefined : [...GENERAL_SOURCE_TYPES];
 }
 
 export { SENSITIVE_SOURCE_TYPES };

@@ -16,7 +16,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
-import { resolveMode } from "@/lib/work-modes";
+import { resolveMode, canUseExecutive } from "@/lib/work-modes";
 import { allowedSourceTypes } from "@/lib/access";
 import { getCeoMemory } from "@/lib/ceo-memory";
 import { audit } from "@/lib/audit";
@@ -154,17 +154,22 @@ export async function POST(req: Request) {
   // 3. Resolve the work mode against the user's ROLE (restricted personas need
   //    an admin/super_admin; a disallowed request silently downgrades to General
   //    — the persona is enforced here, never trusted from the client alone).
-  const mode = resolveMode(parsed.data.mode, profile.role);
+  // Access = the user's role + granted feature permissions (set per-user in the
+  // admin Users editor). Modes and sensitive-data access are gated on this.
+  const access = { role: profile.role, features: profile.permissions?.features };
+  const mode = resolveMode(parsed.data.mode, access);
 
-  // 3b. Role-based knowledge partitioning: regular users retrieve only general
-  //     company knowledge; admins/decision-makers also see sensitive sources
-  //     (AI call-scoring). Enforced server-side here AND re-narrowed by the Brain.
-  const sourceTypes = allowedSourceTypes(profile.role);
+  // 3b. Role-based knowledge partitioning: users retrieve only general company
+  //     knowledge unless they're an admin OR were granted the "sensitive" feature
+  //     — then they also see the AI call-scoring data. Enforced here AND
+  //     re-narrowed by the Brain.
+  const sourceTypes = allowedSourceTypes(access);
 
-  // 3c. Executive mode: inject the CEO's PRIVATE memory as trusted directives.
-  //     Only for a super_admin in ceo mode; it never reaches a normal user.
+  // 3c. Executive mode: inject the user's OWN private memory as trusted
+  //     directives — only when they may use Executive mode (super_admin or the
+  //     "executive" feature). Never reaches anyone else.
   let directives: string | undefined;
-  if (mode === "ceo" && profile.role === "super_admin") {
+  if (mode === "ceo" && canUseExecutive(access)) {
     const mem = await getCeoMemory(profile.userId);
     if (mem.trim()) directives = mem;
   }

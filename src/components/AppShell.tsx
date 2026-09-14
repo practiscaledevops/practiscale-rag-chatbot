@@ -10,7 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import type { ModelTier } from "@/lib/brain";
 import type { BrainModel } from "@/lib/models";
-import { WORK_MODES, DEFAULT_MODE, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
+import { allowedModeDefs, DEFAULT_MODE, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
 import { Sidebar, type SidebarProps } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 
@@ -168,6 +168,8 @@ export interface AppShellProps
   title?: string | null;
   firstName?: string;
   isAdmin?: boolean;
+  /** Granted feature permissions, for gating which work modes appear. */
+  features?: string[];
   /** Tokens already spent this month (persisted), used to seed the meter. */
   initialTokens?: number;
 }
@@ -188,6 +190,7 @@ export function AppShell({
   title = null,
   firstName = "",
   isAdmin = false,
+  features = [],
   initialTokens = 0,
   onNewChat,
   onNewProject,
@@ -225,11 +228,12 @@ export function AppShell({
     []
   );
 
-  // Work mode (persona). Restricted modes are gated by role: the API downgrades
-  // a disallowed mode, and here we only offer the ones this user may use.
+  // Work mode (persona). Restricted modes are gated by role OR a granted feature;
+  // the API re-checks and downgrades a disallowed mode. We only offer the ones
+  // this user may use.
   const modeDefs = useMemo(
-    () => WORK_MODES.filter((m) => isAdmin || !m.restricted),
-    [isAdmin]
+    () => allowedModeDefs({ role: isAdmin ? "admin" : "user", features }),
+    [isAdmin, features]
   );
   const [mode, setMode] = useState<WorkMode>(DEFAULT_MODE);
 

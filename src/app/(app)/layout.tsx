@@ -73,6 +73,7 @@ export default async function AppLayout({
       models={models}
       firstName={firstName}
       isAdmin={isAdmin}
+      features={profile.permissions?.features ?? []}
       initialTokens={monthTokens}
     >
       {children}

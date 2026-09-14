@@ -104,6 +104,11 @@ export const KNOWN_FEATURES: AdminFeature[] = [
   { key: "projects", label: "Projects", description: "Group chats and scope them with project context." },
   { key: "attachments", label: "Attachments", description: "Upload files to include in a conversation." },
   { key: "connectors", label: "Connectors", description: "Use MCP and third-party integrations the Brain exposes." },
+  // Access grants — let a normal user use capabilities otherwise reserved for
+  // admins. The gating reads these from profiles.permissions.features.
+  { key: "sensitive", label: "Sensitive data", description: "Retrieve the sensitive AI call-scoring / QA data (normally admins only)." },
+  { key: "decisions", label: "Decision memos", description: "Use the Decision-memo work mode." },
+  { key: "executive", label: "Executive mode", description: "Use the private Executive (CEO) mode with personal executive memory." },
 ];
 
 // A high, defensive cap on the usage scan — this is an admin summary, not

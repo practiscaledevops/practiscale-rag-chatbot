@@ -38,6 +38,8 @@ export interface AppChromeProps {
   firstName?: string;
   /** Whether to surface the Admin link (role resolved server-side). */
   isAdmin?: boolean;
+  /** Granted feature permissions (profiles.permissions.features), for mode gating. */
+  features?: string[];
   /** Tokens the user has already spent this month, for the persisted meter. */
   initialTokens?: number;
   children: React.ReactNode;
@@ -80,6 +82,7 @@ export function AppChrome({
   models = [],
   firstName = "",
   isAdmin = false,
+  features = [],
   initialTokens = 0,
   children,
 }: AppChromeProps) {
@@ -230,6 +233,7 @@ export function AppChrome({
         models={models}
         firstName={firstName}
         isAdmin={isAdmin}
+        features={features}
         initialTokens={initialTokens}
         title={activeTitle}
         onNewChat={handleNewChat}
