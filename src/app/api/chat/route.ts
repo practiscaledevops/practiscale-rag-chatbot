@@ -18,6 +18,8 @@ import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
 import { resolveMode } from "@/lib/work-modes";
 import { allowedSourceTypes } from "@/lib/access";
+import { getCeoMemory } from "@/lib/ceo-memory";
+import { audit } from "@/lib/audit";
 import {
   fetchBrainModels,
   filterModelsByPermissions,
@@ -159,9 +161,31 @@ export async function POST(req: Request) {
   //     (AI call-scoring). Enforced server-side here AND re-narrowed by the Brain.
   const sourceTypes = allowedSourceTypes(profile.role);
 
+  // 3c. Executive mode: inject the CEO's PRIVATE memory as trusted directives.
+  //     Only for a super_admin in ceo mode; it never reaches a normal user.
+  let directives: string | undefined;
+  if (mode === "ceo" && profile.role === "super_admin") {
+    const mem = await getCeoMemory(profile.userId);
+    if (mem.trim()) directives = mem;
+  }
+
+  // Governance: audit the request (best-effort; never blocks).
+  void audit(profile.userId, "chat", {
+    mode,
+    model: String(selection),
+    sensitiveAccess: sourceTypes === undefined, // true = call_score was in scope
+    conversationId: asUuid(parsed.data.conversationId ?? parsed.data.conversation_id),
+  });
+
   // 4. Call the Brain (scoped key stays server-side inside brainChat).
   const startedAt = Date.now();
-  const upstream = await brainChat(safeMessages, selection, mode, sourceTypes ? { sourceTypes } : undefined);
+  const upstream = await brainChat(
+    safeMessages,
+    selection,
+    mode,
+    sourceTypes ? { sourceTypes } : undefined,
+    directives
+  );
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => "");

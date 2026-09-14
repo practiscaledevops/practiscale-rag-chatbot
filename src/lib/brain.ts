@@ -53,7 +53,8 @@ export async function brainChat(
   messages: BrainMessage[],
   model?: ModelSelection,
   mode?: string,
-  scope?: BrainScope
+  scope?: BrainScope,
+  directives?: string
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -66,6 +67,8 @@ export async function brainChat(
       ...(mode ? { mode } : {}),
       ...(scope?.sourceTypes ? { sourceTypes: scope.sourceTypes } : {}),
       ...(scope?.collectionIds ? { collectionIds: scope.collectionIds } : {}),
+      // Trusted private operator context (e.g. the executive's own memory).
+      ...(directives ? { directives } : {}),
     }),
   });
 }

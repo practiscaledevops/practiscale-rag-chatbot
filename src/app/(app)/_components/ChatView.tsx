@@ -8,7 +8,9 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Crown,
   Database,
+  Download,
   FileText,
   PanelRight,
   Pencil,
@@ -25,6 +27,7 @@ import type { ModelTier } from "@/lib/brain";
 import { useAppShell, tierPreset, type ModelOption } from "@/components/AppShell";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
+import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import { Markdown } from "./Markdown";
@@ -65,6 +68,15 @@ const PILLS: { label: string; prompt: string }[] = [
 
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
 
+// Executive (CEO mode) quick actions — prefill high-leverage prompts.
+const CEO_ACTIONS: { label: string; prompt: string }[] = [
+  { label: "What should I focus on today?", prompt: "Given what you know about my priorities and our current data, what are the 3 things I should focus on today, and why?" },
+  { label: "Executive briefing", prompt: "Give me a concise executive briefing: pipeline and campaign health, biggest risks and bottlenecks, wins, and decisions waiting on me. Bottom line up front." },
+  { label: "Log a decision", prompt: "Log this decision (capture the decision, my assumptions, the owner, expected outcome, and a review date): " },
+  { label: "Pressure-test a plan", prompt: "Pressure-test this plan. Surface weak assumptions, blind spots, risks, and second-order effects, then tell me what must be true for it to work: " },
+  { label: "What changed since last week?", prompt: "What has changed since last week that I should know about, and what does it imply for my priorities?" },
+];
+
 // Slash-command templates: type "/" in the composer to insert a parameterized
 // prompt. `template` is inserted into the input for the user to complete.
 interface SlashCommand {
@@ -91,7 +103,24 @@ interface SourceItem {
   id: string;
   source_type?: string | null;
   document_id?: string | null;
+  /** ISO date of the source document, for a freshness indicator. */
+  date?: string | null;
   snippet?: string;
+}
+
+/** "Updated 3 days ago" style label from an ISO date, or null. */
+function freshness(iso?: string | null): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const days = Math.floor((Date.now() - t) / 86_400_000);
+  if (days <= 0) return "Updated today";
+  if (days === 1) return "Updated yesterday";
+  if (days < 30) return `Updated ${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `Updated ${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(days / 365);
+  return `Updated ${years} year${years === 1 ? "" : "s"} ago`;
 }
 
 
@@ -415,6 +444,27 @@ export function ChatView({
 
   // Evidence side panel (sources for the latest answer).
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  // Executive (CEO) private-memory editor.
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const isCeoMode = mode === "ceo";
+
+  // Export the conversation as a Markdown file.
+  const exportChat = useCallback(() => {
+    if (messages.length === 0) return;
+    const body = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => `## ${m.role === "user" ? "You" : "Assistant"}\n\n${parseOptions(m.content).text}`)
+      .join("\n\n---\n\n");
+    const doc = `# ${title || "Conversation"}\n\n${body}\n`;
+    const url = URL.createObjectURL(new Blob([doc], { type: "text/markdown" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(title || "conversation").replace(/[^\w-]+/g, "-").slice(0, 60) || "conversation"}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [messages, title]);
 
   // --- Feedback (thumbs up/down) for the QA loop ------------------------
   const [feedback, setFeedback] = useState<Record<string, "up" | "down">>({});
@@ -468,6 +518,9 @@ export function ChatView({
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {isCeoMode && (
+        <CeoMemoryModal open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      )}
       {empty ? (
         // -------- Empty state: centered greeting + composer + suggestions --
         <div className="flex-1 overflow-y-auto">
@@ -485,45 +538,75 @@ export function ChatView({
 
             {composer}
 
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-              {PILLS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => prefill(p.prompt)}
-                  className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-soft transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            {isCeoMode ? (
+              // -------- Executive workspace quick actions --------------------
+              <>
+                <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                  {CEO_ACTIONS.map((a) => (
+                    <button
+                      key={a.label}
+                      type="button"
+                      onClick={() => prefill(a.prompt)}
+                      className="rounded-xl border border-border bg-surface px-3.5 py-3 text-left text-sm font-medium text-foreground shadow-soft transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 flex items-center justify-center">
+                  <Button variant="secondary" size="sm" onClick={() => setMemoryOpen(true)}>
+                    <Crown size={14} />
+                    Executive context
+                  </Button>
+                </div>
+                <p className="mt-6 text-center text-xs text-muted-foreground">
+                  Private executive mode. Your context is stored privately and never appears
+                  in other users&apos; chats.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {PILLS.map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => prefill(p.prompt)}
+                      className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-soft transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {SUGGESTIONS.map((s) => {
-                const Icon = s.icon;
-                return (
-                  <button
-                    key={s.title}
-                    type="button"
-                    onClick={() => prefill(s.prompt)}
-                    className="group flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-                      <Icon size={16} />
-                    </span>
-                    <span className="text-sm font-semibold text-foreground">
-                      {s.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{s.hint}</span>
-                  </button>
-                );
-              })}
-            </div>
+                <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                  {SUGGESTIONS.map((s) => {
+                    const Icon = s.icon;
+                    return (
+                      <button
+                        key={s.title}
+                        type="button"
+                        onClick={() => prefill(s.prompt)}
+                        className="group flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+                          <Icon size={16} />
+                        </span>
+                        <span className="text-sm font-semibold text-foreground">
+                          {s.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{s.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-            <p className="mt-8 text-center text-xs text-muted-foreground">
-              Answers are grounded in your Practiscale knowledge base, with inline
-              sources you can trace back.
-            </p>
+                <p className="mt-8 text-center text-xs text-muted-foreground">
+                  Answers are grounded in your Practiscale knowledge base, with inline
+                  sources you can trace back.
+                </p>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -739,6 +822,14 @@ export function ChatView({
                     {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={exportChat}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Download size={13} />
+                  Export
+                </button>
               </div>
             </div>
           </div>
@@ -1198,11 +1289,16 @@ function EvidencePanel({
                 key={s.id}
                 className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs"
               >
-                <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  <FileText size={11} aria-hidden />
-                  <span>
+                <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <FileText size={11} aria-hidden />
                     {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
                   </span>
+                  {freshness(s.date) && (
+                    <span className="shrink-0 normal-case text-muted-foreground/70">
+                      {freshness(s.date)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
               </li>
@@ -1214,31 +1310,131 @@ function EvidencePanel({
   );
 }
 
+/** Editor for the executive's private memory (super-admin only, /api/ceo/memory). */
+function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setLoading(true);
+    fetch("/api/ceo/memory")
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((d) => setValue(d.content ?? ""))
+      .catch(() => setError("Couldn’t load your executive context."))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ceo/memory", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: value }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Save failed");
+      }
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Executive context (private)">
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Your priorities, principles, communication preferences, and ongoing decisions.
+          Used to tailor Executive mode. Private to you — it never appears in other users’
+          chats.
+        </p>
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={loading || saving}
+          rows={10}
+          maxLength={8000}
+          placeholder={
+            loading
+              ? "Loading…"
+              : "e.g. My top priorities this quarter are…\nHow I like recommendations framed…\nOpen decisions and their owners…"
+          }
+          className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={save} disabled={loading || saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /** Progressive character reveal for a smooth typewriter effect while streaming. */
 function useSmoothText(text: string, active: boolean): string {
   const textRef = useRef(text);
   textRef.current = text;
   const [shown, setShown] = useState(text);
+  const posRef = useRef(text.length);
 
   useEffect(() => {
     if (!active) {
+      // Not streaming: always show the complete text.
+      posRef.current = textRef.current.length;
       setShown(textRef.current);
       return;
     }
-    let pos = 0;
+    posRef.current = 0; // reveal this turn from the start
     let raf = 0;
     const tick = () => {
       const full = textRef.current;
-      if (pos < full.length) {
+      // requestAnimationFrame is paused/throttled while the tab is hidden, so if
+      // a tick does run while hidden (or the text shrank on a new turn), snap to
+      // the full text — the streamed answer must never freeze or blank out on a
+      // tab/window switch.
+      if ((typeof document !== "undefined" && document.hidden) || posRef.current > full.length) {
+        posRef.current = full.length;
+        setShown(full);
+      } else if (posRef.current < full.length) {
         // Reveal proportional to the backlog so it glides and always catches up.
-        const step = Math.max(2, Math.ceil((full.length - pos) / 6));
-        pos = Math.min(full.length, pos + step);
-        setShown(full.slice(0, pos));
+        const step = Math.max(2, Math.ceil((full.length - posRef.current) / 6));
+        posRef.current = Math.min(full.length, posRef.current + step);
+        setShown(full.slice(0, posRef.current));
       }
       raf = requestAnimationFrame(tick);
     };
+    // When the tab regains focus, immediately show everything received while it
+    // was backgrounded (rAF was paused), then keep gliding from there.
+    const onVisible = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        posRef.current = textRef.current.length;
+        setShown(textRef.current);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [active]);
 
   return active ? shown : text;
