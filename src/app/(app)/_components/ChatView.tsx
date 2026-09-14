@@ -10,6 +10,7 @@ import {
   Copy,
   Database,
   FileText,
+  PanelRight,
   Pencil,
   RefreshCw,
   SearchCheck,
@@ -412,6 +413,9 @@ export function ChatView({
     }
   }, []);
 
+  // Evidence side panel (sources for the latest answer).
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+
   // --- Feedback (thumbs up/down) for the QA loop ------------------------
   const [feedback, setFeedback] = useState<Record<string, "up" | "down">>({});
   const sendFeedback = useCallback(
@@ -523,8 +527,9 @@ export function ChatView({
           </div>
         </div>
       ) : (
-        // -------- Active thread ---------------------------------------------
-        <>
+        // -------- Active thread (chat column + evidence rail) ----------------
+        <div className="flex h-full min-h-0">
+          <div className="flex min-w-0 flex-1 flex-col">
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-6">
               <ul className="space-y-6">
@@ -720,12 +725,32 @@ export function ChatView({
           <div className="border-t border-border bg-background/80 backdrop-blur">
             <div className="mx-auto w-full max-w-3xl px-4 py-3">
               {composer}
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
-              </p>
+              <div className="mt-2 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+                <span className="hidden sm:inline">
+                  Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
+                </span>
+                {activity.sourcesCount ? (
+                  <button
+                    type="button"
+                    onClick={() => setEvidenceOpen((o) => !o)}
+                    className="hidden items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+                  >
+                    <PanelRight size={13} />
+                    {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
-        </>
+          </div>
+          {evidenceOpen && (
+            <EvidencePanel
+              count={activity.sourcesCount ?? 0}
+              sources={activity.sources}
+              onClose={() => setEvidenceOpen(false)}
+            />
+          )}
+        </div>
       )}
     </div>
   );
@@ -1131,6 +1156,61 @@ function OptionsPicker({
         </form>
       )}
     </div>
+  );
+}
+
+/** Right-hand evidence rail: the sources the Brain retrieved for the latest answer. */
+function EvidencePanel({
+  count,
+  sources,
+  onClose,
+}: {
+  count: number;
+  sources: SourceItem[];
+  onClose: () => void;
+}) {
+  return (
+    <aside
+      aria-label="Evidence"
+      className="hidden w-80 shrink-0 flex-col border-l border-border bg-surface/50 lg:flex"
+    >
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+        <h2 className="text-sm font-semibold text-foreground">Evidence</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {count} source{count === 1 ? "" : "s"}
+          </span>
+          <IconButton aria-label="Close evidence panel" size="sm" onClick={onClose}>
+            <X size={14} />
+          </IconButton>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {sources.length === 0 ? (
+          <p className="px-1 py-2 text-xs text-muted-foreground">
+            The sources used to ground the latest answer will appear here, with the
+            same numbers as the inline citations.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {sources.map((s, i) => (
+              <li
+                key={s.id}
+                className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs"
+              >
+                <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <FileText size={11} aria-hidden />
+                  <span>
+                    {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
+                  </span>
+                </div>
+                <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 }
 
