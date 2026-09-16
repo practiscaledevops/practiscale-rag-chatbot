@@ -764,10 +764,11 @@ export function ChatView({
         panes={comparePanes}
       />
       {empty ? (
-        // -------- Empty state: centered greeting + composer + suggestions --
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 py-10">
-            <div className="mb-7 text-center">
+        // -------- Empty state: greeting centered above, composer docked lower
+        //          (so the upward work-mode menu clears the greeting) ----------
+        <div className="flex h-full flex-col overflow-hidden">
+          <div className="flex flex-1 items-end justify-center px-4 pb-6">
+            <div className="text-center">
               <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                 Hello, <span className="text-accent">{titleCase(firstName)}</span>
               </h2>
@@ -775,7 +776,10 @@ export function ChatView({
                 What are you working on today?
               </p>
             </div>
+          </div>
 
+          <div className="shrink-0 px-4 pb-10">
+            <div className="mx-auto w-full max-w-2xl">
             {composer}
 
             {isCeoMode ? (
@@ -810,6 +814,7 @@ export function ChatView({
                 sources you can trace back.
               </p>
             )}
+            </div>
           </div>
         </div>
       ) : (
