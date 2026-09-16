@@ -167,7 +167,7 @@ export function SourceScopePicker({
           role="menu"
           aria-label="Source scope"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[0_18px_50px_-10px_rgb(0_0_0/0.7)] ring-1 ring-black/10 motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
         >
           <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Search in
@@ -183,7 +183,7 @@ export function SourceScopePicker({
             onClick={() => onChange([])}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              value.length === 0 ? "bg-accent/10" : "hover:bg-surface-muted"
+              value.length === 0 ? "bg-accent/10" : "hover:bg-white/[0.06]"
             )}
           >
             <Database size={15} className={cn("shrink-0", value.length === 0 ? "text-accent" : "text-muted-foreground")} aria-hidden />
@@ -209,7 +209,7 @@ export function SourceScopePicker({
                 onClick={() => toggle(c.id)}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  checked ? "bg-accent/10" : "hover:bg-surface-muted"
+                  checked ? "bg-accent/10" : "hover:bg-white/[0.06]"
                 )}
               >
                 <span className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border", checked ? "border-accent bg-accent text-accent-foreground" : "border-border")} aria-hidden>
@@ -316,7 +316,7 @@ export function ModelQualityPicker({
           role="menu"
           aria-label="Model quality"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[0_18px_50px_-10px_rgb(0_0_0/0.7)] ring-1 ring-black/10 motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
         >
           {options.map((o, i) => {
             const header =
@@ -345,7 +345,7 @@ export function ModelQualityPicker({
                   }}
                   className={cn(
                     "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
-                    selected ? "bg-accent/10" : "hover:bg-surface-muted"
+                    selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
                   )}
                 >
                   <span className="min-w-0 flex-1">
@@ -461,7 +461,7 @@ export function WorkModePicker({
           role="menu"
           aria-label="Work mode"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[0_18px_50px_-10px_rgb(0_0_0/0.7)] ring-1 ring-black/10 motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
         >
           <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Work mode
@@ -485,7 +485,7 @@ export function WorkModePicker({
                 }}
                 className={cn(
                   "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  selected ? "bg-accent/10" : "hover:bg-surface-muted"
+                  selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
                 )}
               >
                 <Icon size={16} className={cn("mt-0.5 shrink-0", selected ? "text-accent" : "text-muted-foreground")} aria-hidden />
