@@ -2,6 +2,7 @@
 
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowDown,
@@ -12,6 +13,7 @@ import {
   ClipboardCheck,
   Copy,
   Crown,
+  GitBranch,
   Database,
   Download,
   FileText,
@@ -231,6 +233,8 @@ export function ChatView({
   initialMessages,
 }: ChatViewProps) {
   const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs } = useAppShell();
+  const router = useRouter();
+  const [branching, setBranching] = useState(false);
 
   // What we forward to the Brain as `model`. We send it under both `model`
   // (the forward-looking field) and `tier` (which the current /api/chat reads
@@ -456,6 +460,28 @@ export function ChatView({
       reload({ body: { model: value, tier: value, mode, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) } });
     },
     [options, setSelection, reload, setData, mode, scopeCollectionIds]
+  );
+
+  // Branch: fork a NEW conversation containing everything up to and including a
+  // chosen answer, so the user can explore a different direction without losing
+  // this thread. Persists the truncated history as a new conversation, then opens it.
+  const branch = useCallback(
+    async (idx: number) => {
+      if (branching) return;
+      const upto = messages
+        .slice(0, idx + 1)
+        .filter((m) => ROLES_TO_PERSIST.has(m.role))
+        .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
+      if (upto.length === 0) return;
+      setBranching(true);
+      try {
+        const res = await saveConversationTurn({ conversationId: null, messages: upto, tier: selection.tier });
+        if (res.ok && res.conversationId) router.push(`/c/${res.conversationId}`);
+      } finally {
+        setBranching(false);
+      }
+    },
+    [branching, messages, selection.tier, router]
   );
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
@@ -925,6 +951,17 @@ export function ChatView({
                                   )}
                                 </IconButton>
                               </>
+                            )}
+                            {m.content.trim() && (
+                              <IconButton
+                                aria-label="Branch a new conversation from here"
+                                size="sm"
+                                disabled={branching}
+                                onClick={() => branch(idx)}
+                                title="Branch from here"
+                              >
+                                <GitBranch size={14} />
+                              </IconButton>
                             )}
                             {idx === lastIndex && !busy && (
                               <RegenerateMenu
