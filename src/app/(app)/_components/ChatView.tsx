@@ -34,7 +34,7 @@ import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
-import { WorkModePicker } from "./ComposerControls";
+import { WorkModePicker, ModelQualityPicker } from "./ComposerControls";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import {
   exportMarkdown,
@@ -667,6 +667,9 @@ export function ChatView({
       mode={mode}
       onModeChange={setMode}
       modeDefs={modeDefs}
+      selection={selection}
+      options={options}
+      onSelectModel={setSelection}
     />
   );
 
@@ -690,10 +693,8 @@ export function ChatView({
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-4 py-10">
             <div className="mb-7 text-center">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                <span className="text-brand-gradient">
-                  Hello, {titleCase(firstName)}
-                </span>
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                Hello, <span className="text-accent">{titleCase(firstName)}</span>
               </h2>
               <p className="mt-2 text-lg text-muted-foreground">
                 What are you working on today?
@@ -1074,6 +1075,9 @@ function Composer({
   mode,
   onModeChange,
   modeDefs,
+  selection,
+  options,
+  onSelectModel,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -1086,6 +1090,9 @@ function Composer({
   mode: WorkMode;
   onModeChange: (m: WorkMode) => void;
   modeDefs: WorkModeDef[];
+  selection: ModelOption;
+  options: ModelOption[];
+  onSelectModel: (o: ModelOption) => void;
 }) {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -1176,6 +1183,7 @@ function Composer({
         {/* Message controls — these settings apply to the NEXT message. */}
         <div className="mt-1.5 flex items-center gap-2">
           <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
+          <ModelQualityPicker options={options} value={selection} onChange={onSelectModel} />
           <div className="ml-auto">
             {busy ? (
               <IconButton

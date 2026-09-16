@@ -19,10 +19,12 @@ import {
   ChevronDown,
   Check,
   ShieldCheck,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
+import type { ModelOption } from "@/components/AppShell";
 
 export const MODE_ICON: Record<WorkMode, LucideIcon> = {
   general: MessageCircle,
@@ -33,6 +35,145 @@ export const MODE_ICON: Record<WorkMode, LucideIcon> = {
   decision_maker: ClipboardList,
   ceo: Crown,
 };
+
+/**
+ * Model-quality picker for the composer — the friendly tiers (Smart Route / Fast
+ * / Balanced / Best quality / Deep analysis) plus any specific models the user is
+ * permitted to pick. Accessible menu: arrow keys move over enabled options,
+ * Enter/Space selects, Escape closes and restores focus, click-outside closes.
+ */
+export function ModelQualityPicker({
+  options,
+  value,
+  onChange,
+}: {
+  options: ModelOption[];
+  value: ModelOption;
+  onChange: (o: ModelOption) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Indices of enabled options (unavailable models are skipped by keyboard nav).
+  const enabled = options.map((o, i) => (o.available ? i : -1)).filter((i) => i >= 0);
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const cur = options.findIndex((o) => o.value === value.value);
+    const idx = enabled.includes(cur) ? cur : enabled[0] ?? 0;
+    setActiveIndex(idx);
+    const t = window.setTimeout(() => itemsRef.current[idx]?.focus(), 0);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  function close(focusTrigger = true) {
+    setOpen(false);
+    if (focusTrigger) triggerRef.current?.focus();
+  }
+
+  function move(dir: 1 | -1) {
+    const pos = enabled.indexOf(activeIndex);
+    const next = enabled[(pos + dir + enabled.length) % enabled.length];
+    setActiveIndex(next);
+    itemsRef.current[next]?.focus();
+  }
+
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      move(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      move(-1);
+    }
+  }
+
+  let lastKind: string | null = null;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm font-medium text-foreground transition-[background-color,transform] duration-150 active:scale-[0.98] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Zap size={15} className="text-accent" aria-hidden />
+        <span>{value.label}</span>
+        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Model quality"
+          onKeyDown={onMenuKeyDown}
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[0_18px_50px_-10px_rgb(0_0_0/0.7)] ring-1 ring-black/10 motion-safe:animate-fadeUp"
+        >
+          {options.map((o, i) => {
+            const header =
+              lastKind !== o.kind ? (
+                <p key={`h-${o.kind}`} className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {o.kind === "tier" ? "Quality" : "Specific models"}
+                </p>
+              ) : null;
+            lastKind = o.kind;
+            const selected = o.value === value.value;
+            return (
+              <React.Fragment key={o.value}>
+                {header}
+                <button
+                  ref={(el) => {
+                    itemsRef.current[i] = el;
+                  }}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  disabled={!o.available}
+                  tabIndex={i === activeIndex ? 0 : -1}
+                  onClick={() => {
+                    onChange(o);
+                    close();
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+                    selected ? "bg-accent/10" : "hover:bg-surface-muted"
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{o.label}</span>
+                    {(o.hint || o.reason) && (
+                      <span className="block text-xs text-muted-foreground">{o.available ? o.hint : o.reason ?? "Unavailable"}</span>
+                    )}
+                  </span>
+                  {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function WorkModePicker({
   modes,

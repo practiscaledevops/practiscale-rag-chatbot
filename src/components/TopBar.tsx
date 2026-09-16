@@ -1,8 +1,7 @@
 "use client";
 
 import { Menu, PanelLeftOpen, Sparkles } from "lucide-react";
-import type { ModelOption, UsageState } from "@/components/AppShell";
-import { ModelSelector } from "@/components/ModelSelector";
+import type { UsageState } from "@/components/AppShell";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
@@ -10,11 +9,6 @@ import { cn } from "@/lib/utils";
 export interface TopBarProps {
   /** Conversation title, or a neutral default. */
   title?: string | null;
-
-  /** Model switcher state. */
-  selection: ModelOption;
-  options: ModelOption[];
-  onSelect: (option: ModelOption) => void;
 
   /** Session token usage. */
   usage: UsageState;
@@ -34,9 +28,6 @@ export interface TopBarProps {
  */
 export function TopBar({
   title,
-  selection,
-  options,
-  onSelect,
   usage,
   collapsed = false,
   onOpenMobile,
@@ -77,11 +68,6 @@ export function TopBar({
       <div className="flex items-center gap-2 sm:gap-3">
         <UsageMeter usage={usage} />
         <NotificationsBell />
-        <ModelSelector
-          selection={selection}
-          options={options}
-          onSelect={onSelect}
-        />
       </div>
     </header>
   );

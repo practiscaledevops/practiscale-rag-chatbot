@@ -328,9 +328,6 @@ export function AppShell({
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar
             title={title}
-            selection={selection}
-            options={options}
-            onSelect={setSelection}
             usage={usage}
             collapsed={collapsed}
             onOpenMobile={() => setMobileOpen(true)}
