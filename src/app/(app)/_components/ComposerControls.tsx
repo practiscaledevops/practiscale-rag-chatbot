@@ -130,7 +130,7 @@ export function WorkModePicker({
           role="menu"
           aria-label="Work mode"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 w-72 origin-bottom overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[0_18px_50px_-10px_rgb(0_0_0/0.7)] ring-1 ring-black/10 motion-safe:animate-fadeUp"
         >
           <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Work mode
