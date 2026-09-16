@@ -73,6 +73,43 @@ const SUGGESTIONS = [
   },
 ] as const;
 
+// Mode-specific launchpad — the selected work mode feels functional before the
+// user types. Falls back to the general SUGGESTIONS above.
+type Suggestion = { icon: typeof Database; title: string; hint: string; prompt: string };
+
+const MODE_SUGGESTIONS: Partial<Record<WorkMode, Suggestion[]>> = {
+  copywriter: [
+    { icon: Wand2, title: "Generate hooks", hint: "High-converting openers", prompt: "Generate 5 high-converting hooks for " },
+    { icon: FileText, title: "Rewrite a landing page", hint: "Sharper, on-brand copy", prompt: "Rewrite this landing page copy to be sharper and on-brand: " },
+    { icon: Sparkles, title: "Objections into ads", hint: "Turn pushback into angles", prompt: "Turn our most common sales objections into ad angles: " },
+    { icon: RefreshCw, title: "Email sequence", hint: "A full nurture flow", prompt: "Create a 4-email nurture sequence for " },
+  ],
+  media: [
+    { icon: Sparkles, title: "Video concept", hint: "A short-form idea", prompt: "Create a short-form video concept for " },
+    { icon: FileText, title: "30-second script", hint: "Hook to CTA", prompt: "Write a 30-second video script (hook to CTA) about " },
+    { icon: Database, title: "Content series", hint: "A themed set", prompt: "Build a 5-part content series on " },
+    { icon: Wand2, title: "Thumbnail angles", hint: "Scroll-stopping ideas", prompt: "Give me 5 thumbnail / cover angles for " },
+  ],
+  sales: [
+    { icon: SearchCheck, title: "Analyze a call", hint: "What went well & why", prompt: "Analyze our recent call scores and tell me what the top performers do differently." },
+    { icon: RefreshCw, title: "Practice an objection", hint: "Roleplay a tough one", prompt: "Roleplay a prospect raising this objection and coach my response: " },
+    { icon: FileText, title: "Follow-up messages", hint: "Move the deal forward", prompt: "Draft follow-up messages after a discovery call about " },
+    { icon: Database, title: "Patterns in calls", hint: "Recurring themes", prompt: "Find the recurring patterns and top objections across our recent call scores." },
+  ],
+  strategy: [
+    { icon: Sparkles, title: "Options & trade-offs", hint: "3-4 grounded paths", prompt: "Give me 3-4 options with trade-offs for " },
+    { icon: SearchCheck, title: "Pressure-test a plan", hint: "Find the weak points", prompt: "Pressure-test this plan and surface the risks and weak assumptions: " },
+    { icon: RefreshCw, title: "Compare directions", hint: "Side by side", prompt: "Compare the pros and cons of these two directions: " },
+    { icon: Database, title: "Biggest risks", hint: "What could go wrong", prompt: "What are the biggest risks and blind spots in " },
+  ],
+  decision_maker: [
+    { icon: FileText, title: "Decision memo", hint: "Recommendation-first", prompt: "Write a decision memo (recommendation up front, evidence, options, risks, next step) on: " },
+    { icon: SearchCheck, title: "Recommend with evidence", hint: "Cited from our data", prompt: "Give me an evidence-backed recommendation, citing our knowledge base, on: " },
+    { icon: Database, title: "Options & risks", hint: "Weighed clearly", prompt: "List the options, trade-offs, and risks for the decision: " },
+    { icon: Sparkles, title: "Bottom line", hint: "One clear call", prompt: "Bottom line: what should we decide about the following, and why? " },
+  ],
+};
+
 // Quick pills — lightweight starters under the composer.
 const PILLS: { label: string; prompt: string }[] = [
   { label: "Summarize a document", prompt: "Summarize this document: " },
@@ -706,8 +743,8 @@ export function ChatView({
                   ))}
                 </div>
 
-                <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                  {SUGGESTIONS.map((s) => {
+                <div className={cn("mt-8 grid gap-3", (MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).length === 4 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+                  {(MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).map((s) => {
                     const Icon = s.icon;
                     return (
                       <button
