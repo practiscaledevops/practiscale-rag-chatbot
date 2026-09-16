@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Columns2,
   Copy,
   Crown,
   GitBranch,
@@ -37,6 +38,7 @@ import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
 import { WorkModePicker, ModelQualityPicker, SourceScopePicker } from "./ComposerControls";
+import { CompareDrafts, type ComparePane } from "./CompareDrafts";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import {
   exportMarkdown,
@@ -235,6 +237,7 @@ export function ChatView({
   const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs } = useAppShell();
   const router = useRouter();
   const [branching, setBranching] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   // What we forward to the Brain as `model`. We send it under both `model`
   // (the forward-looking field) and `tier` (which the current /api/chat reads
@@ -484,6 +487,34 @@ export function ChatView({
     [branching, messages, selection.tier, router]
   );
 
+  // Compare drafts: the two models to pit against each other — Claude (Balanced)
+  // vs an available OpenAI model, falling back to Claude Best quality if OpenAI
+  // isn't configured. And the conversation up to the last question, so both
+  // models answer the same thing with the same context.
+  const comparePanes = useMemo<[ComparePane, ComparePane]>(() => {
+    const openai = options.find((o) => o.kind === "model" && o.provider === "openai" && o.available);
+    const a: ComparePane = { label: "Claude · Balanced", model: "recommended" };
+    const b: ComparePane = openai
+      ? { label: openai.label, model: openai.value }
+      : { label: "Claude · Best quality", model: "max" };
+    return [a, b];
+  }, [options]);
+
+  const compareMessages = useMemo(() => {
+    let lastUser = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    if (lastUser < 0) return [];
+    return messages
+      .slice(0, lastUser + 1)
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+  }, [messages]);
+
   // Recovery path: switch to the Recommended tier (always available, Brain-
   // resolved) and retry. Useful when a specific model failed for this turn.
   const retryWithRecommended = useCallback(() => {
@@ -725,6 +756,13 @@ export function ChatView({
         onSubmit={submitApproval}
         onClose={() => (approvalBusy ? undefined : setApprovalFor(null))}
       />
+      <CompareDrafts
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        messages={compareMessages}
+        mode={mode}
+        panes={comparePanes}
+      />
       {empty ? (
         // -------- Empty state: centered greeting + composer + suggestions --
         <div className="flex-1 overflow-y-auto">
@@ -961,6 +999,16 @@ export function ChatView({
                                 title="Branch from here"
                               >
                                 <GitBranch size={14} />
+                              </IconButton>
+                            )}
+                            {idx === lastIndex && !busy && m.content.trim() && (
+                              <IconButton
+                                aria-label="Compare with another model"
+                                size="sm"
+                                onClick={() => setCompareOpen(true)}
+                                title="Compare drafts"
+                              >
+                                <Columns2 size={14} />
                               </IconButton>
                             )}
                             {idx === lastIndex && !busy && (
