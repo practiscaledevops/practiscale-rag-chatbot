@@ -3,6 +3,7 @@
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Check,
@@ -809,6 +810,16 @@ export function ChatView({
                               </>
                             );
                           })()}
+                          {idx === lastIndex &&
+                          !busy &&
+                          typeof activity.confidence === "number" &&
+                          activity.confidence < 0.34 &&
+                          m.content.trim() ? (
+                            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning">
+                              <AlertTriangle size={12} aria-hidden />
+                              Limited supporting knowledge — verify before relying on this.
+                            </div>
+                          ) : null}
                           {idx === lastIndex && !busy && activity.sourcesCount ? (
                             <SourcesDisclosure
                               count={activity.sourcesCount}
