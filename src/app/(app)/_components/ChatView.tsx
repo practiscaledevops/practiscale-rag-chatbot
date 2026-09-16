@@ -38,7 +38,8 @@ import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
-import { WORK_MODES, DEFAULT_MODE } from "@/lib/work-modes";
+import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
+import { WorkModePicker } from "./ComposerControls";
 import {
   OUTPUT_TYPES,
   DEFAULT_OUTPUT_TYPE,
@@ -255,7 +256,7 @@ export function ChatView({
   initialTier,
   initialMessages,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName, mode } = useAppShell();
+  const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs } = useAppShell();
 
   // What we forward to the Brain as `model`. We send it under both `model`
   // (the forward-looking field) and `tier` (which the current /api/chat reads
@@ -556,12 +557,6 @@ export function ChatView({
   // Executive (CEO) private-memory editor.
   const [memoryOpen, setMemoryOpen] = useState(false);
   const isCeoMode = mode === "ceo";
-  // The active work-mode def, for the visible composer chip (so the user can
-  // always see which persona a message will be sent in).
-  const modeDef = useMemo(
-    () => WORK_MODES.find((m) => m.id === mode) ?? WORK_MODES.find((m) => m.id === DEFAULT_MODE)!,
-    [mode]
-  );
 
   // Export the conversation in a chosen format. The heavy libraries (docx/jspdf/
   // xlsx) load on demand inside the exporters, so they never bloat the bundle.
@@ -687,6 +682,9 @@ export function ChatView({
       busy={busy}
       onStop={stop}
       onSlashSelect={prefill}
+      mode={mode}
+      onModeChange={setMode}
+      modeDefs={modeDefs}
     />
   );
 
@@ -1007,35 +1005,14 @@ export function ChatView({
               {/* Response-format selector — shapes the answer's shape (backend
                   enforces it). */}
               <OutputTypePicker value={outputType} onChange={setOutputType} />
-              {/* Active work-mode chip — always visible so the user knows which
-                  persona this message is sent in (backend enforces it). */}
-              <div className="mb-2 flex items-center gap-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-                    mode === "ceo"
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : mode === "general"
-                        ? "border-border bg-surface-muted text-muted-foreground"
-                        : "border-accent/30 bg-accent/5 text-foreground"
-                  )}
-                  title={`Answering in ${modeDef.label} mode — ${modeDef.hint}. Change it from the Work Mode menu in the sidebar.`}
-                >
-                  {mode === "ceo" ? <Crown size={12} /> : <Sparkles size={12} />}
-                  {modeDef.label} mode
-                </span>
-                {mode !== "general" && (
-                  <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                    {modeDef.hint}
-                  </span>
-                )}
-                {/* When Smart Route is active, show which tier it chose last turn. */}
-                {selection.value === "smart" && activity.routedTier && (
+              {/* When Smart Route is active, show which tier it chose last turn. */}
+              {selection.value === "smart" && activity.routedTier && (
+                <div className="mb-2">
                   <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11px] text-muted-foreground">
                     Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
               {composer}
               <div className="mt-2 flex items-center justify-center gap-3 text-xs text-muted-foreground">
                 <span className="hidden sm:inline">
@@ -1084,6 +1061,9 @@ function Composer({
   busy,
   onStop,
   onSlashSelect,
+  mode,
+  onModeChange,
+  modeDefs,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -1093,6 +1073,9 @@ function Composer({
   busy: boolean;
   onStop: () => void;
   onSlashSelect: (text: string) => void;
+  mode: WorkMode;
+  onModeChange: (m: WorkMode) => void;
+  modeDefs: WorkModeDef[];
 }) {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -1166,7 +1149,7 @@ function Composer({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-soft transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
+      <div className="rounded-2xl border border-border bg-surface px-3 pb-2 pt-2.5 shadow-soft transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
         <label htmlFor="chat-input" className="sr-only">
           Message the assistant
         </label>
@@ -1178,27 +1161,33 @@ function Composer({
           onKeyDown={handleKeyDown}
           rows={1}
           placeholder="Message the assistant…  (type / for templates)"
-          className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="block max-h-[200px] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
-        {busy ? (
-          <IconButton
-            aria-label="Stop generating"
-            type="button"
-            onClick={onStop}
-            className="shrink-0 bg-foreground text-background hover:bg-foreground/90 hover:text-background"
-          >
-            <Square size={15} className="fill-current" />
-          </IconButton>
-        ) : (
-          <IconButton
-            aria-label="Send message"
-            type="submit"
-            disabled={!value.trim()}
-            className="shrink-0 bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground disabled:opacity-40"
-          >
-            <ArrowUp size={17} />
-          </IconButton>
-        )}
+        {/* Message controls — these settings apply to the NEXT message. */}
+        <div className="mt-1.5 flex items-center gap-2">
+          <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
+          <div className="ml-auto">
+            {busy ? (
+              <IconButton
+                aria-label="Stop generating"
+                type="button"
+                onClick={onStop}
+                className="shrink-0 bg-foreground text-background transition-transform duration-100 active:scale-95 hover:bg-foreground/90 hover:text-background"
+              >
+                <Square size={15} className="fill-current" />
+              </IconButton>
+            ) : (
+              <IconButton
+                aria-label="Send message"
+                type="submit"
+                disabled={!value.trim()}
+                className="shrink-0 bg-accent text-accent-foreground shadow-[0_0_0_0_rgb(var(--accent)/0)] transition-[transform,box-shadow] duration-150 hover:bg-accent-hover hover:text-accent-foreground hover:shadow-[0_0_16px_-2px_rgb(var(--accent)/0.55)] active:scale-95 disabled:opacity-40 disabled:shadow-none"
+              >
+                <ArrowUp size={17} />
+              </IconButton>
+            )}
+          </div>
+        </div>
       </div>
     </form>
   );

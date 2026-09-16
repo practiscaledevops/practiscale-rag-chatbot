@@ -6,39 +6,20 @@ import {
   Archive,
   ArchiveRestore,
   ChevronRight,
-  ClipboardCheck,
-  Clapperboard,
-  Compass,
-  Crown,
   FolderPlus,
-  Headphones,
   MessageSquarePlus,
   Pencil,
-  PenLine,
   Pin,
   PinOff,
   PanelLeftClose,
   Search,
   ShieldCheck,
-  Target,
   Trash2,
   User,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
 import { Logo } from "@/components/Brand";
-
-// Icon per work mode (client-only; the mode data lives in lib/work-modes).
-const MODE_ICON: Record<WorkMode, typeof Compass> = {
-  general: Compass,
-  copywriter: PenLine,
-  media: Clapperboard,
-  sales: Headphones,
-  strategy: Target,
-  decision_maker: ClipboardCheck,
-  ceo: Crown,
-};
 
 export interface ProjectItem {
   id: string;
@@ -62,11 +43,6 @@ export interface SidebarProps {
   activeConversationId?: string | null;
   /** Show the Admin link (role admin/super_admin, resolved server-side). */
   isAdmin?: boolean;
-
-  /** Work modes (personas) this user may select. */
-  modes?: WorkModeDef[];
-  activeMode?: WorkMode;
-  onSelectMode?: (m: WorkMode) => void;
 
   /** Responsive state (owned by AppShell). */
   mobileOpen?: boolean;
@@ -134,9 +110,6 @@ export function Sidebar({
   conversations = [],
   activeConversationId = null,
   isAdmin = false,
-  modes = [],
-  activeMode = "general",
-  onSelectMode,
   mobileOpen = false,
   collapsed = false,
   onCloseMobile,
@@ -298,47 +271,7 @@ export function Sidebar({
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-        {/* Work modes (personas) */}
-        {modes.length > 0 && (
-          <section className="mb-1 pb-1" aria-labelledby="sidebar-modes-heading">
-            <h2
-              id="sidebar-modes-heading"
-              className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted"
-            >
-              Work mode
-            </h2>
-            <ul className="space-y-0.5 px-1">
-              {modes.map((m) => {
-                const Icon = MODE_ICON[m.id];
-                const active = m.id === activeMode;
-                return (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => onSelectMode?.(m.id)}
-                      aria-pressed={active}
-                      title={m.hint}
-                      className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        active
-                          ? "bg-white/[0.12] text-sidebar-foreground"
-                          : "text-sidebar-foreground/85 hover:bg-white/[0.07]"
-                      )}
-                    >
-                      <span className={cn(active ? "text-accent" : "text-sidebar-muted")}>
-                        <Icon size={16} />
-                      </span>
-                      <span className="flex-1 text-left">{m.label}</span>
-                      {m.restricted && (
-                        <ShieldCheck size={12} className="text-accent/70" aria-label="Restricted" />
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
+        {/* Work modes moved into the composer — the sidebar is navigation + history. */}
 
         {/* Projects */}
         <section className="mb-1" aria-labelledby="sidebar-projects-heading">

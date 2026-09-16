@@ -31,6 +31,8 @@ const config: Config = {
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
+        info: "rgb(var(--info) / <alpha-value>)",
+        private: "rgb(var(--private) / <alpha-value>)",
         // Dark sidebar rail tokens (constant across light/dark).
         sidebar: "rgb(var(--sidebar) / <alpha-value>)",
         "sidebar-foreground": "rgb(var(--sidebar-foreground) / <alpha-value>)",
@@ -53,6 +55,17 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+      },
+      keyframes: {
+        // Popover/menu open: gentle rise + fade (respects reduced motion via
+        // the motion-safe: variant at the call site).
+        fadeUp: {
+          from: { opacity: "0", transform: "translateY(5px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        fadeUp: "fadeUp 160ms ease-out",
       },
     },
   },

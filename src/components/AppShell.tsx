@@ -311,9 +311,6 @@ export function AppShell({
           conversations={conversations}
           activeConversationId={activeConversationId}
           isAdmin={isAdmin}
-          modes={modeDefs}
-          activeMode={mode}
-          onSelectMode={setMode}
           mobileOpen={mobileOpen}
           collapsed={collapsed}
           onCloseMobile={() => setMobileOpen(false)}

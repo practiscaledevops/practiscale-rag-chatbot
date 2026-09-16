@@ -37,6 +37,8 @@
   --success: 22 163 74;
   --warning: 202 138 4;
   --danger: 220 38 38;
+  --info: 37 99 235;              /* information (blue) */
+  --private: 124 58 237;          /* CEO / private (violet) */
 
   /* dark sidebar rail (constant across themes) */
   --sidebar: 11 23 22;            /* near-black, faint teal */
@@ -52,23 +54,32 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: 8 14 14;
-    --foreground: 236 240 239;
-    --surface: 16 24 24;
-    --surface-muted: 24 34 33;
-    --border: 31 44 42;
-    --muted: 24 34 33;
-    --muted-foreground: 150 166 163;
+    /* Deep GREEN-tinted premium surfaces with clear elevation steps:
+       canvas < sidebar < base surface < raised (composer/menus). */
+    --background: 7 15 13;        /* canvas */
+    --foreground: 237 244 240;    /* near-white primary text */
+    --surface: 15 28 24;          /* cards / panels */
+    --surface-muted: 21 40 33;    /* raised: composer, menus, hover */
+    --border: 37 64 55;
+    --muted: 21 40 33;
+    --muted-foreground: 154 176 168; /* green-gray secondary text */
 
-    --accent: 20 184 166;         /* brighter teal on dark */
-    --accent-foreground: 255 255 255;
-    --accent-hover: 45 212 191;
-    --ring: 45 212 191;
+    --accent: 32 200 181;         /* brighter premium teal (#20C8B5) */
+    --accent-foreground: 5 20 17;
+    --accent-hover: 70 220 202;
+    --ring: 32 200 181;
 
-    --success: 34 197 94;
-    --warning: 234 179 8;
-    --danger: 248 113 113;
-    /* sidebar tokens stay dark */
+    --success: 45 214 160;
+    --warning: 243 182 97;        /* amber (#F3B661) */
+    --danger: 255 123 117;        /* error (#FF7B75) */
+    --info: 117 191 255;          /* information (#75BFFF) */
+    --private: 182 164 255;       /* CEO / private (#B6A4FF) */
+
+    /* deeper green-tinted sidebar rail */
+    --sidebar: 11 21 18;
+    --sidebar-foreground: 231 240 236;
+    --sidebar-muted: 148 172 164;
+    --sidebar-border: 30 52 45;
   }
 }
 
