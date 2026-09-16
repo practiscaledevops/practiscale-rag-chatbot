@@ -3,6 +3,7 @@
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
   ArrowUp,
   Check,
   ChevronDown,
@@ -347,11 +348,22 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  // `atBottom` mirrors stickRef as state, so the "Jump to latest" pill can show
+  // when the user scrolls up while a response streams below.
+  const [atBottom, setAtBottom] = useState(true);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    stickRef.current = near;
+    setAtBottom((prev) => (prev === near ? prev : near));
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    stickRef.current = true;
+    setAtBottom(true);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, []);
 
   useEffect(() => {
@@ -868,7 +880,8 @@ export function ChatView({
                   </li>
                 ))}
 
-                {/* Awaiting the first streamed token — show live pipeline activity. */}
+                {/* Awaiting the first streamed token — compact pipeline status
+                    chip + a skeleton shell that matches the answer layout. */}
                 {status === "submitted" && (
                   <li aria-live="polite" aria-label="Assistant is working" className="flex gap-3">
                     <span
@@ -877,7 +890,14 @@ export function ChatView({
                     >
                       <Sparkles size={15} />
                     </span>
-                    <ActivityLine label={activity.label} />
+                    <div className="min-w-0 flex-1">
+                      <StatusChip label={activity.label} />
+                      <div className="mt-3 space-y-2" aria-hidden>
+                        <div className="h-3 w-11/12 animate-pulse rounded bg-surface-muted" />
+                        <div className="h-3 w-4/5 animate-pulse rounded bg-surface-muted [animation-delay:120ms]" />
+                        <div className="h-3 w-2/3 animate-pulse rounded bg-surface-muted [animation-delay:240ms]" />
+                      </div>
+                    </div>
                   </li>
                 )}
               </ul>
@@ -932,7 +952,20 @@ export function ChatView({
           </div>
 
           {/* Docked composer */}
-          <div className="border-t border-border bg-background/80 backdrop-blur">
+          <div className="relative border-t border-border bg-background/80 backdrop-blur">
+            {/* Jump-to-latest — appears only when the user has scrolled up. */}
+            {!atBottom && messages.length > 0 && (
+              <div className="pointer-events-none absolute inset-x-0 -top-5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={jumpToLatest}
+                  className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-soft-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-fadeUp"
+                >
+                  <ArrowDown size={13} aria-hidden />
+                  Jump to latest
+                </button>
+              </div>
+            )}
             <div className="mx-auto w-full max-w-3xl px-4 py-3">
               {/* When Smart Route is active, show which tier it chose last turn. */}
               {selection.value === "smart" && activity.routedTier && (
@@ -1779,15 +1812,18 @@ function StreamingMarkdown({ content, animate }: { content: string; animate: boo
 }
 
 /** A live, single-line pipeline activity indicator ("Searching…", "Writing…"). */
-function ActivityLine({ label }: { label: string | null }) {
+/** Compact pipeline-status chip (radar-style pulse + the live stage label). */
+function StatusChip({ label }: { label: string | null }) {
   return (
-    <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground" aria-live="polite">
-      <span className="flex gap-1" aria-hidden>
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+    <span
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-muted-foreground shadow-soft"
+      aria-live="polite"
+    >
+      <span className="relative flex h-3.5 w-3.5 items-center justify-center" aria-hidden>
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/40" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
       </span>
-      <span>{label ?? "Thinking"}…</span>
-    </div>
+      {label ?? "Working"}…
+    </span>
   );
 }
