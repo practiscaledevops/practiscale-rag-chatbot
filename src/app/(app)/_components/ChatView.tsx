@@ -805,47 +805,10 @@ export function ChatView({
                 </p>
               </>
             ) : (
-              <>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {PILLS.map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => prefill(p.prompt)}
-                      className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-soft transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className={cn("mt-8 grid gap-3", (MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).length === 4 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
-                  {(MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).map((s) => {
-                    const Icon = s.icon;
-                    return (
-                      <button
-                        key={s.title}
-                        type="button"
-                        onClick={() => prefill(s.prompt)}
-                        className="group flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-                          <Icon size={16} />
-                        </span>
-                        <span className="text-sm font-semibold text-foreground">
-                          {s.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{s.hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <p className="mt-8 text-center text-xs text-muted-foreground">
-                  Answers are grounded in your Practiscale knowledge base, with inline
-                  sources you can trace back.
-                </p>
-              </>
+              <p className="mt-6 text-center text-xs text-muted-foreground">
+                Answers are grounded in your Practiscale knowledge base, with inline
+                sources you can trace back.
+              </p>
             )}
           </div>
         </div>
