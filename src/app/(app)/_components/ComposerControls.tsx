@@ -86,7 +86,7 @@ export function SourceScopePicker({
 
   React.useEffect(() => {
     if (!open) return;
-    const t = window.setTimeout(() => itemsRef.current[activeIndex]?.focus(), 0);
+    const t = window.setTimeout(() => itemsRef.current[activeIndex]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -182,7 +182,7 @@ export function SourceScopePicker({
             tabIndex={activeIndex === 0 ? 0 : -1}
             onClick={() => onChange([])}
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               value.length === 0 ? "bg-accent/10" : "hover:bg-white/[0.06]"
             )}
           >
@@ -208,7 +208,7 @@ export function SourceScopePicker({
                 tabIndex={activeIndex === idx ? 0 : -1}
                 onClick={() => toggle(c.id)}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   checked ? "bg-accent/10" : "hover:bg-white/[0.06]"
                 )}
               >
@@ -255,7 +255,7 @@ export function ModelQualityPicker({
     const cur = options.findIndex((o) => o.value === value.value);
     const idx = enabled.includes(cur) ? cur : enabled[0] ?? 0;
     setActiveIndex(idx);
-    const t = window.setTimeout(() => itemsRef.current[idx]?.focus(), 0);
+    const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -344,7 +344,7 @@ export function ModelQualityPicker({
                     close();
                   }}
                   className={cn(
-                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40",
                     selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
                   )}
                 >
@@ -388,7 +388,7 @@ export function WorkModePicker({
     if (!open) return;
     const idx = Math.max(0, modes.findIndex((m) => m.id === value));
     setActiveIndex(idx);
-    const t = window.setTimeout(() => itemsRef.current[idx]?.focus(), 0);
+    const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
   }, [open, modes, value]);
 
@@ -484,7 +484,7 @@ export function WorkModePicker({
                   close();
                 }}
                 className={cn(
-                  "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                   selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
                 )}
               >
