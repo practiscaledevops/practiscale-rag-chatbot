@@ -57,6 +57,9 @@ const chatBodySchema = z.object({
   mode: z.string().trim().max(32).optional(),
   // Response format (table/memo/email/…) — validated by the Brain; forwarded as-is.
   outputType: z.string().trim().max(32).optional(),
+  // Source scope: collections the user narrowed to (the Brain intersects with the
+  // key scope, so this can only ever restrict, never widen).
+  collectionIds: z.array(z.string().uuid()).max(50).optional(),
   conversationId: z.string().uuid().nullish(),
   conversation_id: z.string().uuid().nullish(),
 });
@@ -176,6 +179,13 @@ export async function POST(req: Request) {
   //     re-narrowed by the Brain.
   const sourceTypes = allowedSourceTypes(access);
 
+  // 3b-ii. Source scope: the collections the user narrowed to (optional). Only
+  //        ever restricts — the Brain intersects with the key's collection scope.
+  const collectionIds =
+    Array.isArray(parsed.data.collectionIds) && parsed.data.collectionIds.length > 0
+      ? parsed.data.collectionIds
+      : undefined;
+
   // 3c. Executive mode: inject the user's OWN private memory as trusted
   //     directives — only when they may use Executive mode (super_admin or the
   //     "executive" feature). Never reaches anyone else.
@@ -195,11 +205,15 @@ export async function POST(req: Request) {
 
   // 4. Call the Brain (scoped key stays server-side inside brainChat).
   const startedAt = Date.now();
+  const scope =
+    sourceTypes || collectionIds
+      ? { ...(sourceTypes ? { sourceTypes } : {}), ...(collectionIds ? { collectionIds } : {}) }
+      : undefined;
   const upstream = await brainChat(
     safeMessages,
     selection,
     mode,
-    sourceTypes ? { sourceTypes } : undefined,
+    scope,
     directives,
     parsed.data.outputType
   );

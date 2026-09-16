@@ -76,6 +76,36 @@ export async function brainChat(
   });
 }
 
+/** A knowledge collection the scoped key may search (for the source-scope UI). */
+export interface BrainCollection {
+  id: string;
+  name: string;
+}
+
+/**
+ * List the collections this app's scoped key may search (GET /api/v1/collections).
+ * Server-side only (holds the key). Best-effort: any failure returns []. Cached
+ * briefly since the set changes rarely.
+ */
+export async function fetchBrainCollections(): Promise<BrainCollection[]> {
+  if (!BRAIN_KEY) return [];
+  try {
+    const res = await fetch(`${BRAIN_URL}/api/v1/collections`, {
+      method: "GET",
+      headers: authHeaders(),
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const json = (await res.json().catch(() => null)) as { collections?: unknown } | null;
+    const list = Array.isArray(json?.collections) ? json!.collections : [];
+    return (list as Record<string, unknown>[])
+      .map((c) => ({ id: String(c.id ?? ""), name: String(c.name ?? "Untitled") }))
+      .filter((c) => c.id);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Read the Brain's resolution headers off a chat Response: the concrete model
  * it actually used (x-model) and the provider (x-provider). Both are null when

@@ -34,7 +34,7 @@ import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
-import { WorkModePicker, ModelQualityPicker } from "./ComposerControls";
+import { WorkModePicker, ModelQualityPicker, SourceScopePicker } from "./ComposerControls";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import {
   exportMarkdown,
@@ -237,9 +237,18 @@ export function ChatView({
   // and forwards straight through), so the selection takes effect either way.
   // `mode` is the persona/work mode (role-gated server-side).
 
+  // Source scope: collections the user narrowed to (empty = all company
+  // knowledge). Per-message setting, forwarded to /api/chat → the Brain.
+  const [scopeCollectionIds, setScopeCollectionIds] = useState<string[]>([]);
+
   const chatBody = useMemo(
-    () => ({ model: selection.value, tier: selection.value, mode }),
-    [selection.value, mode]
+    () => ({
+      model: selection.value,
+      tier: selection.value,
+      mode,
+      ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}),
+    }),
+    [selection.value, mode, scopeCollectionIds]
   );
 
   const {
@@ -444,9 +453,9 @@ export function ChatView({
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value, mode } });
+      reload({ body: { model: value, tier: value, mode, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) } });
     },
-    [options, setSelection, reload, setData, mode]
+    [options, setSelection, reload, setData, mode, scopeCollectionIds]
   );
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
@@ -456,8 +465,8 @@ export function ChatView({
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value, mode } });
-  }, [setSelection, reload, setData, mode]);
+    reload({ body: { model: rec.value, tier: rec.value, mode, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) } });
+  }, [setSelection, reload, setData, mode, scopeCollectionIds]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
@@ -670,6 +679,8 @@ export function ChatView({
       selection={selection}
       options={options}
       onSelectModel={setSelection}
+      scopeCollectionIds={scopeCollectionIds}
+      onScopeChange={setScopeCollectionIds}
     />
   );
 
@@ -1078,6 +1089,8 @@ function Composer({
   selection,
   options,
   onSelectModel,
+  scopeCollectionIds,
+  onScopeChange,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -1093,6 +1106,8 @@ function Composer({
   selection: ModelOption;
   options: ModelOption[];
   onSelectModel: (o: ModelOption) => void;
+  scopeCollectionIds: string[];
+  onScopeChange: (ids: string[]) => void;
 }) {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -1184,6 +1199,7 @@ function Composer({
         <div className="mt-1.5 flex items-center gap-2">
           <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
           <ModelQualityPicker options={options} value={selection} onChange={onSelectModel} />
+          <SourceScopePicker value={scopeCollectionIds} onChange={onScopeChange} />
           <div className="ml-auto">
             {busy ? (
               <IconButton
