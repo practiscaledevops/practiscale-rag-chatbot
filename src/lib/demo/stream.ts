@@ -12,8 +12,13 @@ function pickAnswer(query: string): string {
   return "Here's what the knowledge base shows: reps close best when they lead with the customer's stated priority and keep discovery tight. Closing scores average 84/100 while discovery lags at 61/100, so stronger discovery questioning is the biggest lever. [demo-chunk-1] [demo-chunk-2]";
 }
 
-export function demoChatStreamResponse(query: string): Response {
-  const text = pickAnswer(query);
+export function demoChatStreamResponse(query: string, attachmentNames: string[] = []): Response {
+  const names = attachmentNames.filter((n) => typeof n === "string" && n.trim());
+  const text = names.length
+    ? `Reading ${names.length === 1 ? "your attached file" : `your ${names.length} attached files`} (${names.join(", ")}). ` +
+      `In demo mode I can't extract the file, but connected to the Brain I'd answer from its contents alongside the company knowledge base. ` +
+      pickAnswer(query)
+    : pickAnswer(query);
   const tokens = text.match(/\S+\s*/g) ?? [text];
   const enc = new TextEncoder();
 

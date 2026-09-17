@@ -60,6 +60,18 @@ const chatBodySchema = z.object({
   // Source scope: collections the user narrowed to (the Brain intersects with the
   // key scope, so this can only ever restrict, never widen).
   collectionIds: z.array(z.string().uuid()).max(50).optional(),
+  // Per-message attached files, already extracted to plain text by /api/attachments.
+  // Bounded so a client can't forward an unbounded payload on the scoped key; the
+  // Brain treats the text as data-only source material for this turn.
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        text: z.string().min(1).max(40_000),
+      })
+    )
+    .max(5)
+    .optional(),
   conversationId: z.string().uuid().nullish(),
   conversation_id: z.string().uuid().nullish(),
 });
@@ -124,7 +136,12 @@ export async function POST(req: Request) {
   if (isDemo()) {
     const demoMessages = Array.isArray(body?.messages) ? body.messages : [];
     const last = [...demoMessages].reverse().find((m: any) => m?.role === "user");
-    return demoChatStreamResponse(last?.content ?? "");
+    const attachmentNames = Array.isArray(body?.attachments)
+      ? body.attachments
+          .map((a: any) => (typeof a?.name === "string" ? a.name : ""))
+          .filter(Boolean)
+      : [];
+    return demoChatStreamResponse(last?.content ?? "", attachmentNames);
   }
 
   // 1. Identity + permissions, resolved SERVER-SIDE from the session.
@@ -186,6 +203,13 @@ export async function POST(req: Request) {
       ? parsed.data.collectionIds
       : undefined;
 
+  // 3b-iii. Per-message attachments (extracted text). Drop any empty ones; the
+  //         Brain caps + frames them as data-only source material for this turn.
+  const attachments =
+    Array.isArray(parsed.data.attachments) && parsed.data.attachments.length > 0
+      ? parsed.data.attachments.filter((a) => a.text.trim())
+      : undefined;
+
   // 3c. Executive mode: inject the user's OWN private memory as trusted
   //     directives — only when they may use Executive mode (super_admin or the
   //     "executive" feature). Never reaches anyone else.
@@ -200,6 +224,7 @@ export async function POST(req: Request) {
     mode,
     model: String(selection),
     sensitiveAccess: sourceTypes === undefined, // true = call_score was in scope
+    attachments: attachments?.length ?? 0,
     conversationId: asUuid(parsed.data.conversationId ?? parsed.data.conversation_id),
   });
 
@@ -215,7 +240,8 @@ export async function POST(req: Request) {
     mode,
     scope,
     directives,
-    parsed.data.outputType
+    parsed.data.outputType,
+    attachments && attachments.length ? attachments : undefined
   );
 
   if (!upstream.ok || !upstream.body) {

@@ -49,13 +49,20 @@ export interface BrainScope {
   collectionIds?: string[];
 }
 
+/** A file the user attached to THIS message, already extracted to plain text. */
+export interface BrainAttachment {
+  name: string;
+  text: string;
+}
+
 export async function brainChat(
   messages: BrainMessage[],
   model?: ModelSelection,
   mode?: string,
   scope?: BrainScope,
   directives?: string,
-  outputType?: string
+  outputType?: string,
+  attachments?: BrainAttachment[]
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -72,6 +79,9 @@ export async function brainChat(
       ...(directives ? { directives } : {}),
       // Response format (table/memo/email/…); the Brain validates + enforces it.
       ...(outputType && outputType !== "answer" ? { outputType } : {}),
+      // Per-message attached files (extracted text). The Brain treats their
+      // CONTENT as data, never as instructions.
+      ...(attachments && attachments.length ? { attachments } : {}),
     }),
   });
 }

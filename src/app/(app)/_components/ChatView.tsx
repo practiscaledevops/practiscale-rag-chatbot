@@ -20,8 +20,10 @@ import {
   FileText,
   Loader2,
   PanelRight,
+  Paperclip,
   Pencil,
   RefreshCw,
+  RotateCw,
   SearchCheck,
   Sparkles,
   Square,
@@ -51,6 +53,35 @@ import {
 } from "@/lib/export-doc";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
+import {
+  MAX_FILES,
+  MAX_FILE_BYTES,
+  MAX_FILE_MB,
+  ACCEPTED_ACCEPT,
+  ACCEPTED_LABEL,
+  isSupportedName,
+  type ChatAttachment,
+} from "@/lib/attachments-shared";
+
+/** A file the user is attaching to the next message (upload lifecycle in the composer). */
+type PendingAttachment = {
+  id: string;
+  name: string;
+  size: number;
+  status: "uploading" | "ready" | "error";
+  text?: string;
+  truncated?: boolean;
+  error?: string;
+  /** Kept until the upload succeeds, so a failed upload can be retried. */
+  file?: File;
+};
+
+/** Human-readable byte size, e.g. "12 KB", "3.4 MB". */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // Suggested-prompt cards on the empty state — each prefills the composer.
 const SUGGESTIONS = [
@@ -248,6 +279,101 @@ export function ChatView({
   // knowledge). Per-message setting, forwarded to /api/chat → the Brain.
   const [scopeCollectionIds, setScopeCollectionIds] = useState<string[]>([]);
 
+  // Attachments for the NEXT message: files the user attached, uploaded to
+  // /api/attachments for text extraction, then forwarded with the send. Cleared
+  // after each send (attachments apply to the turn they're sent with).
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const attachmentsRef = useRef<PendingAttachment[]>([]);
+  const attachIdRef = useRef(0);
+  const attachStartedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  // Upload one file for extraction; flip its chip to ready (with text) or error.
+  const uploadAttachment = useCallback(async (id: string, file: File) => {
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/attachments", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                status: "ready",
+                text: typeof json.text === "string" ? json.text : "",
+                truncated: !!json.truncated,
+                file: undefined,
+                error: undefined,
+              }
+            : a
+        )
+      );
+    } catch (e) {
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? { ...a, status: "error", error: e instanceof Error ? e.message : "Upload failed" }
+            : a
+        )
+      );
+    }
+  }, []);
+
+  // Validate + queue files, then kick off their uploads. Enforces the file
+  // count/size/type caps client-side (the server re-checks).
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      let room = MAX_FILES - attachmentsRef.current.length;
+      const additions: PendingAttachment[] = [];
+      for (const file of list) {
+        if (room <= 0) break;
+        const id = `att-${attachIdRef.current++}`;
+        if (!isSupportedName(file.name)) {
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Unsupported type · accepts ${ACCEPTED_LABEL}` });
+          continue;
+        }
+        if (file.size > MAX_FILE_BYTES) {
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Too large · max ${MAX_FILE_MB} MB` });
+          continue;
+        }
+        additions.push({ id, name: file.name, size: file.size, status: "uploading", file });
+        room--;
+      }
+      if (additions.length === 0) return;
+      setAttachments((prev) => [...prev, ...additions]);
+      for (const a of additions) {
+        if (a.status === "uploading" && a.file && !attachStartedRef.current.has(a.id)) {
+          attachStartedRef.current.add(a.id);
+          void uploadAttachment(a.id, a.file);
+        }
+      }
+    },
+    [uploadAttachment]
+  );
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    attachStartedRef.current.delete(id);
+  }, []);
+
+  const retryAttachment = useCallback(
+    (id: string) => {
+      const item = attachmentsRef.current.find((a) => a.id === id);
+      if (!item?.file) return;
+      setAttachments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status: "uploading", error: undefined } : a))
+      );
+      void uploadAttachment(id, item.file);
+    },
+    [uploadAttachment]
+  );
+
   const chatBody = useMemo(
     () => ({
       model: selection.value,
@@ -440,11 +566,29 @@ export function ChatView({
   }, [input]);
 
   const submit = useCallback(() => {
-    if (!input.trim() || busy) return;
+    const hasText = input.trim().length > 0;
+    const ready = attachmentsRef.current.filter((a) => a.status === "ready" && a.text);
+    const uploading = attachmentsRef.current.some((a) => a.status === "uploading");
+    if (busy || uploading) return;
+    if (!hasText && ready.length === 0) return;
     stickRef.current = true;
     setData(undefined); // clear last turn's status/sources so `activity` is per-turn
-    handleSubmit(undefined, { body: chatBody });
-  }, [input, busy, handleSubmit, chatBody, setData]);
+    const payload: ChatAttachment[] = ready.map((a) => ({ name: a.name, text: a.text as string }));
+    const body = payload.length ? { ...chatBody, attachments: payload } : chatBody;
+    if (hasText) {
+      handleSubmit(undefined, { body });
+    } else {
+      // Files with no question: send a short default prompt naming the files so
+      // the turn still has a user message the assistant can answer.
+      const names = ready.map((a) => a.name).join(", ");
+      void append(
+        { role: "user", content: `Please review the attached file${ready.length > 1 ? "s" : ""}: ${names}` },
+        { body }
+      );
+    }
+    setAttachments([]);
+    attachStartedRef.current.clear();
+  }, [input, busy, handleSubmit, append, chatBody, setData]);
 
   const regenerate = useCallback(() => {
     stickRef.current = true;
@@ -720,6 +864,10 @@ export function ChatView({
     lastMsg.role === "assistant" &&
     !lastMsg.content.trim();
 
+  const attachUploading = attachments.some((a) => a.status === "uploading");
+  const attachReadyCount = attachments.filter((a) => a.status === "ready").length;
+  const canSend = (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading;
+
   const composer = (
     <Composer
       textareaRef={taRef}
@@ -738,6 +886,11 @@ export function ChatView({
       onSelectModel={setSelection}
       scopeCollectionIds={scopeCollectionIds}
       onScopeChange={setScopeCollectionIds}
+      attachments={attachments}
+      onAttachFiles={addFiles}
+      onRemoveAttachment={removeAttachment}
+      onRetryAttachment={retryAttachment}
+      canSend={canSend}
     />
   );
 
@@ -1144,6 +1297,11 @@ function Composer({
   onSelectModel,
   scopeCollectionIds,
   onScopeChange,
+  attachments,
+  onAttachFiles,
+  onRemoveAttachment,
+  onRetryAttachment,
+  canSend,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
@@ -1161,9 +1319,30 @@ function Composer({
   onSelectModel: (o: ModelOption) => void;
   scopeCollectionIds: string[];
   onScopeChange: (ids: string[]) => void;
+  attachments: PendingAttachment[];
+  onAttachFiles: (files: FileList | File[]) => void;
+  onRemoveAttachment: (id: string) => void;
+  onRetryAttachment: (id: string) => void;
+  canSend: boolean;
 }) {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const atMax = attachments.length >= MAX_FILES;
+
+  function pickFiles() {
+    fileInputRef.current?.click();
+  }
+  function onFilesChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files.length) onAttachFiles(e.target.files);
+    e.target.value = ""; // allow re-selecting the same file
+  }
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length) onAttachFiles(e.dataTransfer.files);
+  }
 
   // Slash menu is open when the input is a bare "/word" (no space yet).
   const m = /^\/([\w-]*)$/.exec(value);
@@ -1234,7 +1413,43 @@ function Composer({
           ))}
         </div>
       )}
-      <div className="rounded-2xl border border-border bg-surface px-3 pb-2 pt-2.5 shadow-soft transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          // Only clear when leaving the card, not when moving over a child.
+          if (e.currentTarget === e.target) setDragging(false);
+        }}
+        onDrop={onDrop}
+        className={cn(
+          "rounded-2xl border bg-surface px-3 pb-2 pt-2.5 shadow-soft transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40",
+          dragging ? "border-accent/60 ring-2 ring-accent/40" : "border-border"
+        )}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_ACCEPT}
+          onChange={onFilesChosen}
+          className="hidden"
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+        {attachments.length > 0 && (
+          <ul className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((a) => (
+              <AttachmentChip
+                key={a.id}
+                att={a}
+                onRemove={() => onRemoveAttachment(a.id)}
+                onRetry={() => onRetryAttachment(a.id)}
+              />
+            ))}
+          </ul>
+        )}
         <label htmlFor="chat-input" className="sr-only">
           Message the assistant
         </label>
@@ -1250,6 +1465,16 @@ function Composer({
         />
         {/* Message controls — these settings apply to the NEXT message. */}
         <div className="mt-1.5 flex items-center gap-2">
+          <IconButton
+            aria-label={atMax ? `Attachment limit reached (${MAX_FILES})` : "Attach files"}
+            title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
+            type="button"
+            onClick={pickFiles}
+            disabled={atMax}
+            className="shrink-0 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40"
+          >
+            <Paperclip size={17} />
+          </IconButton>
           <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
           <ModelQualityPicker options={options} value={selection} onChange={onSelectModel} />
           <SourceScopePicker value={scopeCollectionIds} onChange={onScopeChange} />
@@ -1267,7 +1492,7 @@ function Composer({
               <IconButton
                 aria-label="Send message"
                 type="submit"
-                disabled={!value.trim()}
+                disabled={!canSend}
                 className="shrink-0 bg-accent text-accent-foreground shadow-[0_0_0_0_rgb(var(--accent)/0)] transition-[transform,box-shadow] duration-150 hover:bg-accent-hover hover:text-accent-foreground hover:shadow-[0_0_16px_-2px_rgb(var(--accent)/0.55)] active:scale-95 disabled:opacity-40 disabled:shadow-none"
               >
                 <ArrowUp size={17} />
@@ -1277,6 +1502,61 @@ function Composer({
         </div>
       </div>
     </form>
+  );
+}
+
+/** One attachment chip in the composer tray: name, size/status, remove/retry. */
+function AttachmentChip({
+  att,
+  onRemove,
+  onRetry,
+}: {
+  att: PendingAttachment;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const isError = att.status === "error";
+  const isUploading = att.status === "uploading";
+  return (
+    <li
+      className={cn(
+        "group flex max-w-[220px] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs",
+        isError
+          ? "border-danger/40 bg-danger/10 text-danger"
+          : "border-white/10 bg-surface-muted text-foreground ring-1 ring-white/5"
+      )}
+      title={isError ? att.error : att.truncated ? `${att.name} (trimmed to fit)` : att.name}
+    >
+      {isUploading ? (
+        <Loader2 size={13} className="shrink-0 animate-spin text-muted-foreground" />
+      ) : isError ? (
+        <AlertTriangle size={13} className="shrink-0" />
+      ) : (
+        <FileText size={13} className="shrink-0 text-accent" />
+      )}
+      <span className="truncate font-medium">{att.name}</span>
+      <span className={cn("shrink-0", isError ? "" : "text-muted-foreground")}>
+        {isUploading ? "reading…" : isError ? att.error : formatBytes(att.size)}
+      </span>
+      {isError && att.file && (
+        <button
+          type="button"
+          onClick={onRetry}
+          aria-label={`Retry ${att.name}`}
+          className="shrink-0 rounded p-0.5 hover:bg-white/[0.08]"
+        >
+          <RotateCw size={12} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${att.name}`}
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-white/[0.08] hover:text-foreground"
+      >
+        <X size={12} />
+      </button>
+    </li>
   );
 }
 
