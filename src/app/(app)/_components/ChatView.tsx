@@ -595,6 +595,37 @@ export function ChatView({
     }
   }, []);
 
+  // Manual "Save as learning" from ANY answer. The automatic card only appears
+  // when the Brain detects a decision/result in the user's own message; the
+  // button lets a person turn an answer they acted on into Organizational
+  // Learning directly (the card stays editable before saving).
+  const [manualLearning, setManualLearning] = useState<{ messageId: string; candidate: LearningCandidate } | null>(null);
+  const candidateFromAnswer = useCallback(
+    (m: { content: string }, idx: number): LearningCandidate => {
+      const text = parseOptions(m.content).text;
+      const heading = text.match(/^#{1,3}\s+(.+)$/m)?.[1]?.trim();
+      const firstLine =
+        text
+          .split("\n")
+          .map((l) => l.replace(/^[#>*\-\s]+/, "").trim())
+          .find((l) => l.length > 0) ?? "Learning from chat";
+      const prevUser = [...messages.slice(0, idx)].reverse().find((x) => x.role === "user")?.content ?? "";
+      const isLast = idx === messages.length - 1;
+      const refs = isLast ? Array.from(new Set(activity.sources.map((s) => s.ref).filter((r): r is string => !!r))) : [];
+      return {
+        kind: "learning",
+        title: (heading ?? firstLine).slice(0, 120),
+        change: (prevUser || firstLine).slice(0, 1500),
+        observedResult: text.slice(0, 1500),
+        department: null,
+        relatedRefs: refs.slice(0, 10),
+        missingEvidence: [],
+        confidence: 0.5,
+      };
+    },
+    [messages, activity.sources]
+  );
+
   // Track the persisted id in a ref so the first save of a new chat can flip it
   // without re-rendering mid-stream.
   const conversationIdRef = useRef<string | null>(conversationId);
@@ -1248,6 +1279,14 @@ export function ChatView({
                               onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
                             />
                           ) : null}
+                          {manualLearning?.messageId === m.id ? (
+                            <LearningCard
+                              candidate={manualLearning.candidate}
+                              state={learningState.key === manualLearning.candidate.title ? learningState : { key: manualLearning.candidate.title, status: "idle" }}
+                              onSave={(notes) => saveLearning(manualLearning.candidate, notes)}
+                              onIgnore={() => setManualLearning(null)}
+                            />
+                          ) : null}
                           <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                             <IconButton
                               aria-label={copiedId === m.id ? "Copied" : "Copy message"}
@@ -1296,6 +1335,19 @@ export function ChatView({
                                   ) : (
                                     <ClipboardCheck size={14} />
                                   )}
+                                </IconButton>
+                                <IconButton
+                                  aria-label="Save as learning"
+                                  size="sm"
+                                  title="Save as Organizational Learning"
+                                  onClick={() =>
+                                    setManualLearning((cur) =>
+                                      cur?.messageId === m.id ? null : { messageId: m.id, candidate: candidateFromAnswer(m, idx) }
+                                    )
+                                  }
+                                  className={manualLearning?.messageId === m.id ? "text-private" : undefined}
+                                >
+                                  <Lightbulb size={14} />
                                 </IconButton>
                               </>
                             )}

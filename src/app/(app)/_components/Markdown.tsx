@@ -344,8 +344,11 @@ function splitTableRow(line: string): string[] {
 
 // A citation id: a chunk UUID, or a short ordinal number. Kept strict so stray
 // bracketed text (e.g. [TODO], [x], [0-9] array indices in prose) is NOT chipped.
+// A full chunk uuid, the model's 8-char shortening of one ([018d99c0]), or a
+// short ordinal. Long answers routinely shorten ids, and an un-chipped
+// "[018d99c0] [7e7f59f1]" tail reads as noise.
 const CITE_RE =
-  /\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|\d{1,3})\]/g;
+  /\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{8}|\d{1,3})\]/g;
 
 // Inline token patterns, checked at each position; the earliest match wins.
 const INLINE_PATTERNS = [
