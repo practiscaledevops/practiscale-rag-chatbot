@@ -33,7 +33,9 @@ export const runtime = "nodejs";
 // Co-locate with the Brain + this app's Supabase (all Singapore) so auth, the
 // profile read, and the Brain call don't pay cross-region round trips.
 export const preferredRegion = ["sin1"];
-export const maxDuration = 60;
+// Must be >= the Brain's /api/v1/chat maxDuration: this route tees the upstream
+// stream, so if it dies first it cuts a still-streaming long answer mid-table.
+export const maxDuration = 300;
 
 /** Tier aliases the Brain accepts in addition to concrete model ids. */
 const TIER_WORDS = new Set(["fast", "recommended", "max"]);
