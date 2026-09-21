@@ -14,6 +14,8 @@ import {
   Cpu,
   Shield,
   Bug,
+  Brain,
+  Lightbulb,
   User,
   MessagesSquare,
   ClipboardCheck,
@@ -106,14 +108,34 @@ export function CommandPalette({
         }
       );
     }
-    cmds.push({
-      id: "my-approvals",
-      label: "My approvals",
-      hint: "Submissions & status",
-      group: "Navigate",
-      icon: ClipboardCheck,
-      run: () => go(() => router.push("/approvals")),
-    });
+    cmds.push(
+      {
+        id: "brain-map",
+        label: "Open Brain map",
+        hint: "What the Brain knows",
+        group: "Navigate",
+        icon: Brain,
+        keywords: "knowledge objects playbooks",
+        run: () => go(() => router.push("/brain")),
+      },
+      {
+        id: "my-learnings",
+        label: "My learnings",
+        hint: "Decisions, experiments, results",
+        group: "Navigate",
+        icon: Lightbulb,
+        keywords: "learning lab",
+        run: () => go(() => router.push("/learning")),
+      },
+      {
+        id: "my-approvals",
+        label: "My approvals",
+        hint: "Submissions & status",
+        group: "Navigate",
+        icon: ClipboardCheck,
+        run: () => go(() => router.push("/approvals")),
+      }
+    );
     if (isAdmin) {
       cmds.push({
         id: "admin-approvals",

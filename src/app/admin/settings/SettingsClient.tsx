@@ -27,7 +27,7 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Provider → group heading, mirroring the product's ModelSelector.
+// Provider → group heading, mirroring the product's model switcher.
 const GROUP_LABELS: Record<string, string> = { anthropic: "Claude", openai: "GPT" };
 const GROUP_ORDER = ["anthropic", "openai"];
 

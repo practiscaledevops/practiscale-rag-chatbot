@@ -36,6 +36,15 @@ const CATEGORY_META: Record<string, { icon: typeof Info; cls: string }> = {
   action: { icon: Zap, cls: "text-accent" },
 };
 
+/**
+ * Only follow a SAME-ORIGIN path ("/admin/feedback"). `href` is stored data
+ * (written server-side today, but treated as untrusted): a protocol-relative
+ * "//host" or absolute URL is ignored rather than pushed to the router.
+ */
+function isInternalHref(href: string | null): href is string {
+  return typeof href === "string" && /^\/(?!\/)/.test(href);
+}
+
 function relTime(iso: string): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "";
@@ -79,10 +88,14 @@ export function NotificationsBell() {
     }
   }, []);
 
-  // Initial load + gentle polling for the unread badge.
+  // Initial load + gentle polling for the unread badge. A background tab skips
+  // the poll (nobody is looking; it just burns requests) and catches up on the
+  // next tick after it becomes visible again.
   useEffect(() => {
     void load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 60_000);
     return () => clearInterval(id);
   }, [load]);
 
@@ -137,7 +150,7 @@ export function NotificationsBell() {
           /* optimistic */
         }
       }
-      if (n.href) {
+      if (isInternalHref(n.href)) {
         setOpen(false);
         router.push(n.href);
       }
@@ -153,7 +166,7 @@ export function NotificationsBell() {
       <button
         type="button"
         aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="relative grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -168,7 +181,9 @@ export function NotificationsBell() {
 
       {open && (
         <div
-          role="menu"
+          // A panel of buttons + text, not a menu of menuitems — so "dialog".
+          role="dialog"
+          aria-label="Notifications"
           className="absolute right-0 z-40 mt-1.5 w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-soft-lg"
         >
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
@@ -198,7 +213,7 @@ export function NotificationsBell() {
                 {items.map((n) => {
                   const meta = CATEGORY_META[n.category] ?? CATEGORY_META.info;
                   const Icon = meta.icon;
-                  const clickable = !!n.href;
+                  const clickable = isInternalHref(n.href);
                   return (
                     <li key={n.id}>
                       <button

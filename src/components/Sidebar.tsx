@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
+  Brain,
   ChevronRight,
   FolderPlus,
+  Lightbulb,
   MessageSquarePlus,
   Pencil,
   Pin,
@@ -408,8 +410,22 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Footer: admin + account */}
+      {/* Footer: Brain map + learnings, then admin + account */}
       <div className="shrink-0 space-y-0.5 border-t border-sidebar-border p-2">
+        <Link
+          href="/brain"
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-sidebar-muted transition-colors hover:bg-white/[0.08] hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Brain size={16} />
+          Brain map
+        </Link>
+        <Link
+          href="/learning"
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-sidebar-muted transition-colors hover:bg-white/[0.08] hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Lightbulb size={16} />
+          My learnings
+        </Link>
         {isAdmin && (
           <Link
             href="/admin"

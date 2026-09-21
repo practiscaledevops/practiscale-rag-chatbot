@@ -48,7 +48,11 @@ export interface WorkspaceSettings {
   defaultModel: string;
   /** whether `defaultModel` is a tier preset or a concrete model id */
   defaultModelKind: DefaultModelKind;
-  /** whether RAG grounding is ON by default for new chats */
+  /**
+   * whether RAG grounding is ON by default for new chats. INFORMATIONAL for
+   * now: the chat pipeline always grounds through the Brain and has no
+   * per-chat toggle, so this flag is stored and shown but not enforced.
+   */
   ragDefaultOn: boolean;
   /** optional per-model price overrides, keyed by concrete model id */
   pricingOverrides: Record<string, PricingOverride>;

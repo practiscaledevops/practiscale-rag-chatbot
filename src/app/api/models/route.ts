@@ -11,7 +11,12 @@
 
 import { NextResponse } from "next/server";
 import { getSessionProfile } from "@/lib/admin";
-import { fetchBrainModels, filterModelsByPermissions } from "@/lib/models";
+import {
+  applyDisabledModels,
+  fetchBrainModels,
+  filterModelsByPermissions,
+} from "@/lib/models";
+import { loadWorkspaceSettings } from "@/lib/settings";
 import { isDemo } from "@/lib/demo/mode";
 
 export const runtime = "nodejs";
@@ -20,8 +25,11 @@ export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  // Fetch the catalog once (server-side, cached by lib/models via revalidate).
-  const catalog = await fetchBrainModels();
+  // Fetch the catalog once (server-side, cached by lib/models via revalidate)
+  // and the workspace settings: models an admin disabled are marked
+  // unavailable ("Disabled by your admin") for everyone, before any filtering.
+  const [raw, { settings }] = await Promise.all([fetchBrainModels(), loadWorkspaceSettings()]);
+  const catalog = applyDisabledModels(raw, settings.disabledModels);
 
   // DEMO MODE: no real session/permissions — offer the whole available catalog.
   if (isDemo()) {

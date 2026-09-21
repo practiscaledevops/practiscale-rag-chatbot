@@ -5,11 +5,26 @@
 // the browser. The browser reaches the catalog through this app's own /api
 // routes, which call fetchBrainModels() server-side.
 //
-// The permission-filter helper (filterModelsByPermissions) and its types are
-// pure and safe to import anywhere; only fetchBrainModels touches the network.
+// The permission-filter helpers (filterModelsByPermissions, isSelectionAllowed,
+// applyDisabledModels) and their types are pure and safe to import anywhere;
+// only fetchBrainModels touches the network.
 
-const BRAIN_URL = process.env.BRAIN_API_URL ?? "http://localhost:3000";
+const BRAIN_URL = resolveBrainUrl();
 const BRAIN_KEY = process.env.BRAIN_API_KEY ?? "";
+
+/**
+ * The Brain's base URL. Defaults to the local dev Brain, but in production a
+ * missing BRAIN_API_URL is a deployment mistake (every Brain call would silently
+ * go to localhost), so fail fast at module load instead.
+ */
+function resolveBrainUrl(): string {
+  const url = process.env.BRAIN_API_URL;
+  if (url) return url;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("BRAIN_API_URL must be set in production");
+  }
+  return "http://localhost:3000";
+}
 
 /** A selectable model, normalized to a single shape regardless of Brain payload. */
 export interface BrainModel {
@@ -44,17 +59,18 @@ export interface UserPermissions {
 // ---------------------------------------------------------------------------
 // Static fallback catalog — Claude + GPT families. Used when the Brain's
 // /api/v1/models call fails or returns nothing usable, so the switcher is never
-// empty. Availability is UNKNOWN in this path, so entries are marked available
-// (optimistic) with a `reason` noting the fallback; the real Brain response
-// always wins when reachable.
+// empty. Availability is UNKNOWN in this path (the Brain is unreachable, so a
+// chat would fail anyway), so entries are marked UNAVAILABLE with a `reason`
+// noting the fallback — the switcher renders them disabled; the real Brain
+// response always wins when reachable.
 // ---------------------------------------------------------------------------
 const FALLBACK_MODELS: ReadonlyArray<BrainModel> = [
-  { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", tier: "max", available: true, reason: "fallback catalog" },
-  { id: "claude-3-5-sonnet", provider: "anthropic", label: "Claude Sonnet", tier: "recommended", available: true, reason: "fallback catalog" },
-  { id: "claude-3-5-haiku", provider: "anthropic", label: "Claude Haiku", tier: "fast", available: true, reason: "fallback catalog" },
-  { id: "gpt-4o", provider: "openai", label: "GPT-4o", tier: "recommended", available: true, reason: "fallback catalog" },
-  { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o mini", tier: "fast", available: true, reason: "fallback catalog" },
-  { id: "gpt-5", provider: "openai", label: "GPT-5", tier: "max", available: true, reason: "fallback catalog" },
+  { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", tier: "max", available: false, reason: "fallback catalog" },
+  { id: "claude-3-5-sonnet", provider: "anthropic", label: "Claude Sonnet", tier: "recommended", available: false, reason: "fallback catalog" },
+  { id: "claude-3-5-haiku", provider: "anthropic", label: "Claude Haiku", tier: "fast", available: false, reason: "fallback catalog" },
+  { id: "gpt-4o", provider: "openai", label: "GPT-4o", tier: "recommended", available: false, reason: "fallback catalog" },
+  { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o mini", tier: "fast", available: false, reason: "fallback catalog" },
+  { id: "gpt-5", provider: "openai", label: "GPT-5", tier: "max", available: false, reason: "fallback catalog" },
 ];
 
 /** Coerce an unknown value to a trimmed string, or "" — defensive JSON reading. */
@@ -207,4 +223,111 @@ export function filterModelsByPermissions(
   }
 
   return out;
+}
+
+/** Reason shown on a model an admin turned off workspace-wide. */
+export const DISABLED_BY_ADMIN_REASON = "Disabled by your admin";
+
+/**
+ * Apply the workspace denylist (admin settings → disabledModels): a disabled
+ * model stays in the list but is marked unavailable with a reason, so the
+ * switcher renders it disabled and the chat route rejects it. Pure.
+ */
+export function applyDisabledModels(
+  catalog: BrainModel[],
+  disabledModels?: readonly string[] | null
+): BrainModel[] {
+  if (!disabledModels || disabledModels.length === 0) return catalog;
+  const off = new Set(disabledModels.map((id) => id.trim().toLowerCase()));
+  return catalog.map((m) =>
+    off.has(m.id.toLowerCase())
+      ? { ...m, available: false, reason: DISABLED_BY_ADMIN_REASON }
+      : m
+  );
+}
+
+/** Tier aliases the Brain accepts in addition to concrete model ids. */
+export const TIER_ALIASES = ["fast", "recommended", "max"] as const;
+export type TierAlias = (typeof TIER_ALIASES)[number];
+
+/**
+ * "Routed" presets that resolve server-side: Smart Route may land on ANY tier,
+ * Deep analysis runs on the strongest tier — so each is gated exactly like the
+ * tier(s) it can resolve to.
+ */
+const ROUTED_ALIASES: Record<string, readonly TierAlias[]> = {
+  smart: TIER_ALIASES,
+  auto: TIER_ALIASES,
+  deep: ["max"],
+};
+
+/**
+ * Decide whether `selection` (a tier alias, a routed preset, or a concrete
+ * model id) is permitted for a user with these permissions. Mirrors
+ * filterModelsByPermissions semantics: an absent allowlist is NOT a lockout.
+ *
+ * Rules, in order:
+ *   • a model on the workspace denylist (`disabledModels`) is never allowed;
+ *   • canUseAllModels === true          → anything else goes;
+ *   • a tier alias / routed preset      → every tier it can resolve to must be
+ *     in allowed_tiers (absent = unrestricted), AND — when the user has a model
+ *     allowlist — every catalog model carrying that tier must pass the
+ *     allowlist (the Brain resolves the alias to one of them, and we can't
+ *     know which). An alias no catalog model resolves to is rejected, so a
+ *     tier word can never bypass an allowlist;
+ *   • a concrete model id               → allowed outright for an unrestricted
+ *     user, else it must survive filterModelsByPermissions.
+ *
+ * Pure: the caller supplies the catalog (fetchBrainModels) and settings.
+ */
+export function isSelectionAllowed(
+  selection: string,
+  perms: UserPermissions | null | undefined,
+  canUseAllModels: boolean,
+  catalog: BrainModel[],
+  disabledModels: readonly string[] = []
+): boolean {
+  const sel = selection.trim().toLowerCase();
+  if (!sel) return false;
+
+  // Workspace denylist first: broader than any per-user grant.
+  const disabled = new Set(disabledModels.map((id) => id.trim().toLowerCase()));
+  if (disabled.has(sel)) return false;
+
+  if (canUseAllModels) return true;
+
+  const tiers = perms?.allowed_tiers;
+  const unrestrictedTiers = !Array.isArray(tiers) || tiers.length === 0;
+  const tierAllowed = (t: string) =>
+    unrestrictedTiers || (tiers as readonly string[]).includes(t);
+  const hasModelAllow = Array.isArray(perms?.models) && perms!.models!.length > 0;
+
+  // The concrete models this user may pick: permissions ∩ not disabled.
+  const permitted = new Set(
+    filterModelsByPermissions(catalog, perms, false)
+      .map((m) => m.id.toLowerCase())
+      .filter((id) => !disabled.has(id))
+  );
+
+  // Resolve a tier through the catalog's `tier` field. The Brain picks ONE of
+  // the models carrying that tier, so all of them must be permitted.
+  const tierResolvesToPermitted = (t: string) => {
+    const candidates = catalog.filter((m) => m.tier?.toLowerCase() === t);
+    if (candidates.length === 0) return false; // unresolvable → reject
+    return candidates.every((m) => permitted.has(m.id.toLowerCase()));
+  };
+
+  const routed =
+    ROUTED_ALIASES[sel] ??
+    ((TIER_ALIASES as readonly string[]).includes(sel) ? [sel] : null);
+  if (routed) {
+    if (!routed.every(tierAllowed)) return false;
+    if (!hasModelAllow) return true;
+    return routed.every(tierResolvesToPermitted);
+  }
+
+  // Concrete model id. With no model/tier restriction, any id the Brain accepts
+  // is allowed; otherwise the id must survive the permission filter.
+  if (!hasModelAllow && unrestrictedTiers) return true;
+  return permitted.has(sel);
 }

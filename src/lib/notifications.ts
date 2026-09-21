@@ -43,16 +43,47 @@ export async function notify(userId: string, input: NotifyInput): Promise<void> 
   }
 }
 
+/** Admin pings of one kind from one actor are collapsed to one per this window. */
+const ADMIN_NOTIFY_DEDUPE_MS = 10 * 60_000;
+
+/** `${kind}:${userId}` → epoch ms of the last admin notification sent. Per-instance. */
+const lastAdminNotify = new Map<string, number>();
+
+/**
+ * Whether an admin notification of `kind` from `userId` may go out now (and
+ * record it if so). Bounded: entries older than the window are swept once the
+ * map grows past a few thousand keys.
+ */
+function shouldNotifyAdmins(kind: string, userId: string, now = Date.now()): boolean {
+  if (lastAdminNotify.size > 5_000) {
+    for (const [k, t] of lastAdminNotify) {
+      if (now - t >= ADMIN_NOTIFY_DEDUPE_MS) lastAdminNotify.delete(k);
+    }
+  }
+  const key = `${kind}:${userId}`;
+  const last = lastAdminNotify.get(key);
+  if (last !== undefined && now - last < ADMIN_NOTIFY_DEDUPE_MS) return false;
+  lastAdminNotify.set(key, now);
+  return true;
+}
+
 /**
  * Notify every admin / super-admin (e.g. a QA event worth their attention).
  * Resolves the recipient ids via the service-role client, then inserts one row
  * each. Excludes `exceptUserId` (usually the actor) so people don't ping
  * themselves. Best-effort.
+ *
+ * @param dedupeKind  when set (with `exceptUserId` as the actor), at most ONE
+ *                    notification of this kind per actor is sent every 10
+ *                    minutes — so a user hammering thumbs-down / submit can't
+ *                    flood every admin's inbox. In-memory, per instance.
  */
 export async function notifyAdmins(
   input: NotifyInput,
-  exceptUserId?: string | null
+  exceptUserId?: string | null,
+  dedupeKind?: string
 ): Promise<void> {
+  if (dedupeKind && exceptUserId && !shouldNotifyAdmins(dedupeKind, exceptUserId)) return;
   try {
     const service = createSupabaseServiceClient();
     const { data, error } = await service

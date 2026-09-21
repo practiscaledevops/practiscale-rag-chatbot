@@ -28,6 +28,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectedFrom = safeInternalPath(searchParams.get("redirectedFrom"));
+  // The app layout sends a deactivated account here with ?deactivated=1.
+  const deactivated = searchParams.get("deactivated") === "1";
 
   const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
   const [email, setEmail] = useState(demo ? "demo@practiscale.co" : "");
@@ -69,6 +71,17 @@ function LoginForm() {
       cancelled = true;
     };
   }, [demo]);
+
+  // A deactivated account may still hold a (now useless) session cookie: drop
+  // it here so the middleware can't bounce them back into the app in a loop.
+  useEffect(() => {
+    if (!deactivated || demo) return;
+    try {
+      void createSupabaseBrowserClient().auth.signOut();
+    } catch {
+      /* no session to drop */
+    }
+  }, [deactivated, demo]);
 
   // Escape hatch from the code step: drop the half-authenticated (aal1) session
   // and return to the password form, so a user is never trapped on this screen.
@@ -180,6 +193,12 @@ function LoginForm() {
                   : "Sign in to continue to your workspace."}
             </p>
           </div>
+
+          {deactivated && !mfa && (
+            <p role="status" className="mb-4 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+              Your account has been deactivated. Contact your workspace admin to regain access.
+            </p>
+          )}
 
           {mfa ? (
             <form onSubmit={onSubmitMfa} className="space-y-4" noValidate>

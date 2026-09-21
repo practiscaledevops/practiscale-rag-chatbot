@@ -18,8 +18,10 @@ import {
   Database,
   Download,
   FileText,
+  Image as ImageIcon,
   Lightbulb,
   Loader2,
+  Mic,
   PanelRight,
   Paperclip,
   Pencil,
@@ -56,13 +58,25 @@ import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
 import {
   MAX_FILES,
-  MAX_FILE_BYTES,
-  MAX_FILE_MB,
   ACCEPTED_ACCEPT,
   ACCEPTED_LABEL,
+  attachmentKind,
   isSupportedName,
+  maxBytesFor,
+  maxMbFor,
+  statusLabelFor,
   type ChatAttachment,
 } from "@/lib/attachments-shared";
+import { ObjectDrawer } from "@/components/ObjectDrawer";
+import {
+  conflictSentence,
+  formatMetricValue,
+  formatPeriod,
+  parseConflictsEvent,
+  parsePerformanceEvent,
+  type ConflictPair,
+  type PerformanceMetric,
+} from "@/lib/brain-types";
 
 /** A file the user is attaching to the next message (upload lifecycle in the composer). */
 type PendingAttachment = {
@@ -290,6 +304,8 @@ export interface ChatViewProps {
   initialTier?: ModelTier;
   /** Turns already persisted for this conversation. */
   initialMessages?: Message[];
+  /** Pre-filled composer text (from `/?prompt=`, e.g. "Ask about this" on the Brain map). */
+  initialInput?: string;
 }
 
 /** Capitalize the first letter of a name for the greeting. */
@@ -312,6 +328,7 @@ export function ChatView({
   title = null,
   initialTier,
   initialMessages,
+  initialInput,
 }: ChatViewProps) {
   const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs } = useAppShell();
   const router = useRouter();
@@ -386,8 +403,9 @@ export function ChatView({
           additions.push({ id, name: file.name, size: file.size, status: "error", error: `Unsupported type · accepts ${ACCEPTED_LABEL}` });
           continue;
         }
-        if (file.size > MAX_FILE_BYTES) {
-          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Too large · max ${MAX_FILE_MB} MB` });
+        // Size limit depends on the kind (voice notes get more room than text).
+        if (file.size > maxBytesFor(file.name)) {
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Too large · max ${maxMbFor(file.name)} MB` });
           continue;
         }
         additions.push({ id, name: file.name, size: file.size, status: "uploading", file });
@@ -422,15 +440,28 @@ export function ChatView({
     [uploadAttachment]
   );
 
+  // The saved thread id as STATE (conversationIdRef below is the mutable twin),
+  // so chatBody re-derives once a new chat's first turn is persisted and every
+  // later /api/chat call carries the id — that's what attributes usage to the
+  // thread (the route verifies ownership before trusting it).
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(conversationId);
+
   const chatBody = useMemo(
     () => ({
       model: selection.value,
       tier: selection.value,
       mode,
+      conversationId: activeConversationId,
       ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}),
     }),
-    [selection.value, mode, scopeCollectionIds]
+    [selection.value, mode, activeConversationId, scopeCollectionIds]
   );
+
+  // useChat throttles message-state updates (experimental_throttle below) but
+  // flips `status` synchronously, so the last rendered assistant turn can lag
+  // the finished one by a chunk. onFinish hands us the COMPLETE message; keep it
+  // so persistence never saves a truncated answer.
+  const finishedRef = useRef<{ id: string; content: string } | null>(null);
 
   const {
     messages,
@@ -450,11 +481,15 @@ export function ChatView({
     api: "/api/chat",
     body: chatBody,
     initialMessages: initialMessages ?? [],
+    // Seeded from `/?prompt=` (only read on mount; a later prompt on the same
+    // mounted page is applied by the effect below).
+    initialInput: initialInput ?? "",
     // Coalesce stream chunks into at most ~20 state updates/s: a fast model can
     // deliver 60+ chunks/s and each one re-rendered this whole view. The reveal
     // effect below smooths the visible text between updates anyway.
     experimental_throttle: 50,
     onFinish: (message, { usage: u }) => {
+      finishedRef.current = { id: message.id, content: message.content ?? "" };
       // Prefer the exact token counts from the stream's finish part; fall back
       // to a rough estimate only when the stream omitted usage.
       const prompt = u?.promptTokens;
@@ -485,8 +520,16 @@ export function ChatView({
     let routedTier: string | null = null;
     let modeInfo: { mode: string; label: string; auto: boolean; intent: string } | null = null;
     let learning: LearningCandidate | null = null;
+    // Operating Intelligence: the disagreements the Brain resolved and the
+    // structured metrics it used as verified business data for this answer.
+    let conflicts: ConflictPair[] = [];
+    let performance: PerformanceMetric[] = [];
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
+      const pairs = parseConflictsEvent(it);
+      if (pairs) conflicts = pairs;
+      const metrics = parsePerformanceEvent(it);
+      if (metrics) performance = metrics;
       if (it?.type === "sources" && Array.isArray(it.sources)) {
         sources = (it.sources as SourceItem[]).filter((s) => s && typeof s.id === "string");
         sourcesCount = sources.length;
@@ -521,7 +564,7 @@ export function ChatView({
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount, sources, confidence, routedTier, modeInfo, learning };
+    return { label, sourcesCount, sources, confidence, routedTier, modeInfo, learning, conflicts, performance };
   }, [data]);
 
   // "Save as Organizational Learning?" — per-turn state keyed by the candidate title.
@@ -564,14 +607,24 @@ export function ChatView({
 
   // Sync the model switcher to this conversation's saved tier — once, on open.
   // (Only the tier bucket is persisted, so a concrete-model pick restores as its
-  // tier preset.)
+  // tier preset — or, for a user whose switcher has no presets, as the first
+  // usable concrete model in that tier.)
   const tierSynced = useRef(false);
   useEffect(() => {
     if (!tierSynced.current && initialTier && initialTier !== selection.tier) {
-      setSelection(tierPreset(initialTier));
+      const next =
+        options.find((o) => o.kind === "tier" && o.value === initialTier) ??
+        options.find((o) => o.kind === "model" && o.available && o.tier === initialTier);
+      if (next) setSelection(next);
     }
     tierSynced.current = true;
-  }, [initialTier, selection.tier, setSelection]);
+  }, [initialTier, selection.tier, options, setSelection]);
+
+  /** A message's full text — the finished copy when the throttled state lags it. */
+  const fullContent = useCallback((m: Message): string => {
+    const fin = finishedRef.current;
+    return fin && fin.id === m.id && fin.content.length > m.content.length ? fin.content : m.content;
+  }, []);
 
   // --- Persist a turn once streaming settles -----------------------------
   const persistTurn = useCallback(async () => {
@@ -588,11 +641,12 @@ export function ChatView({
         tier: selection.tier,
         messages: toSave.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
-          content: m.content,
+          content: fullContent(m),
         })),
       });
       if (!result.ok) return;
       conversationIdRef.current = result.conversationId;
+      setActiveConversationId(result.conversationId);
       if (wasNew) {
         // Reflect the new thread in the URL WITHOUT a router refresh/navigation.
         // A router.refresh() here reconciles to the new /c/[id] URL and remounts
@@ -608,7 +662,7 @@ export function ChatView({
     } finally {
       savingRef.current = false;
     }
-  }, [messages, selection.tier]);
+  }, [messages, selection.tier, fullContent]);
 
   // Fire persistence on the streaming -> ready transition (covers Stop too).
   const prevStatus = useRef(status);
@@ -622,7 +676,7 @@ export function ChatView({
     // Only persist a real answer. An empty assistant turn (upstream 200 that
     // errored mid-stream and yielded no tokens) must NOT be saved, or the thread
     // would reload blank forever.
-    if (last?.role === "assistant" && last.content.trim()) void persistTurn();
+    if (last?.role === "assistant" && fullContent(last).trim()) void persistTurn();
     // Keyed on status only: re-running on every `messages` update would fire
     // mid-stream. persistTurn reads the latest messages via closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -836,6 +890,27 @@ export function ChatView({
     });
   }, [setInput]);
 
+  // Apply a `/?prompt=` seed: on mount this just focuses (useChat already has
+  // the text); when the prompt changes on an already-mounted page it re-seeds.
+  const seededRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!initialInput || seededRef.current === initialInput) return;
+    seededRef.current = initialInput;
+    prefill(initialInput);
+  }, [initialInput, prefill]);
+
+  // Knowledge-object drawer (opened from the evidence panel's ref buttons).
+  // "Ask about this" prefills an empty chat, or starts a new one otherwise.
+  const [drawerRef, setDrawerRef] = useState<string | null>(null);
+  const askAbout = useCallback(
+    (prompt: string) => {
+      setDrawerRef(null);
+      if (messages.length === 0) prefill(prompt);
+      else router.push(`/?prompt=${encodeURIComponent(prompt)}`);
+    },
+    [messages.length, prefill, router]
+  );
+
   // --- Copy-to-clipboard for assistant messages --------------------------
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copy = useCallback(async (id: string, text: string) => {
@@ -1020,6 +1095,7 @@ export function ChatView({
         mode={mode}
         panes={comparePanes}
       />
+      <ObjectDrawer refId={drawerRef} onClose={() => setDrawerRef(null)} onAsk={askAbout} />
       {empty ? (
         // -------- Empty state: greeting centered above, composer docked lower
         //          (so the upward work-mode menu clears the greeting) ----------
@@ -1388,6 +1464,9 @@ export function ChatView({
               count={activity.sourcesCount ?? 0}
               sources={activity.sources}
               confidence={activity.confidence}
+              conflicts={activity.conflicts}
+              performance={activity.performance}
+              onOpenRef={setDrawerRef}
               onClose={() => setEvidenceOpen(false)}
             />
           )}
@@ -1639,6 +1718,9 @@ function AttachmentChip({
 }) {
   const isError = att.status === "error";
   const isUploading = att.status === "uploading";
+  // Icon + in-progress label by kind: voice notes transcribe, PDFs/images are read.
+  const kind = attachmentKind(att.name);
+  const KindIcon = kind === "audio" ? Mic : kind === "image" ? ImageIcon : FileText;
   return (
     <li
       className={cn(
@@ -1654,11 +1736,11 @@ function AttachmentChip({
       ) : isError ? (
         <AlertTriangle size={13} className="shrink-0" />
       ) : (
-        <FileText size={13} className="shrink-0 text-accent" />
+        <KindIcon size={13} className="shrink-0 text-accent" />
       )}
       <span className="truncate font-medium">{att.name}</span>
       <span className={cn("shrink-0", isError ? "" : "text-muted-foreground")}>
-        {isUploading ? "reading…" : isError ? att.error : formatBytes(att.size)}
+        {isUploading ? statusLabelFor(att.name) : isError ? att.error : formatBytes(att.size)}
       </span>
       {isError && att.file && (
         <button
@@ -2122,19 +2204,46 @@ function LearningCard({
   );
 }
 
-/** Right-hand evidence rail: the sources the Brain retrieved for the latest answer. */
+/**
+ * Right-hand evidence rail: the sources the Brain retrieved for the latest
+ * answer, the verified numbers it used, and the disagreements it resolved.
+ * Any knowledge ref opens the object drawer.
+ */
 function EvidencePanel({
   count,
   sources,
   confidence,
+  conflicts = [],
+  performance = [],
+  onOpenRef,
   onClose,
 }: {
   count: number;
   sources: SourceItem[];
   confidence?: number | null;
+  conflicts?: ConflictPair[];
+  performance?: PerformanceMetric[];
+  onOpenRef?: (ref: string) => void;
   onClose: () => void;
 }) {
   const conf = confidenceMeta(confidence);
+  const refButton = (ref: string, label?: string | null) =>
+    onOpenRef ? (
+      <button
+        type="button"
+        onClick={() => onOpenRef(ref)}
+        title={`Open ${ref}`}
+        className="inline-flex items-center gap-1 rounded font-mono text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {ref}
+        {label ? <span className="font-sans font-medium text-foreground">{label}</span> : null}
+      </button>
+    ) : (
+      <span className="font-mono text-accent">
+        {ref}
+        {label ? <span className="ml-1 font-sans font-medium text-foreground">{label}</span> : null}
+      </span>
+    );
   return (
     <aside
       aria-label="Evidence"
@@ -2201,7 +2310,7 @@ function EvidencePanel({
                 </div>
                 {s.ref && (
                   <p className="mb-0.5 truncate text-[11px] font-medium text-foreground" title={`${s.ref} ${s.name ?? ""}`}>
-                    <span className="text-accent">{s.ref}</span> {s.name}
+                    {refButton(s.ref, s.name)}
                     {s.via === "relationship" && <span className="ml-1 text-muted-foreground/70">· connected</span>}
                   </p>
                 )}
@@ -2209,6 +2318,69 @@ function EvidencePanel({
               </li>
             ))}
           </ul>
+        )}
+
+        {performance.length > 0 && (
+          <section className="mt-4" aria-label="Verified numbers">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Verified numbers
+            </h3>
+            <p className="mb-1.5 text-[11px] text-muted-foreground/80">
+              Structured results the Brain used as verified business data
+            </p>
+            <ul className="space-y-1.5">
+              {performance.map((m) => {
+                const period = formatPeriod(m.period_start, m.period_end);
+                const dims = m.dimensions ? Object.entries(m.dimensions).filter(([, v]) => v != null && v !== "") : [];
+                return (
+                  <li key={m.key} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate font-medium text-foreground" title={m.label}>{m.label}</span>
+                      <span className="shrink-0 tabular-nums text-accent">{formatMetricValue(m)}</span>
+                    </div>
+                    {(period || m.source) && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {period}
+                        {period && m.source ? " · " : ""}
+                        {m.source}
+                      </p>
+                    )}
+                    {dims.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {dims.map(([k, v]) => (
+                          <span key={k} className="rounded-full border border-border bg-surface-muted/60 px-1.5 py-px text-[10px] text-muted-foreground">
+                            {k}: {String(v)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {conflicts.length > 0 && (
+          <section className="mt-4" aria-label="Known disagreements">
+            <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Known disagreements
+            </h3>
+            <ul className="space-y-1.5">
+              {conflicts.map((p, i) => (
+                <li key={`${p.a.ref}-${p.b.ref}-${i}`} className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-xs">
+                  <p className="text-foreground">
+                    {refButton(p.a.ref)} disagrees with {refButton(p.b.ref)} — the Brain favoured the
+                    higher-authority, current source
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground" title={conflictSentence(p)}>
+                    {p.a.name ?? p.a.ref}{p.a.authority ? ` (${p.a.authority})` : ""} vs {p.b.name ?? p.b.ref}{p.b.authority ? ` (${p.b.authority})` : ""}
+                  </p>
+                  {p.note && <p className="mt-0.5 text-[11px] text-muted-foreground/90">{p.note}</p>}
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
     </aside>

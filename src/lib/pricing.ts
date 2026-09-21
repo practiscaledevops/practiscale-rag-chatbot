@@ -40,6 +40,17 @@ const RATES: ReadonlyArray<{ readonly test: RegExp; readonly rate: Rate }> = [
 // model is never costed as free. Deliberately conservative.
 const DEFAULT_RATE: Rate = { input: 3, output: 15 };
 
+/**
+ * An admin-set per-model price override (USD per 1M tokens), keyed by concrete
+ * model id in the workspace settings (lib/settings.ts pricingOverrides). A null
+ * side falls back to the rate table. Declared here (structurally identical) so
+ * this module stays pure and free of the settings loader's server imports.
+ */
+export interface PricingOverrideRate {
+  inputPerMTok: number | null;
+  outputPerMTok: number | null;
+}
+
 /** Resolve the per-1M rate for a model id (case-insensitive, prefix/family). */
 function rateFor(model: string): Rate {
   const id = (model ?? "").toLowerCase();
@@ -47,6 +58,19 @@ function rateFor(model: string): Rate {
     if (test.test(id)) return rate;
   }
   return DEFAULT_RATE;
+}
+
+/** The admin override for a model id, matched case-insensitively on the exact id. */
+function overrideFor(
+  model: string,
+  overrides?: Record<string, PricingOverrideRate> | null
+): PricingOverrideRate | undefined {
+  if (!overrides) return undefined;
+  const id = (model ?? "").toLowerCase();
+  for (const [key, value] of Object.entries(overrides)) {
+    if (key.trim().toLowerCase() === id) return value;
+  }
+  return undefined;
 }
 
 /**
@@ -58,15 +82,23 @@ function rateFor(model: string): Rate {
  * @param model         resolved model id (the Brain's x-model header)
  * @param inputTokens   prompt tokens
  * @param outputTokens  completion tokens
+ * @param overrides     optional admin price overrides (workspace settings); an
+ *                      exact-id match replaces the table rate per side
  * @returns             estimated cost in USD (rounded to 6 dp, matching the
  *                      usage_events.cost_usd numeric(12,6) column)
  */
 export function costUsd(
   model: string,
   inputTokens: number,
-  outputTokens: number
+  outputTokens: number,
+  overrides?: Record<string, PricingOverrideRate> | null
 ): number {
-  const rate = rateFor(model);
+  const base = rateFor(model);
+  const ov = overrideFor(model, overrides);
+  const rate: Rate = {
+    input: ov?.inputPerMTok ?? base.input,
+    output: ov?.outputPerMTok ?? base.output,
+  };
   const input = Math.max(0, inputTokens || 0);
   const output = Math.max(0, outputTokens || 0);
   const cost = (input * rate.input + output * rate.output) / 1_000_000;

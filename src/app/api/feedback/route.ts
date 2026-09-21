@@ -10,10 +10,14 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { notifyAdmins } from "@/lib/notifications";
+import { rateLimit } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
+
+/** Per-user ceiling on ratings (per instance — see lib/ratelimit). */
+const FEEDBACK_LIMIT = { limit: 30, windowMs: 60_000 };
 
 const schema = z.object({
   rating: z.enum(["up", "down"]),
@@ -28,6 +32,8 @@ const schema = z.object({
 export async function POST(req: Request) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limited = rateLimit(`feedback:${user.id}`, FEEDBACK_LIMIT.limit, FEEDBACK_LIMIT.windowMs);
+  if (limited) return limited;
 
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -57,7 +63,8 @@ export async function POST(req: Request) {
   }
 
   // QA loop: a thumbs-DOWN is worth an admin's attention. Notify admins (never
-  // the rater themselves). Best-effort and non-blocking.
+  // the rater themselves). Best-effort, non-blocking, and collapsed to one ping
+  // per rater per 10 minutes so a burst of downvotes can't flood the inbox.
   if (d.rating === "down") {
     const snippet = d.prompt?.replace(/\s+/g, " ").trim().slice(0, 140);
     void notifyAdmins(
@@ -67,7 +74,8 @@ export async function POST(req: Request) {
         body: snippet ? `Prompt: “${snippet}”` : undefined,
         href: "/admin/feedback",
       },
-      user.id
+      user.id,
+      "feedback_down"
     );
   }
 

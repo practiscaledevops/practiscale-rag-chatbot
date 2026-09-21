@@ -19,10 +19,15 @@ export interface ConversationRow {
   archived: boolean;
 }
 
+/** Sidebar cap: the most recent threads a single load returns. */
+const MAX_CONVERSATIONS = 200;
+
 /**
  * Load a user's conversations (pinned first, most-recently-touched next),
- * including `archived`. Falls back to a select without `archived` if that column
- * does not exist yet, so history never breaks pre-migration.
+ * including `archived`, capped at the {@link MAX_CONVERSATIONS} most recent so
+ * a long-lived account never ships its whole history on every layout render.
+ * Falls back to a select without `archived` if that column does not exist yet,
+ * so history never breaks pre-migration.
  */
 export async function loadConversations(
   supabase: SupabaseClient,
@@ -35,7 +40,8 @@ export async function loadConversations(
       .select(cols)
       .eq("user_id", userId)
       .order("pinned", { ascending: false })
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      .limit(MAX_CONVERSATIONS);
     if (opts?.projectId) q = q.eq("project_id", opts.projectId);
 
     const { data, error } = await q;

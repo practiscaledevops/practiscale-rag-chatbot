@@ -13,7 +13,7 @@
 // client component. cost_usd is an ESTIMATE from lib/pricing.ts.
 
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
-import { costUsd } from "@/lib/pricing";
+import { costUsd, type PricingOverrideRate } from "@/lib/pricing";
 
 /** Token counts recovered from the stream's finish part. */
 export interface FinishUsage {
@@ -40,6 +40,8 @@ export interface UsageContext {
   tier: string;
   /** wall-clock start of the Brain call (Date.now()), for latency_ms */
   startedAt: number;
+  /** admin per-model price overrides (workspace settings), applied by costUsd */
+  pricingOverrides?: Record<string, PricingOverrideRate> | null;
 }
 
 // The finish parts of an AI SDK v4 data stream are tiny and always the LAST
@@ -114,7 +116,7 @@ export async function recordUsageEvent(
       tier: ctx.tier,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      cost_usd: costUsd(model, inputTokens, outputTokens),
+      cost_usd: costUsd(model, inputTokens, outputTokens, ctx.pricingOverrides),
       latency_ms: Math.max(0, Date.now() - ctx.startedAt),
     });
     if (error) {

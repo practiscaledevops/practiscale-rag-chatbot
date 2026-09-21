@@ -112,8 +112,16 @@ function bucketFor(model: BrainModel): ModelTier {
  * every permitted catalog model (already filtered by permissions server-side).
  * Concrete models keep the Brain's availability flag so the UI can disable the
  * ones OpenAI/Anthropic can't currently serve.
+ *
+ * `presets: false` omits the tier/routed presets entirely — for a user confined
+ * to a model allowlist, an alias resolves in the Brain to whichever model backs
+ * that tier (possibly outside their allowlist; /api/chat rejects it), so they
+ * choose a concrete model instead.
  */
-export function buildModelOptions(catalog: BrainModel[]): ModelOption[] {
+export function buildModelOptions(
+  catalog: BrainModel[],
+  opts: { presets?: boolean } = {}
+): ModelOption[] {
   // Smart Route first (the recommended default experience), then the three named
   // tiers, then Deep analysis, then every permitted concrete model.
   const smart = ROUTED_PRESETS.find((p) => p.value === "smart")!;
@@ -129,7 +137,31 @@ export function buildModelOptions(catalog: BrainModel[]): ModelOption[] {
     reason: m.reason,
     kind: "model",
   }));
+  if (opts.presets === false) return models;
   return [smart, ...tiers, deep, ...models];
+}
+
+/**
+ * The switcher's starting selection: the workspace's concrete default model when
+ * it is offered here, else the default tier's preset, else (no presets — an
+ * allowlisted user) the first usable model in that tier, else the first usable
+ * model at all. Falls back to the tier preset so `selection` is never empty.
+ */
+function initialSelection(
+  options: ModelOption[],
+  initialTier: ModelTier,
+  initialModel: string | null
+): ModelOption {
+  const preferred = initialModel
+    ? options.find((o) => o.kind === "model" && o.value === initialModel && o.available)
+    : undefined;
+  return (
+    preferred ??
+    options.find((o) => o.kind === "tier" && o.value === initialTier) ??
+    options.find((o) => o.kind === "model" && o.available && o.tier === initialTier) ??
+    options.find((o) => o.kind === "model" && o.available) ??
+    tierPreset(initialTier)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -197,8 +229,12 @@ export interface AppShellProps
   children: React.ReactNode;
   /** Permitted model catalog (from fetchBrainModels + permission filter). */
   models?: BrainModel[];
+  /** The user has a model allowlist: hide the tier presets (see buildModelOptions). */
+  restrictedToModels?: boolean;
   /** Default tier when a conversation hasn't pinned one yet. */
   initialTier?: ModelTier;
+  /** Workspace default when it is a concrete model id (admin settings), else null. */
+  initialModel?: string | null;
   /** Conversation title shown in the top bar. */
   title?: string | null;
   firstName?: string;
@@ -221,7 +257,9 @@ export function AppShell({
   conversations = [],
   activeConversationId = null,
   models = [],
+  restrictedToModels = false,
   initialTier = "recommended",
+  initialModel = null,
   title = null,
   firstName = "",
   isAdmin = false,
@@ -238,9 +276,12 @@ export function AppShell({
 }: AppShellProps) {
   const router = useRouter();
 
-  const options = useMemo(() => buildModelOptions(models), [models]);
+  const options = useMemo(
+    () => buildModelOptions(models, { presets: !restrictedToModels }),
+    [models, restrictedToModels]
+  );
   const [selection, setSelection] = useState<ModelOption>(() =>
-    tierPreset(initialTier)
+    initialSelection(options, initialTier, initialModel)
   );
   // Seed with the user's persisted month-to-date tokens so the meter reflects
   // real cumulative usage across reloads; live turns add on top of it.

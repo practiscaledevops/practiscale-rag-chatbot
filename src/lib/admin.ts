@@ -9,6 +9,7 @@
 // Do not import this from a client component: it depends on next/headers (via
 // getUser) and the service-role client (SUPABASE_SERVICE_ROLE_KEY).
 
+import type { User } from "@supabase/supabase-js";
 import { getUser } from "@/lib/auth";
 import {
   createSupabaseServerClient,
@@ -96,10 +97,21 @@ export interface SessionProfile {
  * state for rendering; it is NOT an authorization boundary. Enforce real access
  * server-side (requireChatbotAdmin for admin, RLS for data).
  *
- * @returns {SessionProfile | null} the profile, or null when unauthenticated.
+ * A DEACTIVATED account (is_active === false) resolves to `null`, exactly like
+ * a signed-out caller — so every route that gates on this helper answers 401
+ * and the app layout bounces the user to /login the moment an admin flips the
+ * switch, without each caller having to remember the flag.
+ *
+ * @param user  an already-resolved session user (e.g. from the layout's
+ *              getUser call) to skip the verification round-trip; `undefined`
+ *              resolves it here, `null` short-circuits to null.
+ * @returns {SessionProfile | null} the profile, or null when unauthenticated
+ *          or deactivated.
  */
-export async function getSessionProfile(): Promise<SessionProfile | null> {
-  const user = await getUser();
+export async function getSessionProfile(
+  user?: User | null
+): Promise<SessionProfile | null> {
+  if (user === undefined) user = await getUser();
   if (!user) return null;
 
   const supabase = await createSupabaseServerClient();
@@ -108,6 +120,9 @@ export async function getSessionProfile(): Promise<SessionProfile | null> {
     .select("id, email, display_name, role, is_active, permissions, can_use_all_models, team_id")
     .eq("id", user.id)
     .maybeSingle();
+
+  // Deactivated → treated as signed out everywhere (see the doc comment).
+  if (profile?.is_active === false) return null;
 
   // Resolve the primary team's name (RLS lets a member read their team).
   let team: { id: string; name: string } | null = null;

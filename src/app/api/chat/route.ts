@@ -14,18 +14,18 @@
 
 import { after } from "next/server";
 import { z } from "zod";
-import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
+import { brainChat, brainModelHeaders, safeBrainError, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { resolveMode, canUseExecutive, allowedModes, isExecutiveMode } from "@/lib/work-modes";
 import { allowedSourceTypes } from "@/lib/access";
 import { getCeoMemory } from "@/lib/ceo-memory";
 import { audit } from "@/lib/audit";
-import {
-  fetchBrainModels,
-  filterModelsByPermissions,
-  type UserPermissions,
-} from "@/lib/models";
+import { fetchBrainModels, isSelectionAllowed } from "@/lib/models";
+import { loadWorkspaceSettings } from "@/lib/settings";
+import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
 import { meterStreamAndRecord, type UsageContext } from "@/lib/usage";
+import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
 import { demoChatStreamResponse } from "@/lib/demo/stream";
 
@@ -37,8 +37,11 @@ export const preferredRegion = ["sin1"];
 // stream, so if it dies first it cuts a still-streaming long answer mid-table.
 export const maxDuration = 300;
 
-/** Tier aliases the Brain accepts in addition to concrete model ids. */
-const TIER_WORDS = new Set(["fast", "recommended", "max"]);
+/** Per-user ceiling on chat turns (per instance — see lib/ratelimit). */
+const CHAT_LIMIT = { limit: 30, windowMs: 60_000 };
+
+/** The response formats the composer offers — the only values forwarded upstream. */
+const OUTPUT_TYPE_IDS = OUTPUT_TYPES.map((o) => o.id) as [OutputType, ...OutputType[]];
 
 // Bounds mirror /api/conversations and the saveConversationTurn action so the
 // same conversation payload validates identically wherever it enters the app.
@@ -57,8 +60,8 @@ const chatBodySchema = z.object({
   model: z.string().trim().max(200).optional(),
   // Persona/work mode — validated + role-gated server-side below.
   mode: z.string().trim().max(32).optional(),
-  // Response format (table/memo/email/…) — validated by the Brain; forwarded as-is.
-  outputType: z.string().trim().max(32).optional(),
+  // Response format (table/memo/email/…) — one of lib/output-types, else 400.
+  outputType: z.enum(OUTPUT_TYPE_IDS).optional(),
   // Source scope: collections the user narrowed to (the Brain intersects with the
   // key scope, so this can only ever restrict, never widen).
   collectionIds: z.array(z.string().uuid()).max(50).optional(),
@@ -87,55 +90,30 @@ function asUuid(v: unknown): string | null {
 }
 
 /**
- * Decide whether `selection` (a tier alias or a concrete model id) is permitted
- * for a user with these permissions. Mirrors lib/models filterModelsByPermissions
- * semantics: an absent allowlist is NOT a lockout.
- *
- * Fast paths avoid a catalog fetch (and so never delay the common request):
- * unrestricted users and tier requests are decided from permissions alone; only
- * a concrete model id from a restricted user consults the catalog.
+ * The conversation id to attribute this turn to — only if it belongs to the
+ * caller. The RLS client returns solely the user's own rows, so a foreign or
+ * fabricated id (the body is client-controlled) resolves to null rather than
+ * being written into usage_events / the audit log.
  */
-async function isSelectionAllowed(
-  selection: string,
-  perms: UserPermissions,
-  canUseAllModels: boolean
-): Promise<boolean> {
-  if (canUseAllModels) return true;
-
-  const sel = selection.toLowerCase();
-  const tiers = perms.allowed_tiers;
-  const unrestrictedTiers = !Array.isArray(tiers) || tiers.length === 0;
-
-  // Smart Route may resolve to ANY tier, so only offer it to users with no tier
-  // restriction (restricted users pick a specific tier instead).
-  if (sel === "smart" || sel === "auto") return unrestrictedTiers;
-
-  // Deep analysis runs on the strongest tier — gate it exactly like "max".
-  if (sel === "deep") {
-    return unrestrictedTiers || (tiers as readonly string[]).includes("max");
+async function ownedConversationId(id: string | null): Promise<string | null> {
+  if (!id) return null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+    return data?.id ? String(data.id) : null;
+  } catch {
+    return null;
   }
-
-  // Tier alias → gated only by allowed_tiers (absent = unrestricted).
-  if (TIER_WORDS.has(sel)) {
-    if (unrestrictedTiers) return true;
-    return (tiers as readonly string[]).includes(sel);
-  }
-
-  // Concrete model id. With no model/tier restriction, any id the Brain accepts
-  // is allowed; otherwise the id must survive the permission filter.
-  const hasModelAllow = Array.isArray(perms.models) && perms.models.length > 0;
-  if (!hasModelAllow && unrestrictedTiers) return true;
-
-  const catalog = await fetchBrainModels();
-  const allowed = filterModelsByPermissions(catalog, perms, canUseAllModels);
-  return allowed.some((m) => m.id.toLowerCase() === sel);
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}));
-
   // DEMO MODE: don't call the Brain or meter — stream a canned grounded answer.
   if (isDemo()) {
+    const body = await req.json().catch(() => ({}));
     const demoMessages = Array.isArray(body?.messages) ? body.messages : [];
     const last = [...demoMessages].reverse().find((m: any) => m?.role === "user");
     const attachmentNames = Array.isArray(body?.attachments)
@@ -146,14 +124,19 @@ export async function POST(req: Request) {
     return demoChatStreamResponse(last?.content ?? "", attachmentNames);
   }
 
-  // 1. Identity + permissions, resolved SERVER-SIDE from the session.
+  // 1. Identity + permissions, resolved SERVER-SIDE from the session — BEFORE
+  //    the (untrusted) body is even read, so an anonymous caller costs nothing.
   const profile = await getSessionProfile();
   if (!profile) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const limited = rateLimit(`chat:${profile.userId}`, CHAT_LIMIT.limit, CHAT_LIMIT.windowMs);
+  if (limited) return limited;
+
   // Validate + bound the (authenticated-but-untrusted) body before we do any
   // work or touch the Brain. Rejects an unbounded/malformed payload cleanly.
+  const body = await req.json().catch(() => ({}));
   const parsed = chatBodySchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
@@ -171,11 +154,21 @@ export async function POST(req: Request) {
     (parsed.data.tier && parsed.data.tier.trim()) ||
     "recommended";
 
-  // 2. Enforce the user's model/tier permission BEFORE hitting the Brain.
-  const allowed = await isSelectionAllowed(
+  // 2. Enforce the user's model/tier permission BEFORE hitting the Brain. The
+  //    catalog resolves tier aliases (so an alias can't bypass a model
+  //    allowlist) and the workspace settings supply the admin denylist +
+  //    pricing overrides; the conversation id is verified as the caller's own.
+  const [catalog, { settings }, conversationId] = await Promise.all([
+    fetchBrainModels(),
+    loadWorkspaceSettings(),
+    ownedConversationId(asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
+  ]);
+  const allowed = isSelectionAllowed(
     selection,
     profile.permissions,
-    profile.canUseAllModels
+    profile.canUseAllModels,
+    catalog,
+    settings.disabledModels
   );
   if (!allowed) {
     return Response.json(
@@ -227,7 +220,7 @@ export async function POST(req: Request) {
     model: String(selection),
     sensitiveAccess: sourceTypes === undefined, // true = call_score was in scope
     attachments: attachments?.length ?? 0,
-    conversationId: asUuid(parsed.data.conversationId ?? parsed.data.conversation_id),
+    conversationId,
   });
 
   // 4. Call the Brain (scoped key stays server-side inside brainChat).
@@ -251,9 +244,12 @@ export async function POST(req: Request) {
   );
 
   if (!upstream.ok || !upstream.body) {
+    // Log the upstream body server-side only; the browser gets a generic,
+    // status-appropriate message (never the Brain's internal detail).
     const detail = await upstream.text().catch(() => "");
+    console.error(`[chat] Brain request failed (${upstream.status}):`, detail.slice(0, 2_000));
     return Response.json(
-      { error: "Brain request failed", status: upstream.status, detail },
+      { error: safeBrainError(upstream.status), status: upstream.status },
       { status: upstream.status || 502 }
     );
   }
@@ -269,11 +265,12 @@ export async function POST(req: Request) {
   const ctx: UsageContext = {
     userId: profile.userId,
     teamId: profile.team?.id ?? null,
-    conversationId: asUuid(parsed.data.conversationId ?? parsed.data.conversation_id),
+    conversationId,
     provider,
     model: resolvedModel,
     tier: String(selection),
     startedAt,
+    pricingOverrides: settings.pricingOverrides,
   };
 
   // Write exactly one usage_events row after the response has streamed out.

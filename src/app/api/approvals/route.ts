@@ -10,11 +10,15 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { notifyAdmins } from "@/lib/notifications";
+import { rateLimit } from "@/lib/ratelimit";
 import type { ApprovalItem, ApprovalStatus } from "@/lib/approvals";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
+
+/** Per-user ceiling on submissions (per instance — see lib/ratelimit). */
+const SUBMIT_LIMIT = { limit: 10, windowMs: 60_000 };
 
 const notEnabled = (msg: string) => /approvals/i.test(msg);
 
@@ -66,6 +70,8 @@ function deriveTitle(content: string): string {
 export async function POST(req: Request) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limited = rateLimit(`approvals:${user.id}`, SUBMIT_LIMIT.limit, SUBMIT_LIMIT.windowMs);
+  if (limited) return limited;
 
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -98,7 +104,8 @@ export async function POST(req: Request) {
     );
   }
 
-  // Let reviewers know something is waiting. Best-effort, never the submitter.
+  // Let reviewers know something is waiting. Best-effort, never the submitter,
+  // and at most one ping per submitter per 10 minutes (the queue shows the rest).
   void notifyAdmins(
     {
       category: "action",
@@ -106,7 +113,8 @@ export async function POST(req: Request) {
       body: title,
       href: "/admin/approvals",
     },
-    user.id
+    user.id,
+    "approval_submitted"
   );
 
   return NextResponse.json({ ok: true, id: data?.id });

@@ -423,8 +423,8 @@ alter table public.messages      enable row level security;
 
 -- profiles is deliberately NOT forced: its only owner-context writer is the
 -- trusted SECURITY DEFINER handle_new_user() (fired during the auth.users insert,
--- when there is no auth.uid(), so profiles_insert_own's `auth.uid() = id` would
--- evaluate false). Plain RLS ENABLE keeps the owner-bypass intact so that
+-- when there is no auth.uid(), so no user-scoped policy could pass — and there
+-- is no user INSERT policy at all). Plain RLS ENABLE keeps the owner-bypass intact so that
 -- provisioning insert always succeeds regardless of whether the script's runner
 -- carries BYPASSRLS. anon/authenticated are never the table owner, so ENABLE
 -- still fully scopes them. The other tables have no owner-context writer, so
@@ -439,20 +439,17 @@ drop policy if exists profiles_select_own on public.profiles;
 create policy profiles_select_own on public.profiles
   for select using (auth.uid() = id);
 
-drop policy if exists profiles_insert_own on public.profiles;
-create policy profiles_insert_own on public.profiles
-  for insert with check (auth.uid() = id);
-
 drop policy if exists profiles_update_own on public.profiles;
 create policy profiles_update_own on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
--- Delete policy included for a complete per-command set. The app never deletes
--- profiles directly; the real lifecycle is ON DELETE CASCADE from auth.users
--- (which runs system-side, unaffected by this policy).
+-- NO user-side INSERT or DELETE policy (migration 0011). With both, a user could
+-- delete their own row and re-insert it with role = 'super_admin' via PostgREST.
+-- Rows are provisioned only by the SECURITY DEFINER handle_new_user() trigger
+-- (owner context) and removed only by ON DELETE CASCADE from auth.users. The
+-- drops below retire the policies on a database set up before 0011.
+drop policy if exists profiles_insert_own on public.profiles;
 drop policy if exists profiles_delete_own on public.profiles;
-create policy profiles_delete_own on public.profiles
-  for delete using (auth.uid() = id);
 
 -- ---- projects (owner = user_id) -------------------------------------------
 drop policy if exists projects_select_own on public.projects;
@@ -540,10 +537,13 @@ create policy messages_delete_own on public.messages
 -- ===========================================================================
 grant usage on schema public to authenticated, service_role;
 
--- profiles: UPDATE is column-scoped to display_name (see the escalation note in
--- admin.sql / migration 0003). A user must never be able to rewrite privileged
--- columns (role/permissions/…) on their own row via a direct PostgREST call.
-grant select, insert, delete on public.profiles              to authenticated;
+-- profiles: SELECT only, plus UPDATE column-scoped to display_name (see the
+-- escalation notes in admin.sql / migrations 0003 + 0011). A user must never be
+-- able to rewrite privileged columns (role/permissions/…) on their own row via a
+-- direct PostgREST call — nor delete + re-insert the row with them set, so
+-- INSERT/DELETE are revoked too (the definer trigger provisions rows).
+revoke insert, delete on public.profiles                    from authenticated;
+grant select                 on public.profiles              to authenticated;
 grant update (display_name)  on public.profiles              to authenticated;
 grant select, insert, update, delete on public.projects      to authenticated;
 grant select, insert, update, delete on public.conversations to authenticated;
@@ -558,6 +558,27 @@ revoke all on public.profiles      from anon;
 revoke all on public.projects      from anon;
 revoke all on public.conversations from anon;
 revoke all on public.messages      from anon;
+
+-- Column-scoped user writes on the later feature tables (migration 0011). These
+-- tables are created by migrations 0009 / 0010, not here; the blocks are no-ops
+-- until they exist and converge on re-run afterwards.
+--   • notifications: a user may only mark their own rows read.
+--   • approvals: a submitter may only set the submitter fields (never
+--     reviewer_id / review_note / reviewed_at).
+do $$
+begin
+  revoke update on public.notifications from authenticated;
+  grant  update (read_at) on public.notifications to authenticated;
+exception when undefined_table then null;
+end $$;
+
+do $$
+begin
+  revoke insert on public.approvals from authenticated;
+  grant  insert (user_id, title, content, prompt, mode, model, conversation_id, status)
+    on public.approvals to authenticated;
+exception when undefined_table then null;
+end $$;
 
 
 -- ===========================================================================

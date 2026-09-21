@@ -32,8 +32,12 @@ export interface AppChromeProps {
   initialConversations: Conversation[];
   initialProjects: Project[];
   initialTier?: ModelTier;
+  /** Workspace default when it is a concrete model id (admin settings), else null. */
+  initialModel?: string | null;
   /** Permitted model catalog (fetched + permission-filtered server-side). */
   models?: BrainModel[];
+  /** The user has a model allowlist: no tier presets, concrete models only. */
+  restrictedToModels?: boolean;
   /** Signed-in user's first name, for the greeting. */
   firstName?: string;
   /** Whether to surface the Admin link (role resolved server-side). */
@@ -79,7 +83,9 @@ export function AppChrome({
   initialConversations,
   initialProjects,
   initialTier = "recommended",
+  initialModel = null,
   models = [],
+  restrictedToModels = false,
   firstName = "",
   isAdmin = false,
   features = [],
@@ -230,7 +236,9 @@ export function AppChrome({
         conversations={sidebarConversations}
         activeConversationId={activeConversationId}
         initialTier={initialTier}
+        initialModel={initialModel}
         models={models}
+        restrictedToModels={restrictedToModels}
         firstName={firstName}
         isAdmin={isAdmin}
         features={features}

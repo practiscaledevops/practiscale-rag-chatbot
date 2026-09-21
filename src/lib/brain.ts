@@ -5,8 +5,50 @@
 // NEVER be imported into a client component or exposed to the browser. The
 // browser talks to THIS app's /api/chat, which forwards to the Brain with the key.
 
-const BRAIN_URL = process.env.BRAIN_API_URL ?? "http://localhost:3000";
+import type {
+  ExtractResponse,
+  KnowledgeDetailResponse,
+  KnowledgeListParams,
+  KnowledgeListResponse,
+  LearningListParams,
+  LearningListResponse,
+} from "@/lib/brain-types";
+
+const BRAIN_URL = resolveBrainUrl();
 const BRAIN_KEY = process.env.BRAIN_API_KEY ?? "";
+
+/**
+ * The Brain's base URL. Defaults to the local dev Brain, but in production a
+ * missing BRAIN_API_URL is a deployment mistake (every Brain call would silently
+ * go to localhost), so fail fast at module load instead.
+ */
+function resolveBrainUrl(): string {
+  const url = process.env.BRAIN_API_URL;
+  if (url) return url;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("BRAIN_API_URL must be set in production");
+  }
+  return "http://localhost:3000";
+}
+
+/**
+ * A user-safe message for a failed Brain call. Upstream error BODIES are never
+ * echoed to the browser (they can carry internal detail); routes log them
+ * server-side and return this instead. The scope/quota hints are actionable
+ * and safe to show.
+ */
+export function safeBrainError(status: number): string {
+  switch (status) {
+    case 401:
+      return "The Brain rejected this app's key. Ask an admin to check the Brain configuration.";
+    case 403:
+      return "This app's Brain key is not permitted to perform that request.";
+    case 429:
+      return "The Brain is rate-limiting requests right now. Try again shortly.";
+    default:
+      return "Brain request failed";
+  }
+}
 
 export type ModelTier = "fast" | "recommended" | "max";
 
@@ -154,15 +196,134 @@ export function brainModelHeaders(res: Response): BrainModelHeaders {
   };
 }
 
-/** Raw retrieval (no generation) — for features that show sources directly. */
-export async function brainRetrieve(query: string, matchCount = 8) {
-  const res = await fetch(`${BRAIN_URL}/api/v1/retrieve`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ query, matchCount, expandParents: true }),
-  });
-  if (!res.ok) throw new Error(`Brain retrieve failed: ${res.status}`);
-  return res.json();
+// ---------------------------------------------------------------------------
+// Operating Intelligence: knowledge objects, learning records, extraction
+// ---------------------------------------------------------------------------
+
+/** Thrown by the knowledge / learning / extract helpers on a non-2xx Brain answer. */
+export class BrainRequestError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "BrainRequestError";
+    this.status = status;
+  }
+}
+
+/** Bearer header only — for multipart bodies, where fetch must set the content-type itself. */
+function bearerHeader(): Record<string, string> {
+  if (!BRAIN_KEY) throw new Error("BRAIN_API_KEY is not set");
+  return { authorization: `Bearer ${BRAIN_KEY}` };
+}
+
+/** Query string from defined, non-empty params (booleans as 1/0). */
+function qs(params: Record<string, string | number | boolean | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === "") continue;
+    sp.set(k, typeof v === "boolean" ? (v ? "1" : "0") : String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+/** The Brain's `{ error }` message when present, else a fallback. */
+async function readError(res: Response, fallback: string): Promise<string> {
+  const json = (await res.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof json?.error === "string" && json.error ? json.error : `${fallback} (${res.status})`;
+}
+
+/**
+ * GET /api/v1/knowledge — browse the org's knowledge objects with counts.
+ * `sensitive` MUST be decided server-side from the user's profile
+ * (canAccessSensitive); it is never read from the browser.
+ */
+export async function brainListKnowledge(
+  params: KnowledgeListParams,
+  sensitive: boolean
+): Promise<KnowledgeListResponse> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/v1/knowledge${qs({
+      class: params.class,
+      domain: params.domain,
+      type: params.type,
+      q: params.q,
+      sensitive,
+      includeArchive: params.includeArchive ? 1 : 0,
+      limit: params.limit,
+      offset: params.offset,
+    })}`,
+    { method: "GET", headers: authHeaders(), cache: "no-store" }
+  );
+  if (!res.ok) throw new BrainRequestError(res.status, await readError(res, "Brain knowledge request failed"));
+  return (await res.json()) as KnowledgeListResponse;
+}
+
+/** GET /api/v1/knowledge/{ref} — one object with relationships + linked learning. `null` on 404. */
+export async function brainGetKnowledge(
+  ref: string,
+  sensitive: boolean
+): Promise<KnowledgeDetailResponse | null> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/v1/knowledge/${encodeURIComponent(ref)}${qs({ sensitive })}`,
+    { method: "GET", headers: authHeaders(), cache: "no-store" }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new BrainRequestError(res.status, await readError(res, "Brain knowledge request failed"));
+  return (await res.json()) as KnowledgeDetailResponse;
+}
+
+/** GET /api/v1/learning — the org's learning records (decisions, experiments, results…). */
+export async function brainListLearning(params: LearningListParams): Promise<LearningListResponse> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/v1/learning${qs({
+      status: params.status,
+      type: params.type,
+      limit: params.limit,
+      offset: params.offset,
+    })}`,
+    { method: "GET", headers: authHeaders(), cache: "no-store" }
+  );
+  if (!res.ok) throw new BrainRequestError(res.status, await readError(res, "Brain learning request failed"));
+  return (await res.json()) as LearningListResponse;
+}
+
+/** Upper bound for one extraction (audio transcription is the slow case). */
+const EXTRACT_TIMEOUT_MS = 120_000;
+
+/**
+ * POST /api/v1/extract — turn a PDF / image / audio file (multipart) or a URL
+ * (JSON) into plain text. The file is forwarded as-is; the Brain does the
+ * parsing / OCR / transcription. Times out after 120s.
+ *
+ * @param name  the (bounded, validated) filename the Brain should see — lets the
+ *              caller pass its sanitized name without re-wrapping the File.
+ */
+export async function brainExtract(
+  input: File | { url: string },
+  name?: string
+): Promise<ExtractResponse> {
+  const signal = AbortSignal.timeout(EXTRACT_TIMEOUT_MS);
+  let res: Response;
+  if (input instanceof File) {
+    const fd = new FormData();
+    fd.append("file", input, name ?? input.name);
+    res = await fetch(`${BRAIN_URL}/api/v1/extract`, {
+      method: "POST",
+      headers: bearerHeader(),
+      body: fd,
+      signal,
+    });
+  } else {
+    res = await fetch(`${BRAIN_URL}/api/v1/extract`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ url: input.url }),
+      signal,
+    });
+  }
+  if (!res.ok) throw new BrainRequestError(res.status, await readError(res, "Brain extraction failed"));
+  return (await res.json()) as ExtractResponse;
 }
 
 /** One retrieved chunk as the RAG debugger renders it. */

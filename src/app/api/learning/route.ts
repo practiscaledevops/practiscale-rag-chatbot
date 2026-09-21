@@ -3,14 +3,18 @@
 // /api/v1/learning with the scoped key (server-side only) and returns the ref.
 
 import { z } from "zod";
-import { brainSaveLearning } from "@/lib/brain";
+import { brainSaveLearning, safeBrainError } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
 import { audit } from "@/lib/audit";
+import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
 export const maxDuration = 60;
+
+/** Per-user ceiling on learning saves (per instance — see lib/ratelimit). */
+const LEARNING_LIMIT = { limit: 10, windowMs: 60_000 };
 
 const schema = z.object({
   kind: z.enum(["decision", "implementation", "experiment", "result", "learning"]).default("learning"),
@@ -30,6 +34,8 @@ export async function POST(req: Request) {
   }
   const profile = await getSessionProfile();
   if (!profile) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const limited = rateLimit(`learning:${profile.userId}`, LEARNING_LIMIT.limit, LEARNING_LIMIT.windowMs);
+  if (limited) return limited;
 
   const parsed = schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return Response.json({ error: "Invalid request", detail: parsed.error.flatten() }, { status: 400 });
@@ -50,7 +56,9 @@ export async function POST(req: Request) {
   });
   const json = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
   if (!upstream.ok) {
-    return Response.json({ error: typeof json.error === "string" ? json.error : "Brain request failed" }, { status: upstream.status || 502 });
+    // Upstream detail stays in the server log; the browser gets a safe message.
+    console.error(`[learning] Brain request failed (${upstream.status}):`, json.error ?? json);
+    return Response.json({ error: safeBrainError(upstream.status) }, { status: upstream.status || 502 });
   }
   void audit(profile.userId, "learning_saved", { kind: d.kind, ref: json.ref ?? null, conversationId: d.conversationId ?? null });
   return Response.json(json);
