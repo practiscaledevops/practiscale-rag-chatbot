@@ -18,6 +18,7 @@ import {
   Database,
   Download,
   FileText,
+  Lightbulb,
   Loader2,
   PanelRight,
   Paperclip,
@@ -38,7 +39,7 @@ import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
-import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
+import { isExecutiveMode, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
 import { WorkModePicker, ModelQualityPicker, SourceScopePicker } from "./ComposerControls";
 import { CompareDrafts, type ComparePane } from "./CompareDrafts";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
@@ -119,29 +120,47 @@ const MODE_SUGGESTIONS: Partial<Record<WorkMode, Suggestion[]>> = {
     { icon: Sparkles, title: "Objections into ads", hint: "Turn pushback into angles", prompt: "Turn our most common sales objections into ad angles: " },
     { icon: RefreshCw, title: "Email sequence", hint: "A full nurture flow", prompt: "Create a 4-email nurture sequence for " },
   ],
-  media: [
+  content_strategist: [
     { icon: Sparkles, title: "Video concept", hint: "A short-form idea", prompt: "Create a short-form video concept for " },
     { icon: FileText, title: "30-second script", hint: "Hook to CTA", prompt: "Write a 30-second video script (hook to CTA) about " },
     { icon: Database, title: "Content series", hint: "A themed set", prompt: "Build a 5-part content series on " },
     { icon: Wand2, title: "Thumbnail angles", hint: "Scroll-stopping ideas", prompt: "Give me 5 thumbnail / cover angles for " },
   ],
-  sales: [
+  sales_coach: [
     { icon: SearchCheck, title: "Analyze a call", hint: "What went well & why", prompt: "Analyze our recent call scores and tell me what the top performers do differently." },
     { icon: RefreshCw, title: "Practice an objection", hint: "Roleplay a tough one", prompt: "Roleplay a prospect raising this objection and coach my response: " },
     { icon: FileText, title: "Follow-up messages", hint: "Move the deal forward", prompt: "Draft follow-up messages after a discovery call about " },
     { icon: Database, title: "Patterns in calls", hint: "Recurring themes", prompt: "Find the recurring patterns and top objections across our recent call scores." },
   ],
-  strategy: [
+  strategy_advisor: [
     { icon: Sparkles, title: "Options & trade-offs", hint: "3-4 grounded paths", prompt: "Give me 3-4 options with trade-offs for " },
     { icon: SearchCheck, title: "Pressure-test a plan", hint: "Find the weak points", prompt: "Pressure-test this plan and surface the risks and weak assumptions: " },
     { icon: RefreshCw, title: "Compare directions", hint: "Side by side", prompt: "Compare the pros and cons of these two directions: " },
     { icon: Database, title: "Biggest risks", hint: "What could go wrong", prompt: "What are the biggest risks and blind spots in " },
   ],
-  decision_maker: [
+  decision_memo: [
     { icon: FileText, title: "Decision memo", hint: "Recommendation-first", prompt: "Write a decision memo (recommendation up front, evidence, options, risks, next step) on: " },
     { icon: SearchCheck, title: "Recommend with evidence", hint: "Cited from our data", prompt: "Give me an evidence-backed recommendation, citing our knowledge base, on: " },
     { icon: Database, title: "Options & risks", hint: "Weighed clearly", prompt: "List the options, trade-offs, and risks for the decision: " },
     { icon: Sparkles, title: "Bottom line", hint: "One clear call", prompt: "Bottom line: what should we decide about the following, and why? " },
+  ],
+  management_coach: [
+    { icon: SearchCheck, title: "Diagnose a manager", hint: "Dependency, delegation, accountability", prompt: "My manager is overloaded and the team waits on their decisions. Here is the situation: " },
+    { icon: Wand2, title: "Delegation plan", hint: "What to hand off and how", prompt: "Build a delegation plan for this manager and team: " },
+    { icon: FileText, title: "Accountability check", hint: "Who chases whom?", prompt: "Run the accountability diagnostic on this team: " },
+    { icon: Database, title: "What did we learn?", hint: "Our past management experiments", prompt: "What have we already tried and learned about manager delegation at PractiScale?" },
+  ],
+  training_builder: [
+    { icon: FileText, title: "Build a training", hint: "Modules, exercises, assessment", prompt: "Build a 90-minute training for our managers on: " },
+    { icon: Wand2, title: "30-day program", hint: "A complete implementation plan", prompt: "Build a 30-day implementation program for the team on: " },
+    { icon: Database, title: "Onboarding curriculum", hint: "From our SOPs and playbooks", prompt: "Build an onboarding curriculum for a new " },
+    { icon: SearchCheck, title: "Assessment", hint: "Test what they learned", prompt: "Create an assessment with answer key for the training on: " },
+  ],
+  ceo_content: [
+    { icon: Sparkles, title: "10 posts from a lesson", hint: "Founder voice, real experience", prompt: "Turn this real experience into 10 LinkedIn posts in my voice: " },
+    { icon: Wand2, title: "Reel ideas from our data", hint: "What we actually learned", prompt: "Give me 10 CEO reel ideas grounded in what we actually learned this quarter." },
+    { icon: FileText, title: "Story from a failure", hint: "Lesson-first storytelling", prompt: "Write a founder story about this failure and what it taught us: " },
+    { icon: Database, title: "Case study post", hint: "Proof-led", prompt: "Write a proof-led post about this client result: " },
   ],
 };
 
@@ -193,7 +212,36 @@ interface SourceItem {
   /** ISO date of the source document, for a freshness indicator. */
   date?: string | null;
   snippet?: string;
+  /** Operating Intelligence lane + object identity (when the chunk belongs to a knowledge object). */
+  lane?: string | null;
+  ref?: string | null;
+  name?: string | null;
+  authority?: string | null;
+  endorsement?: string | null;
+  current?: boolean;
+  via?: string | null;
 }
+
+/** "Save as Organizational Learning?" — a candidate the Brain detected in the conversation. */
+interface LearningCandidate {
+  kind: "decision" | "implementation" | "experiment" | "result" | "learning";
+  title: string;
+  change: string;
+  observedResult: string | null;
+  department: string | null;
+  relatedRefs: string[];
+  missingEvidence: string[];
+  confidence: number;
+}
+
+const LANE_LABEL: Record<string, string> = {
+  reality: "Reality",
+  learning: "Learning",
+  playbook: "Playbook",
+  platform: "Platform",
+  performance: "Performance",
+  raw: "Raw",
+};
 
 /**
  * Turn a retrieval confidence in [0,1] into a human label + tone. High confidence
@@ -431,6 +479,8 @@ export function ChatView({
     let sources: SourceItem[] = [];
     let confidence: number | null = null;
     let routedTier: string | null = null;
+    let modeInfo: { mode: string; label: string; auto: boolean; intent: string } | null = null;
+    let learning: LearningCandidate | null = null;
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
       if (it?.type === "sources" && Array.isArray(it.sources)) {
@@ -441,12 +491,62 @@ export function ChatView({
       if (it?.type === "route" && typeof it.tier === "string") {
         routedTier = it.tier as string;
       }
+      if (it?.type === "mode" && typeof it.mode === "string") {
+        modeInfo = {
+          mode: it.mode as string,
+          label: typeof it.label === "string" ? (it.label as string) : (it.mode as string),
+          auto: !!it.auto,
+          intent: typeof it.intent === "string" ? (it.intent as string) : "",
+        };
+      }
+      if (it?.type === "learning_candidate" && typeof it.title === "string") {
+        const kinds = ["decision", "implementation", "experiment", "result", "learning"] as const;
+        const kind = kinds.includes(it.kind as (typeof kinds)[number]) ? (it.kind as LearningCandidate["kind"]) : "learning";
+        learning = {
+          kind,
+          title: it.title as string,
+          change: typeof it.change === "string" ? (it.change as string) : "",
+          observedResult: typeof it.observedResult === "string" ? (it.observedResult as string) : null,
+          department: typeof it.department === "string" ? (it.department as string) : null,
+          relatedRefs: Array.isArray(it.relatedRefs) ? (it.relatedRefs as string[]) : [],
+          missingEvidence: Array.isArray(it.missingEvidence) ? (it.missingEvidence as string[]) : [],
+          confidence: typeof it.confidence === "number" ? (it.confidence as number) : 0,
+        };
+      }
       if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount, sources, confidence, routedTier };
+    return { label, sourcesCount, sources, confidence, routedTier, modeInfo, learning };
   }, [data]);
+
+  // "Save as Organizational Learning?" — per-turn state keyed by the candidate title.
+  const [learningState, setLearningState] = useState<{ key: string; status: "idle" | "saving" | "saved" | "ignored" | "error"; ref?: string; error?: string }>({ key: "", status: "idle" });
+  const saveLearning = useCallback(async (c: LearningCandidate, notes?: string) => {
+    setLearningState({ key: c.title, status: "saving" });
+    try {
+      const res = await fetch("/api/learning", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: c.kind,
+          title: c.title,
+          change: c.change,
+          observedResult: c.observedResult,
+          department: c.department,
+          relatedRefs: c.relatedRefs,
+          missingEvidence: c.missingEvidence,
+          notes: notes || undefined,
+          conversationId: conversationIdRef.current,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ref?: string; error?: string };
+      if (!res.ok) throw new Error(json.error || "Couldn't save the learning");
+      setLearningState({ key: c.title, status: "saved", ref: json.ref });
+    } catch (e) {
+      setLearningState({ key: c.title, status: "error", error: e instanceof Error ? e.message : "Couldn't save the learning" });
+    }
+  }, []);
 
   // Track the persisted id in a ref so the first save of a new chat can flip it
   // without re-rendering mid-stream.
@@ -748,7 +848,7 @@ export function ChatView({
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   // Executive (CEO) private-memory editor.
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const isCeoMode = mode === "ceo";
+  const isCeoMode = isExecutiveMode(mode);
 
   // Export the conversation in a chosen format. The heavy libraries (docx/jspdf/
   // xlsx) load on demand inside the exporters, so they never bloat the bundle.
@@ -1060,6 +1160,14 @@ export function ChatView({
                               sources={activity.sources}
                             />
                           ) : null}
+                          {idx === lastIndex && !busy && activity.learning && !(learningState.key === activity.learning.title && learningState.status === "ignored") ? (
+                            <LearningCard
+                              candidate={activity.learning}
+                              state={learningState.key === activity.learning.title ? learningState : { key: activity.learning.title, status: "idle" }}
+                              onSave={(notes) => saveLearning(activity.learning!, notes)}
+                              onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
+                            />
+                          ) : null}
                           <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                             <IconButton
                               aria-label={copiedId === m.id ? "Copied" : "Copy message"}
@@ -1234,11 +1342,21 @@ export function ChatView({
             )}
             <div className="mx-auto w-full max-w-3xl px-4 py-3">
               {/* When Smart Route is active, show which tier it chose last turn. */}
-              {selection.value === "smart" && activity.routedTier && (
-                <div className="mb-2">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11px] text-muted-foreground">
-                    Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
-                  </span>
+              {((selection.value === "smart" && activity.routedTier) || (mode === "auto" && activity.modeInfo)) && (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {selection.value === "smart" && activity.routedTier && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11px] text-muted-foreground">
+                      Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
+                    </span>
+                  )}
+                  {mode === "auto" && activity.modeInfo && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-1 text-[11px] text-accent"
+                      title="The Brain picked this expert for your last message. Choose a mode to override."
+                    >
+                      <Sparkles size={11} aria-hidden /> Auto → {activity.modeInfo.label}
+                    </span>
+                  )}
                 </div>
               )}
               {composer}
@@ -1920,6 +2038,86 @@ function OptionsPicker({
   );
 }
 
+/**
+ * "Save as Organizational Learning?" — rendered under an answer when the Brain
+ * detected a concrete decision / implementation / result / lesson in what the
+ * user said. A human confirms before anything becomes institutional memory.
+ */
+function LearningCard({
+  candidate,
+  state,
+  onSave,
+  onIgnore,
+}: {
+  candidate: LearningCandidate;
+  state: { status: "idle" | "saving" | "saved" | "ignored" | "error"; ref?: string; error?: string };
+  onSave: (notes?: string) => void;
+  onIgnore: () => void;
+}) {
+  const [addingEvidence, setAddingEvidence] = useState(false);
+  const [notes, setNotes] = useState("");
+  const saved = state.status === "saved";
+  return (
+    <div className="mt-3 rounded-xl border border-private/30 bg-private/5 p-3 text-sm">
+      <div className="flex items-start gap-2">
+        <Lightbulb size={16} className="mt-0.5 shrink-0 text-private" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-private">
+            {saved ? "Saved as organizational learning" : "Possible organizational learning"}
+            <span className="ml-2 rounded border border-private/30 px-1 normal-case tracking-normal">{candidate.kind}</span>
+          </p>
+          <p className="mt-1 font-medium text-foreground">{candidate.title}</p>
+          {candidate.change && <p className="mt-0.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Change:</span> {candidate.change}</p>}
+          {candidate.observedResult && <p className="mt-0.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Observed result:</span> {candidate.observedResult}</p>}
+          {(candidate.department || candidate.relatedRefs.length > 0) && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {candidate.department && <>Department: <span className="text-foreground">{candidate.department}</span> · </>}
+              {candidate.relatedRefs.length > 0 && <>Frameworks: <span className="text-foreground">{candidate.relatedRefs.join(", ")}</span></>}
+            </p>
+          )}
+          {candidate.missingEvidence.length > 0 && !saved && (
+            <p className="mt-1 text-xs text-warning">
+              Missing evidence: {candidate.missingEvidence.join(" · ")}
+            </p>
+          )}
+          {saved ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Recorded as <span className="font-mono text-accent">{state.ref}</span>. Complete the evidence in the Brain&apos;s Learning Lab when you have the numbers.
+            </p>
+          ) : (
+            <>
+              {addingEvidence && (
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Add the evidence: date range, baseline number, new number, sample size…"
+                  className="mt-2 w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+                />
+              )}
+              {state.status === "error" && <p className="mt-1 text-xs text-danger">{state.error}</p>}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="primary" disabled={state.status === "saving"} onClick={() => onSave(notes)}>
+                  {state.status === "saving" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  {addingEvidence ? "Save with evidence" : "Save as learning"}
+                </Button>
+                {!addingEvidence && (
+                  <Button size="sm" variant="ghost" onClick={() => setAddingEvidence(true)}>
+                    Add evidence
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={onIgnore}>
+                  Ignore
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Right-hand evidence rail: the sources the Brain retrieved for the latest answer. */
 function EvidencePanel({
   count,
@@ -1988,14 +2186,21 @@ function EvidencePanel({
                 <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <FileText size={11} aria-hidden />
-                    {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
+                    {i + 1}. {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
                   </span>
-                  {freshness(s.date) && (
-                    <span className="shrink-0 normal-case text-muted-foreground/70">
-                      {freshness(s.date)}
-                    </span>
-                  )}
+                  <span className="flex shrink-0 items-center gap-1 normal-case text-muted-foreground/70">
+                    {s.authority && <span className="rounded border border-border px-1" title="Authority">{s.authority}</span>}
+                    {s.endorsement === "practiscale_standard" && <span className="rounded border border-accent/40 px-1 text-accent" title="PractiScale Standard">Std</span>}
+                    {s.current === false && <span className="rounded border border-warning/40 px-1 text-warning" title="Historical or expired">past</span>}
+                    {freshness(s.date) && <span>{freshness(s.date)}</span>}
+                  </span>
                 </div>
+                {s.ref && (
+                  <p className="mb-0.5 truncate text-[11px] font-medium text-foreground" title={`${s.ref} ${s.name ?? ""}`}>
+                    <span className="text-accent">{s.ref}</span> {s.name}
+                    {s.via === "relationship" && <span className="ml-1 text-muted-foreground/70">· connected</span>}
+                  </p>
+                )}
                 <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
               </li>
             ))}

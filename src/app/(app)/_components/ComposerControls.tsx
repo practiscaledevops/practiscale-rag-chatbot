@@ -22,21 +22,47 @@ import {
   Zap,
   Database,
   Layers,
+  Sparkles,
+  Megaphone,
+  Package,
+  HeartHandshake,
+  Users,
+  UserPlus,
+  Settings2,
+  Mic,
+  Send,
+  GraduationCap,
+  ListChecks,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { WorkMode, WorkModeDef } from "@/lib/work-modes";
+import { MODE_GROUP_LABELS, EXECUTIVE_MODES, type WorkMode, type WorkModeDef, type ModeGroup } from "@/lib/work-modes";
 import type { ModelOption } from "@/components/AppShell";
 
 export const MODE_ICON: Record<WorkMode, LucideIcon> = {
+  auto: Sparkles,
   general: MessageCircle,
+  ceo_advisor: Crown,
+  strategy_advisor: Target,
+  sales_coach: Headphones,
+  marketing_advisor: Megaphone,
+  offer_architect: Package,
+  cs_advisor: HeartHandshake,
+  management_coach: Users,
+  hiring_advisor: UserPlus,
+  operations_advisor: Settings2,
+  content_strategist: Clapperboard,
   copywriter: Pencil,
-  media: Clapperboard,
-  sales: Headphones,
-  strategy: Target,
-  decision_maker: ClipboardList,
-  ceo: Crown,
+  ceo_content: Mic,
+  distribution_strategist: Send,
+  training_builder: GraduationCap,
+  sop_builder: ListChecks,
+  decision_memo: ClipboardList,
+  research_analyst: BarChart3,
 };
+
+const GROUP_ORDER: ModeGroup[] = ["general", "business", "content", "build", "analysis"];
 
 interface Collection {
   id: string;
@@ -382,15 +408,21 @@ export function WorkModePicker({
 
   const current = modes.find((m) => m.id === value) ?? modes[0];
   const CurrentIcon = current ? MODE_ICON[current.id] : MessageCircle;
+  const isExec = EXECUTIVE_MODES.includes(value);
+  // Grouped, Auto-first ordering (keyboard indices follow this flat order).
+  const ordered = React.useMemo(
+    () => GROUP_ORDER.flatMap((g) => modes.filter((m) => m.group === g)),
+    [modes]
+  );
 
   // Open at the current selection and focus it.
   React.useEffect(() => {
     if (!open) return;
-    const idx = Math.max(0, modes.findIndex((m) => m.id === value));
+    const idx = Math.max(0, ordered.findIndex((m) => m.id === value));
     setActiveIndex(idx);
     const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
-  }, [open, modes, value]);
+  }, [open, ordered, value]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -415,7 +447,7 @@ export function WorkModePicker({
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const dir = e.key === "ArrowDown" ? 1 : -1;
-      const next = (activeIndex + dir + modes.length) % modes.length;
+      const next = (activeIndex + dir + ordered.length) % ordered.length;
       setActiveIndex(next);
       itemsRef.current[next]?.focus();
       return;
@@ -428,11 +460,13 @@ export function WorkModePicker({
     }
     if (e.key === "End") {
       e.preventDefault();
-      const last = modes.length - 1;
+      const last = ordered.length - 1;
       setActiveIndex(last);
       itemsRef.current[last]?.focus();
     }
   }
+
+  let lastGroup: ModeGroup | null = null;
 
   return (
     <div className="relative" ref={ref}>
@@ -442,16 +476,17 @@ export function WorkModePicker({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
+        title="Which expert answers. Auto picks per message."
         className={cn(
           "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          value === "ceo"
+          isExec
             ? "border-private/40 bg-private/10 text-private"
-            : value === "general"
+            : value === "general" || value === "auto"
               ? "border-border bg-surface text-foreground hover:bg-surface-muted"
               : "border-accent/40 bg-accent/10 text-accent"
         )}
       >
-        <CurrentIcon size={15} aria-hidden />
+        <CurrentIcon size={15} className={value === "auto" ? "text-accent" : undefined} aria-hidden />
         <span>{current?.label ?? "Mode"}</span>
         <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} aria-hidden />
       </button>
@@ -461,43 +496,49 @@ export function WorkModePicker({
           role="menu"
           aria-label="Work mode"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,30rem)] w-80 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
         >
-          <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Work mode
-          </p>
-          {modes.map((m, i) => {
+          {ordered.map((m, i) => {
             const Icon = MODE_ICON[m.id];
             const selected = m.id === value;
+            const header =
+              lastGroup !== m.group ? (
+                <p key={`g-${m.group}`} className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {m.group === "general" ? "Work mode" : MODE_GROUP_LABELS[m.group]}
+                </p>
+              ) : null;
+            lastGroup = m.group;
             return (
-              <button
-                key={m.id}
-                ref={(el) => {
-                  itemsRef.current[i] = el;
-                }}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                tabIndex={i === activeIndex ? 0 : -1}
-                onClick={() => {
-                  onChange(m.id);
-                  close();
-                }}
-                className={cn(
-                  "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
-                )}
-              >
-                <Icon size={16} className={cn("mt-0.5 shrink-0", selected ? "text-accent" : "text-muted-foreground")} aria-hidden />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    {m.label}
-                    {m.restricted && <ShieldCheck size={11} className="text-info/80" aria-label="Restricted" />}
+              <React.Fragment key={m.id}>
+                {header}
+                <button
+                  ref={(el) => {
+                    itemsRef.current[i] = el;
+                  }}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  tabIndex={i === activeIndex ? 0 : -1}
+                  onClick={() => {
+                    onChange(m.id);
+                    close();
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
+                  )}
+                >
+                  <Icon size={16} className={cn("mt-0.5 shrink-0", selected || m.id === "auto" ? "text-accent" : "text-muted-foreground")} aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      {m.label}
+                      {m.restricted && <ShieldCheck size={11} className="text-info/80" aria-label="Restricted" />}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">{m.hint}</span>
                   </span>
-                  <span className="block text-xs text-muted-foreground">{m.hint}</span>
-                </span>
-                {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
-              </button>
+                  {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+                </button>
+              </React.Fragment>
             );
           })}
         </div>

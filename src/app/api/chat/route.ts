@@ -16,7 +16,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { brainChat, brainModelHeaders, type ModelSelection } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
-import { resolveMode, canUseExecutive } from "@/lib/work-modes";
+import { resolveMode, canUseExecutive, allowedModes, isExecutiveMode } from "@/lib/work-modes";
 import { allowedSourceTypes } from "@/lib/access";
 import { getCeoMemory } from "@/lib/ceo-memory";
 import { audit } from "@/lib/audit";
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
   //     directives — only when they may use Executive mode (super_admin or the
   //     "executive" feature). Never reaches anyone else.
   let directives: string | undefined;
-  if (mode === "ceo" && canUseExecutive(access)) {
+  if (isExecutiveMode(mode) && canUseExecutive(access)) {
     const mem = await getCeoMemory(profile.userId);
     if (mem.trim()) directives = mem;
   }
@@ -234,6 +234,9 @@ export async function POST(req: Request) {
     sourceTypes || collectionIds
       ? { ...(sourceTypes ? { sourceTypes } : {}), ...(collectionIds ? { collectionIds } : {}) }
       : undefined;
+  // The modes this user may use: constrains the Brain's Auto detection so a
+  // restricted expert (executive, decision memo) is never auto-selected for a
+  // user who cannot pick it.
   const upstream = await brainChat(
     safeMessages,
     selection,
@@ -241,7 +244,8 @@ export async function POST(req: Request) {
     scope,
     directives,
     parsed.data.outputType,
-    attachments && attachments.length ? attachments : undefined
+    attachments && attachments.length ? attachments : undefined,
+    allowedModes(access)
   );
 
   if (!upstream.ok || !upstream.body) {

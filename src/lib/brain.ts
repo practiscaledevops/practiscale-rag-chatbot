@@ -62,7 +62,9 @@ export async function brainChat(
   scope?: BrainScope,
   directives?: string,
   outputType?: string,
-  attachments?: BrainAttachment[]
+  attachments?: BrainAttachment[],
+  /** Modes this user may use — constrains the Brain's Auto detection (never widens). */
+  allowedModes?: string[]
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -73,6 +75,7 @@ export async function brainChat(
       // Persona overlay + knowledge scope (both resolved + gated server-side in
       // this app's /api/chat; the Brain re-checks and can only narrow the scope).
       ...(mode ? { mode } : {}),
+      ...(allowedModes && allowedModes.length ? { allowedModes } : {}),
       ...(scope?.sourceTypes ? { sourceTypes: scope.sourceTypes } : {}),
       ...(scope?.collectionIds ? { collectionIds: scope.collectionIds } : {}),
       // Trusted private operator context (e.g. the executive's own memory).
@@ -83,6 +86,29 @@ export async function brainChat(
       // CONTENT as data, never as instructions.
       ...(attachments && attachments.length ? { attachments } : {}),
     }),
+  });
+}
+
+/** A confirmed piece of Organizational Learning to record in the Brain. */
+export interface BrainLearningInput {
+  kind: "decision" | "implementation" | "experiment" | "result" | "learning";
+  title: string;
+  change: string;
+  observedResult?: string;
+  department?: string;
+  relatedRefs?: string[];
+  missingEvidence?: string[];
+  notes?: string;
+  createdBy?: string;
+  source?: "chat" | "manual";
+}
+
+/** POST /api/v1/learning — save a learning record (server-side only). */
+export async function brainSaveLearning(input: BrainLearningInput): Promise<Response> {
+  return fetch(`${BRAIN_URL}/api/v1/learning`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(input),
   });
 }
 
