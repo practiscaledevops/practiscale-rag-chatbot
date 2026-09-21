@@ -450,6 +450,10 @@ export function ChatView({
     api: "/api/chat",
     body: chatBody,
     initialMessages: initialMessages ?? [],
+    // Coalesce stream chunks into at most ~20 state updates/s: a fast model can
+    // deliver 60+ chunks/s and each one re-rendered this whole view. The reveal
+    // effect below smooths the visible text between updates anyway.
+    experimental_throttle: 50,
     onFinish: (message, { usage: u }) => {
       // Prefer the exact token counts from the stream's finish part; fall back
       // to a rough estimate only when the stream omitted usage.
@@ -2349,6 +2353,13 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+// Minimum time between two reveal commits while streaming. Each commit re-renders
+// the message (the last Markdown block re-parses), so ~25 commits/s keeps the
+// glide smooth while capping the render work — a 60/s cadence on a long answer
+// starved the main thread and, with the whole document re-parsing, ran the tab
+// out of memory.
+const REVEAL_INTERVAL_MS = 40;
+
 /** Progressive character reveal for a smooth typewriter effect while streaming. */
 function useSmoothText(text: string, active: boolean): string {
   const textRef = useRef(text);
@@ -2365,7 +2376,8 @@ function useSmoothText(text: string, active: boolean): string {
     }
     posRef.current = 0; // reveal this turn from the start
     let raf = 0;
-    const tick = () => {
+    let lastCommit = 0;
+    const tick = (now: number) => {
       const full = textRef.current;
       // requestAnimationFrame is paused/throttled while the tab is hidden, so if
       // a tick does run while hidden (or the text shrank on a new turn), snap to
@@ -2374,11 +2386,13 @@ function useSmoothText(text: string, active: boolean): string {
       if ((typeof document !== "undefined" && document.hidden) || posRef.current > full.length) {
         posRef.current = full.length;
         setShown(full);
-      } else if (posRef.current < full.length) {
+        lastCommit = now;
+      } else if (posRef.current < full.length && now - lastCommit >= REVEAL_INTERVAL_MS) {
         // Reveal proportional to the backlog so it glides and always catches up.
-        const step = Math.max(2, Math.ceil((full.length - posRef.current) / 6));
+        const step = Math.max(3, Math.ceil((full.length - posRef.current) / 5));
         posRef.current = Math.min(full.length, posRef.current + step);
         setShown(full.slice(0, posRef.current));
+        lastCommit = now;
       }
       raf = requestAnimationFrame(tick);
     };

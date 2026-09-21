@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { CopyCodeButton } from "./CopyCodeButton";
 import { TableBlock } from "./TableBlock";
@@ -19,15 +19,83 @@ import { TableBlock } from "./TableBlock";
  * Citations: the Brain tags supporting chunks as [chunk-uuid]. We map each unique
  * id to a small ordinal ([1], [2], …) so answers read cleanly instead of showing
  * raw 36-char UUIDs; the full id stays in the chip's tooltip.
+ *
+ * Streaming cost: the content is split into top-level blocks (blank-line
+ * separated, fenced code kept whole) and each block is a memoized component.
+ * While an answer streams only the LAST block's text changes, so only that block
+ * re-parses per update; every settled block is reused as-is. Without this a long
+ * answer (a full training with tables) re-parsed all of its Markdown on every
+ * frame — quadratic work that froze the tab and crashed it out of memory.
  */
 export function Markdown({ content }: { content: string }) {
-  // Pre-scan for citation ids so every chip can render as a stable ordinal.
-  const citeMap = new Map<string, number>();
+  // Citation ordinals are global to the answer (the first-seen id is [1], …).
+  // They are passed to blocks as one string so memoized blocks compare cheaply.
+  const ids: string[] = [];
+  const seen = new Set<string>();
   for (const m of content.matchAll(CITE_RE)) {
-    const id = m[1];
-    if (!citeMap.has(id)) citeMap.set(id, citeMap.size + 1);
+    if (!seen.has(m[1])) {
+      seen.add(m[1]);
+      ids.push(m[1]);
+    }
   }
+  const citeKey = ids.join(",");
+  const blocks = splitBlocks(content);
 
+  return (
+    <div className="space-y-3 leading-relaxed">
+      {blocks.map((text, i) => (
+        <MarkdownBlock key={i} text={text} citeKey={citeKey} />
+      ))}
+    </div>
+  );
+}
+
+/** One top-level block, parsed once per distinct (text, citations) pair. */
+const MarkdownBlock = memo(function MarkdownBlock({
+  text,
+  citeKey,
+}: {
+  text: string;
+  citeKey: string;
+}) {
+  const citeMap = new Map<string, number>();
+  if (citeKey) citeKey.split(",").forEach((id, i) => citeMap.set(id, i + 1));
+  return <>{renderContent(text, citeMap)}</>;
+});
+
+/**
+ * Split Markdown into top-level blocks on blank lines, never inside a fenced
+ * code block. Every construct the parser knows (table, list, quote, paragraph,
+ * heading, rule) is made of consecutive non-blank lines, so parsing the blocks
+ * independently renders exactly what parsing the whole text would. An unclosed
+ * fence (still streaming) keeps the rest of the text in one block.
+ */
+function splitBlocks(content: string): string[] {
+  const lines = content.split("\n");
+  const blocks: string[] = [];
+  let cur: string[] = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      cur.push(line);
+      continue;
+    }
+    if (!inFence && line.trim() === "") {
+      if (cur.length > 0) {
+        blocks.push(cur.join("\n"));
+        cur = [];
+      }
+      continue;
+    }
+    cur.push(line);
+  }
+  if (cur.length > 0) blocks.push(cur.join("\n"));
+  return blocks;
+}
+
+/** Parse a Markdown fragment (fenced code + everything the line parser knows) to nodes. */
+function renderContent(content: string, citeMap: Map<string, number>): ReactNode[] {
   const blocks: ReactNode[] = [];
   let key = 0;
 
@@ -48,8 +116,7 @@ export function Markdown({ content }: { content: string }) {
   if (cursor < content.length) {
     renderTextBlocks(content.slice(cursor), `b${key++}`, blocks, citeMap);
   }
-
-  return <div className="space-y-3 leading-relaxed">{blocks}</div>;
+  return blocks;
 }
 
 const HEADING_CLS: Record<number, string> = {
@@ -231,8 +298,14 @@ function renderTextBlocks(
       continue;
     }
 
-    // Paragraph: gather consecutive non-blank, non-block lines.
-    const para: string[] = [];
+    // Paragraph: gather consecutive non-blank, non-block lines. The current line
+    // is ALWAYS consumed, even when it looks like a table row: a row-shaped line
+    // that isn't a table (its `|---|` separator hasn't streamed in yet, or the
+    // model wrote pipes without one) is plain text. Refusing it here consumed
+    // nothing and spun this loop forever, pushing empty paragraphs until the tab
+    // ran out of memory — every streamed table froze the chat at its header row.
+    const para: string[] = [line];
+    i++;
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&

@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  // Components under test use the automatic JSX runtime (no React import), like Next.
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts", "src/**/*.test.ts"],
