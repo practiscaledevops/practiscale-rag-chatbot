@@ -113,6 +113,8 @@ export const config = {
   // Run on everything except Next internals and static assets. API routes are
   // intentionally excluded here — they enforce auth themselves and stream.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // The manifest, service worker and offline page must be reachable without a
+    // session, or the browser can't install/launch the app.
+    "/((?!_next/static|_next/image|favicon.ico|api|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

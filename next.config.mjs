@@ -13,7 +13,18 @@ const SECURITY_HEADERS = [
 const nextConfig = {
   reactStrictMode: true,
   async headers() {
-    return [{ source: "/(.*)", headers: SECURITY_HEADERS }];
+    return [
+      { source: "/(.*)", headers: SECURITY_HEADERS },
+      // The service worker must never be cached by the browser or a CDN, or an
+      // old worker keeps serving after a deploy; it may control the whole origin.
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+    ];
   },
 };
 

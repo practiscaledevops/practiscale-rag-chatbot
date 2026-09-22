@@ -3,6 +3,7 @@
 import { Menu, PanelLeftOpen, Sparkles } from "lucide-react";
 import type { UsageState } from "@/components/AppShell";
 import { NotificationsBell } from "@/components/NotificationsBell";
+import { PwaInstall } from "@/components/PwaInstall";
 import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ export function TopBar({
 
       <div className="flex items-center gap-2 sm:gap-3">
         <UsageMeter usage={usage} />
+        <PwaInstall />
         <NotificationsBell />
       </div>
     </header>
