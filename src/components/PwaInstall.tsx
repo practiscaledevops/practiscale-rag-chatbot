@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { MonitorDown } from "lucide-react";
 import { IconButton } from "@/components/IconButton";
 
-// Installable-app plumbing for the Assistant:
-//   1. registers the service worker (installability + offline page), and
-//   2. shows an "Install app" button whenever the browser offers the native
-//      install prompt (Chrome/Edge on desktop and Android). It hides itself
-//      once installed or when running inside the installed app. Safari has no
-//      prompt API, so iOS users add it from Share → "Add to Home Screen".
+// "Install app" button for the Assistant: shown whenever the browser offers the
+// native install prompt (Chrome/Edge on desktop and Android); hidden once
+// installed or when running inside the installed app. Safari has no prompt
+// API, so iOS users add it from Share → "Add to Home Screen". The service
+// worker itself is registered on every page by PwaRegister (root layout).
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -29,10 +28,6 @@ export function PwaInstall() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Register once; updates are picked up on the next navigation.
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    }
     setInstalled(isStandalone());
     const onPrompt = (e: Event) => {
       e.preventDefault();

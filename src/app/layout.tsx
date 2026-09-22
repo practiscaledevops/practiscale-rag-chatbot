@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
 
 // Absolute base for resolving OG/icon URLs. Override in production via
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       {/* Theme surfaces come from the shared design tokens (see globals.css). */}
       <body className="min-h-screen bg-background text-foreground antialiased">
+        <PwaRegister />
         {children}
       </body>
     </html>
