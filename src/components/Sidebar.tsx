@@ -7,6 +7,7 @@ import {
   ArchiveRestore,
   Brain,
   ChevronRight,
+  Folder,
   FolderPlus,
   Lightbulb,
   MessageSquarePlus,
@@ -56,6 +57,10 @@ export interface SidebarProps {
   onNewChat?: () => void;
   onNewProject?: () => void;
   onSelectProject?: (id: string) => void;
+  /** Currently selected project (scopes new chats), for the active highlight. */
+  activeProjectId?: string | null;
+  onRenameProject?: (id: string) => void;
+  onDeleteProject?: (id: string) => void;
   onSelectConversation?: (id: string) => void;
   onRenameConversation?: (id: string) => void;
   onPinConversation?: (id: string, pinned: boolean) => void;
@@ -119,6 +124,9 @@ export function Sidebar({
   onNewChat,
   onNewProject,
   onSelectProject,
+  activeProjectId = null,
+  onRenameProject,
+  onDeleteProject,
   onSelectConversation,
   onRenameConversation,
   onPinConversation,
@@ -298,15 +306,14 @@ export function Sidebar({
           ) : (
             <ul className="space-y-0.5">
               {projects.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectProject?.(p.id)}
-                    className="w-full truncate rounded-lg px-2.5 py-1.5 text-left text-sm text-sidebar-foreground/90 transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {p.name}
-                  </button>
-                </li>
+                <ProjectRow
+                  key={p.id}
+                  project={p}
+                  active={p.id === activeProjectId}
+                  onSelect={onSelectProject}
+                  onRename={onRenameProject}
+                  onDelete={onDeleteProject}
+                />
               ))}
             </ul>
           )}
@@ -512,6 +519,59 @@ function ConversationRow({
           <Trash2 size={13} />
         </RowAction>
       </div>
+    </li>
+  );
+}
+
+/** A single project row: active highlight + hover-revealed rename / delete. */
+function ProjectRow({
+  project,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  project: ProjectItem;
+  active: boolean;
+  onSelect?: (id: string) => void;
+  onRename?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  return (
+    <li className="group relative">
+      <button
+        type="button"
+        onClick={() => onSelect?.(project.id)}
+        aria-pressed={active}
+        title={active ? "Selected — new chats save here. Click again to clear." : project.name}
+        className={cn(
+          "flex w-full items-center gap-1.5 truncate rounded-lg px-2.5 py-1.5 pr-14 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          active
+            ? "bg-white/[0.12] text-sidebar-foreground"
+            : "text-sidebar-foreground/90 hover:bg-white/[0.07]"
+        )}
+      >
+        <Folder
+          size={13}
+          className={cn("shrink-0", active ? "text-accent" : "text-sidebar-muted")}
+          aria-hidden
+        />
+        <span className="truncate">{project.name}</span>
+      </button>
+      {(onRename || onDelete) && (
+        <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+          {onRename && (
+            <RowAction label="Rename project" onClick={() => onRename(project.id)}>
+              <Pencil size={13} />
+            </RowAction>
+          )}
+          {onDelete && (
+            <RowAction label="Delete project" onClick={() => onDelete(project.id)}>
+              <Trash2 size={13} />
+            </RowAction>
+          )}
+        </div>
+      )}
     </li>
   );
 }

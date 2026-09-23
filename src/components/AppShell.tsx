@@ -220,6 +220,9 @@ export interface AppShellProps
     | "onNewChat"
     | "onNewProject"
     | "onSelectProject"
+    | "activeProjectId"
+    | "onRenameProject"
+    | "onDeleteProject"
     | "onSelectConversation"
     | "onRenameConversation"
     | "onPinConversation"
@@ -268,6 +271,9 @@ export function AppShell({
   onNewChat,
   onNewProject,
   onSelectProject,
+  activeProjectId = null,
+  onRenameProject,
+  onDeleteProject,
   onSelectConversation,
   onRenameConversation,
   onPinConversation,
@@ -359,6 +365,9 @@ export function AppShell({
           onNewChat={onNewChat ?? (() => router.push("/"))}
           onNewProject={onNewProject}
           onSelectProject={onSelectProject}
+          activeProjectId={activeProjectId}
+          onRenameProject={onRenameProject}
+          onDeleteProject={onDeleteProject}
           onSelectConversation={onSelectConversation}
           onRenameConversation={onRenameConversation}
           onPinConversation={onPinConversation}

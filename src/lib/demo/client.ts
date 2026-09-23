@@ -8,7 +8,9 @@ import { demoStore, DEMO_USER } from "./fixtures";
 type Row = Record<string, any>;
 type Filter = { col: string; op: "eq" | "in" | "is"; val: any };
 
-const genId = () => "demo-" + Math.random().toString(36).slice(2, 10);
+// UUID-shaped so PATCH/DELETE routes (which validate z.string().uuid()) accept
+// demo-created rows, matching production ids exactly.
+const genId = () => crypto.randomUUID();
 
 class Query implements PromiseLike<{ data: any; error: any; count?: number }> {
   private filters: Filter[] = [];

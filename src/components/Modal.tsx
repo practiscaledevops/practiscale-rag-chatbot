@@ -23,6 +23,17 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
+  // Keep the latest onClose in a ref so the focus/keydown effect below does NOT
+  // depend on its identity. Callers routinely pass an inline arrow (a new
+  // function every render); if the effect depended on onClose, every parent
+  // re-render — including each keystroke in a field inside the modal — would
+  // re-run the effect and yank focus back to the first focusable element,
+  // making the inputs impossible to type in.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -36,12 +47,16 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
         ) ?? []
       );
-    focusables()[0]?.focus();
+    // Prefer the first real field so typing can start immediately; the close
+    // button would otherwise be the first focusable.
+    const initialItems = focusables();
+    (initialItems.find((el) => el.matches("input, textarea, select")) ??
+      initialItems[0])?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === "Tab") {
@@ -66,7 +81,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       document.removeEventListener("keydown", onKeyDown, true);
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -122,6 +122,8 @@ export function AppChrome({
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
+  const [renameProjectTarget, setRenameProjectTarget] = useState<Project | null>(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState<Project | null>(null);
 
   // --- conversation handlers ---------------------------------------------
   const handleNewChat = useCallback(async () => {
@@ -247,6 +249,13 @@ export function AppChrome({
         onNewChat={handleNewChat}
         onNewProject={() => setProjectOpen(true)}
         onSelectProject={handleSelectProject}
+        activeProjectId={activeProjectId}
+        onRenameProject={(id) =>
+          setRenameProjectTarget(projects.find((p) => p.id === id) ?? null)
+        }
+        onDeleteProject={(id) =>
+          setDeleteProjectTarget(projects.find((p) => p.id === id) ?? null)
+        }
         onSelectConversation={handleSelectConversation}
         onRenameConversation={(id) =>
           setRenameTarget(conversations.find((c) => c.id === id) ?? null)
@@ -285,6 +294,25 @@ export function AppChrome({
         onCreated={(project) => {
           setProjects((prev) => [project, ...prev]);
           setActiveProjectId(project.id); // scope subsequent new chats to it
+        }}
+      />
+
+      <RenameProjectDialog
+        project={renameProjectTarget}
+        onClose={() => setRenameProjectTarget(null)}
+        onSaved={(updated) =>
+          setProjects((prev) =>
+            prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+          )
+        }
+      />
+
+      <DeleteProjectDialog
+        project={deleteProjectTarget}
+        onClose={() => setDeleteProjectTarget(null)}
+        onDeleted={(id) => {
+          setProjects((prev) => prev.filter((p) => p.id !== id));
+          setActiveProjectId((cur) => (cur === id ? null : cur));
         }}
       />
     </>
@@ -533,6 +561,141 @@ function NewProjectDialog({
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function RenameProjectDialog({
+  project,
+  onClose,
+  onSaved,
+}: {
+  project: Project | null;
+  onClose: () => void;
+  onSaved: (p: Project) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const open = project !== null;
+  useEffect(() => {
+    if (project) {
+      setValue(project.name ?? "");
+      setError(null);
+    }
+  }, [project]);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!project) return;
+    const name = value.trim();
+    if (!name) return;
+    setPending(true);
+    setError(null);
+    try {
+      const { project: updated } = await mutate<{ project: Project }>(
+        "/api/projects",
+        "PATCH",
+        { id: project.id, name }
+      );
+      onSaved(updated);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename project");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename project">
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label htmlFor="rename-project" className="block text-sm font-medium">
+            Name
+          </label>
+          <input
+            id="rename-project"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            maxLength={120}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={pending || !value.trim()}>
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DeleteProjectDialog({
+  project,
+  onClose,
+  onDeleted,
+}: {
+  project: Project | null;
+  onClose: () => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onConfirm() {
+    if (!project) return;
+    setPending(true);
+    setError(null);
+    try {
+      await mutate("/api/projects", "DELETE", { id: project.id });
+      onDeleted(project.id);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete project");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal open={project !== null} onClose={onClose} title="Delete project">
+      <p className="text-sm text-muted-foreground">
+        Delete{" "}
+        <span className="font-medium text-foreground">
+          {project?.name || "this project"}
+        </span>
+        ? Its chats are kept and simply un-grouped. This cannot be undone.
+      </p>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          onClick={onConfirm}
+          disabled={pending}
+        >
+          {pending ? "Deleting…" : "Delete"}
+        </Button>
+      </div>
     </Modal>
   );
 }
