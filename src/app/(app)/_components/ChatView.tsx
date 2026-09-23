@@ -39,8 +39,10 @@ import type { ModelTier } from "@/lib/brain";
 import { useAppShell, tierPreset, type ModelOption } from "@/components/AppShell";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
+import { VoiceInput } from "@/components/VoiceInput";
 import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
+import { spliceText } from "@/lib/voice-shared";
 import { isExecutiveMode, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
 import { WorkModePicker, ModelQualityPicker, SourceScopePicker } from "./ComposerControls";
 import { CompareDrafts, type ComparePane } from "./CompareDrafts";
@@ -921,6 +923,29 @@ export function ChatView({
     });
   }, [setInput]);
 
+  // Insert a dictated transcript at the caret (or append when the composer isn't
+  // focused). The user reviews and sends — dictation never auto-submits.
+  const insertDictation = useCallback((text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    const el = taRef.current;
+    // The textarea's live value is the source of truth for the caret position.
+    const cur = el?.value ?? input;
+    const start = el?.selectionStart ?? cur.length;
+    const end = el?.selectionEnd ?? cur.length;
+    const { value, caret } = spliceText(cur, clean, start, end);
+    setInput(value);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      try {
+        el.setSelectionRange(caret, caret);
+      } catch {
+        /* selection may be unavailable if the node changed */
+      }
+    });
+  }, [input, setInput]);
+
   // Apply a `/?prompt=` seed: on mount this just focuses (useChat already has
   // the text); when the prompt changes on an already-mounted page it re-seeds.
   const seededRef = useRef<string | undefined>(undefined);
@@ -1100,6 +1125,7 @@ export function ChatView({
       onAttachFiles={addFiles}
       onRemoveAttachment={removeAttachment}
       onRetryAttachment={retryAttachment}
+      onDictate={insertDictation}
       canSend={canSend}
     />
   );
@@ -1554,6 +1580,7 @@ function Composer({
   onAttachFiles,
   onRemoveAttachment,
   onRetryAttachment,
+  onDictate,
   canSend,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -1576,6 +1603,7 @@ function Composer({
   onAttachFiles: (files: FileList | File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onRetryAttachment: (id: string) => void;
+  onDictate: (text: string) => void;
   canSend: boolean;
 }) {
   const [active, setActive] = useState(0);
@@ -1728,6 +1756,7 @@ function Composer({
           >
             <Paperclip size={17} />
           </IconButton>
+          <VoiceInput onText={onDictate} />
           <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
           <ModelQualityPicker options={options} value={selection} onChange={onSelectModel} />
           <SourceScopePicker value={scopeCollectionIds} onChange={onScopeChange} />
