@@ -20,6 +20,7 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { resolveMode, canUseExecutive, allowedModes, isExecutiveMode } from "@/lib/work-modes";
 import { allowedSourceTypes } from "@/lib/access";
 import { getCeoMemory } from "@/lib/ceo-memory";
+import { loadProjectContextForConversation } from "@/lib/project-context";
 import { audit } from "@/lib/audit";
 import { fetchBrainModels, isSelectionAllowed } from "@/lib/models";
 import { loadWorkspaceSettings } from "@/lib/settings";
@@ -214,6 +215,36 @@ export async function POST(req: Request) {
     if (mem.trim()) directives = mem;
   }
 
+  // 3c-ii. Project context: if this conversation belongs to a project, fold in
+  //        its instructions (as trusted directives) and its files (as data-only
+  //        attachments) — Claude Projects' shared knowledge. Best-effort: a
+  //        project lookup never breaks the chat.
+  let projectFiles: { name: string; text: string }[] = [];
+  if (conversationId) {
+    try {
+      const supabase = await createSupabaseServerClient();
+      const pctx = await loadProjectContextForConversation(supabase, conversationId);
+      if (pctx) {
+        if (pctx.instructions) {
+          const nl = String.fromCharCode(10);
+          const label = `Project "${pctx.name}" instructions:`;
+          const block = label + nl + pctx.instructions;
+          directives = directives ? directives + nl + nl + block : block;
+        }
+        projectFiles = pctx.files.map((f) => ({ name: `Project file: ${f.name}`, text: f.text }));
+      }
+    } catch {
+      /* project context is best-effort */
+    }
+  }
+
+  // Combine project files with the per-message attachments, bounded so the
+  // scoped Brain call stays well-formed (item + per-item + implicit total caps).
+  const combinedAttachments = [...projectFiles, ...(attachments ?? [])]
+    .filter((a) => a.text.trim())
+    .slice(0, 10)
+    .map((a) => ({ name: a.name.slice(0, 200), text: a.text.slice(0, 40_000) }));
+
   // Governance: audit the request (best-effort; never blocks).
   void audit(profile.userId, "chat", {
     mode,
@@ -239,7 +270,7 @@ export async function POST(req: Request) {
     scope,
     directives,
     parsed.data.outputType,
-    attachments && attachments.length ? attachments : undefined,
+    combinedAttachments.length ? combinedAttachments : undefined,
     allowedModes(access)
   );
 

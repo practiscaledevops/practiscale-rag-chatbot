@@ -99,8 +99,6 @@ export function AppChrome({
     sortConversations(initialConversations)
   );
   const [projects, setProjects] = useState<Project[]>(initialProjects);
-  // Selecting a project scopes newly created chats to it (until cleared).
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // Re-sync when the server layout re-fetches (e.g. the chat view calls
   // router.refresh() after a lazily-created thread is saved). Server data is the
@@ -119,6 +117,15 @@ export function AppChrome({
   }, [pathname]);
 
   // --- dialog state -------------------------------------------------------
+  // The project whose workspace page is open (/projects/[id]) drives the sidebar
+  // highlight; clicking a project navigates here (see handleSelectProject).
+  const activeProjectId = useMemo(() => {
+    if (!pathname || !pathname.startsWith("/projects/")) return null;
+    const rest = pathname.slice("/projects/".length);
+    const slash = rest.indexOf("/");
+    return (slash === -1 ? rest : rest.slice(0, slash)) || null;
+  }, [pathname]);
+
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -126,28 +133,12 @@ export function AppChrome({
   const [deleteProjectTarget, setDeleteProjectTarget] = useState<Project | null>(null);
 
   // --- conversation handlers ---------------------------------------------
-  const handleNewChat = useCallback(async () => {
-    // With no project scope, let the chat surface create the thread lazily on
-    // the first message (keeps abandoned empty threads out of history, and the
-    // chat view refreshes the sidebar itself once the first turn is saved).
-    if (!activeProjectId) {
-      router.push("/");
-      return;
-    }
-    // With a project selected, pre-create so the new chat is scoped to it
-    // (project_id is set up front, which the lazy flow can't carry).
-    try {
-      const { conversation } = await mutate<{ conversation: Conversation }>(
-        "/api/conversations",
-        "POST",
-        { projectId: activeProjectId }
-      );
-      setConversations((prev) => sortConversations([conversation, ...prev]));
-      router.push(`/c/${conversation.id}`);
-    } catch {
-      router.push("/");
-    }
-  }, [activeProjectId, router]);
+  const handleNewChat = useCallback(() => {
+    // The sidebar's New chat is always unscoped: the chat surface creates the
+    // thread lazily on the first message. A chat scoped to a project is started
+    // from that project's page instead (/projects/[id] -> New chat).
+    router.push("/");
+  }, [router]);
 
   const handleSelectConversation = useCallback(
     (id: string) => router.push(`/c/${id}`),
@@ -199,10 +190,13 @@ export function AppChrome({
   );
 
   // --- project handlers ---------------------------------------------------
-  const handleSelectProject = useCallback((id: string) => {
-    // Toggle: click the active project again to clear the scope.
-    setActiveProjectId((cur) => (cur === id ? null : id));
-  }, []);
+  const handleSelectProject = useCallback(
+    (id: string) => {
+      // Open the project's workspace (its chats, instructions, and files).
+      router.push(`/projects/${id}`);
+    },
+    [router]
+  );
 
   // Map the rich records down to the Sidebar's display items (updated_at drives
   // the Today / Yesterday / Previous 7 days grouping).
@@ -293,7 +287,7 @@ export function AppChrome({
         onClose={() => setProjectOpen(false)}
         onCreated={(project) => {
           setProjects((prev) => [project, ...prev]);
-          setActiveProjectId(project.id); // scope subsequent new chats to it
+          router.push(`/projects/${project.id}`); // open the new project's page
         }}
       />
 
@@ -312,7 +306,7 @@ export function AppChrome({
         onClose={() => setDeleteProjectTarget(null)}
         onDeleted={(id) => {
           setProjects((prev) => prev.filter((p) => p.id !== id));
-          setActiveProjectId((cur) => (cur === id ? null : cur));
+          if (activeProjectId === id) router.push("/");
         }}
       />
     </>

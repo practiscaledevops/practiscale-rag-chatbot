@@ -42,8 +42,12 @@ function seed(): Store {
   return { profiles, projects, conversations, messages };
 }
 
-let _store: Store | null = null;
+// Hang the store off globalThis so EVERY route handler in the dev server shares
+// one instance. Next's dev server gives route modules separate registries, so a
+// plain module-level singleton isn't shared across routes (a project created in
+// one route would be invisible to another). Demo-only.
+const _g = globalThis as unknown as { __demoStore?: Store };
 export function demoStore(): Store {
-  if (!_store) _store = seed();
-  return _store;
+  if (!_g.__demoStore) _g.__demoStore = seed();
+  return _g.__demoStore;
 }
