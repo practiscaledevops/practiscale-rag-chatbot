@@ -35,7 +35,7 @@ const InputSchema = z.object({
 
 export type SaveTurnInput = z.infer<typeof InputSchema>;
 export type SaveTurnResult =
-  | { ok: true; conversationId: string; created: boolean }
+  | { ok: true; conversationId: string; created: boolean; title: string }
   | { ok: false; error: string };
 
 // ~4 characters per token — a rough estimate until the Brain returns exact usage.
@@ -83,24 +83,28 @@ export async function saveConversationTurn(
   const supabase = await createSupabaseServerClient();
   let conversationId = parsed.data.conversationId;
   let created = false;
+  let title = deriveTitle(messages);
 
   if (conversationId) {
     // Confirm ownership: RLS returns null for an absent or someone-else's row.
     const { data: existing } = await supabase
       .from("conversations")
-      .select("id")
+      .select("id, title")
       .eq("id", conversationId)
       .maybeSingle();
     if (!existing) return { ok: false, error: "not_found" };
 
-    await supabase
-      .from("conversations")
-      .update({ model_tier: tier as ModelTier })
-      .eq("id", conversationId);
+    // Re-title a still-placeholder thread (e.g. one pre-created from a project
+    // page) from its first user turn; otherwise keep the existing title.
+    const patch: Record<string, unknown> = { model_tier: tier as ModelTier };
+    const placeholder = !existing.title || existing.title === "New chat";
+    if (placeholder && title && title !== "New chat") patch.title = title;
+    else title = (existing.title as string | null) ?? title;
+    await supabase.from("conversations").update(patch).eq("id", conversationId);
   } else {
     const { data, error } = await supabase
       .from("conversations")
-      .insert({ user_id: user.id, title: deriveTitle(messages), model_tier: tier })
+      .insert({ user_id: user.id, title, model_tier: tier })
       .select("id")
       .single();
     if (error || !data) return { ok: false, error: "create_failed" };
@@ -125,5 +129,5 @@ export async function saveConversationTurn(
     if (error) return { ok: false, error: "save_failed" };
   }
 
-  return { ok: true, conversationId, created };
+  return { ok: true, conversationId, created, title };
 }

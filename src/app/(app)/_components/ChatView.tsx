@@ -680,6 +680,15 @@ export function ChatView({
       if (!result.ok) return;
       conversationIdRef.current = result.conversationId;
       setActiveConversationId(result.conversationId);
+      // Tell the shell to add (or re-title) this thread in the sidebar now,
+      // without a router refresh that would remount and flash the stream.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("chat:saved", {
+            detail: { id: result.conversationId, title: result.title, created: wasNew },
+          })
+        );
+      }
       if (wasNew) {
         // Reflect the new thread in the URL WITHOUT a router refresh/navigation.
         // A router.refresh() here reconciles to the new /c/[id] URL and remounts

@@ -110,6 +110,40 @@ export function AppChrome({
     setProjects(initialProjects);
   }, [initialProjects]);
 
+  // A new/updated chat streams in ChatView, which persists it and broadcasts
+  // "chat:saved". Reflect it in the sidebar immediately (add if new, re-title
+  // if it was a placeholder) so history is never stale between navigations.
+  useEffect(() => {
+    function onSaved(e: Event) {
+      const detail = (e as CustomEvent<{ id: string; title?: string }>).detail;
+      if (!detail?.id) return;
+      const now = new Date().toISOString();
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === detail.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], title: detail.title ?? next[idx].title, updated_at: now };
+          return sortConversations(next);
+        }
+        return sortConversations([
+          {
+            id: detail.id,
+            title: detail.title ?? "New chat",
+            pinned: false,
+            project_id: null,
+            model_tier: initialTier ?? "recommended",
+            created_at: now,
+            updated_at: now,
+            archived: false,
+          },
+          ...prev,
+        ]);
+      });
+    }
+    window.addEventListener("chat:saved", onSaved);
+    return () => window.removeEventListener("chat:saved", onSaved);
+  }, [initialTier]);
+
   // Derive the open conversation id from the URL (/c/[id]) for the highlight.
   const activeConversationId = useMemo(() => {
     const m = pathname?.match(/^\/c\/([^/]+)/);
