@@ -111,6 +111,75 @@ async function ownedConversationId(id: string | null): Promise<string | null> {
   }
 }
 
+/**
+ * Persist the COMPLETED assistant turn server-side, so a long answer is not
+ * lost when the user navigates away mid-stream: the browser aborts the client
+ * stream, but this after() keeps reading the upstream (an independent tee) to
+ * completion and writes the turn. Guarded by a short delay + a last-message
+ * check so it never double-writes with the client's own onFinish save.
+ */
+async function captureAndSaveTurn(
+  stream: ReadableStream<Uint8Array>,
+  conversationId: string,
+  priorMessages: { role: string; content: string }[],
+  userId: string
+): Promise<void> {
+  let text = "";
+  try {
+    const reader = stream.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl = buf.indexOf("\n");
+      while (nl >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (line.startsWith("0:")) {
+          try { const d = JSON.parse(line.slice(2)); if (typeof d === "string") text += d; } catch { /* skip */ }
+        }
+        nl = buf.indexOf("\n");
+      }
+    }
+  } catch {
+    return;
+  }
+  if (!text.trim()) return;
+  // Let the client's own save (onFinish) land first in the normal case.
+  await new Promise((r) => setTimeout(r, 2500));
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: last } = await supabase
+      .from("messages")
+      .select("role, content")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastRow = last as { role?: string; content?: string } | null;
+    if (lastRow && lastRow.role === "assistant" && (lastRow.content ?? "").trim()) return; // client already saved
+    const all = [...priorMessages, { role: "assistant", content: text }];
+    await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", userId);
+    const base = Date.now();
+    const rows = all.map((m, i) => ({
+      conversation_id: conversationId,
+      user_id: userId,
+      role: m.role,
+      content: m.content,
+      citations: [],
+      input_tokens: 0,
+      output_tokens: 0,
+      created_at: new Date(base + i).toISOString(),
+    }));
+    await supabase.from("messages").insert(rows);
+    await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function POST(req: Request) {
   // DEMO MODE: don't call the Brain or meter — stream a canned grounded answer.
   if (isDemo()) {
@@ -290,7 +359,8 @@ export async function POST(req: Request) {
   //    delayed by metering); `meterStream` is a fully independent copy we drain
   //    server-side to read the finish-part token usage. Reading one branch never
   //    blocks the other, so the client is never held up.
-  const [clientStream, meterStream] = upstream.body.tee();
+  const [clientStream, forServer] = upstream.body.tee();
+  const [meterStream, textStream] = forServer.tee();
 
   const { model: resolvedModel, provider } = brainModelHeaders(upstream);
   const ctx: UsageContext = {
@@ -308,6 +378,9 @@ export async function POST(req: Request) {
   // `after()` keeps the function alive for this best-effort work without
   // delaying the response; meterStreamAndRecord never throws.
   after(() => meterStreamAndRecord(meterStream, ctx));
+  // Persist the completed answer server-side so it survives client navigation.
+  if (conversationId) after(() => captureAndSaveTurn(textStream, conversationId, safeMessages, profile.userId));
+  else after(() => { void textStream.cancel().catch(() => {}); });
 
   // Pass the Brain's data-stream response straight through to the client.
   return new Response(clientStream, {

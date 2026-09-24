@@ -652,6 +652,9 @@ export function ChatView({
   // without re-rendering mid-stream.
   const conversationIdRef = useRef<string | null>(conversationId);
   const savingRef = useRef(false);
+  // Guards the new-chat pre-create in submit(): a double-Enter during the create
+  // round-trip must not spawn two threads or send the turn twice.
+  const preCreatingRef = useRef(false);
 
   // Set the tab title to the conversation title, when we have one.
   useEffect(() => {
@@ -785,7 +788,7 @@ export function ChatView({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
 
-  const submit = useCallback(() => {
+  const submit = useCallback(async () => {
     const hasText = input.trim().length > 0;
     const ready = attachmentsRef.current.filter((a) => a.status === "ready" && a.text);
     const uploading = attachmentsRef.current.some((a) => a.status === "uploading");
@@ -825,21 +828,57 @@ export function ChatView({
     stickRef.current = true;
     setData(undefined); // clear last turn's status/sources so `activity` is per-turn
     const payload: ChatAttachment[] = ready.map((a) => ({ name: a.name, text: a.text as string }));
-    const body = payload.length ? { ...chatBody, attachments: payload } : chatBody;
+    // The user message this turn sends (a default naming the files when there's
+    // no question), reused as the title/first turn when pre-creating a new thread.
+    const firstText = hasText
+      ? input.trim()
+      : `Please review the attached file${ready.length > 1 ? "s" : ""}: ${ready.map((a) => a.name).join(", ")}`;
+
+    // For a BRAND-NEW thread, create the conversation row (persisting the user's
+    // message) BEFORE streaming, so its id rides along in the request body. That
+    // lets /api/chat finish and save the answer server-side even if the user
+    // navigates away mid-stream — a new chat otherwise has no id server-side and
+    // the in-progress answer is lost on navigation. One extra round-trip, only on
+    // the first message of a new chat; existing threads already carry their id.
+    let convId = conversationIdRef.current;
+    if (convId === null) {
+      if (preCreatingRef.current) return; // a create is already in flight
+      preCreatingRef.current = true;
+      try {
+        const res = await saveConversationTurn({
+          conversationId: null,
+          tier: selection.tier,
+          messages: [{ role: "user", content: firstText }],
+        });
+        if (res.ok && res.conversationId) {
+          convId = res.conversationId;
+          conversationIdRef.current = res.conversationId;
+          setActiveConversationId(res.conversationId);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("chat:saved", { detail: { id: res.conversationId, title: res.title, created: true } })
+            );
+            window.history.replaceState(null, "", `/c/${res.conversationId}`);
+          }
+        }
+      } catch {
+        // Pre-create failed — fall back to an unscoped turn. The client's own
+        // onFinish save still persists it in the normal (no-navigation) case.
+      } finally {
+        preCreatingRef.current = false;
+      }
+    }
+
+    const withId = convId === chatBody.conversationId ? chatBody : { ...chatBody, conversationId: convId };
+    const body = payload.length ? { ...withId, attachments: payload } : withId;
     if (hasText) {
       handleSubmit(undefined, { body });
     } else {
-      // Files with no question: send a short default prompt naming the files so
-      // the turn still has a user message the assistant can answer.
-      const names = ready.map((a) => a.name).join(", ");
-      void append(
-        { role: "user", content: `Please review the attached file${ready.length > 1 ? "s" : ""}: ${names}` },
-        { body }
-      );
+      void append({ role: "user", content: firstText }, { body });
     }
     setAttachments([]);
     attachStartedRef.current.clear();
-  }, [input, busy, handleSubmit, append, chatBody, setData, setInput]);
+  }, [input, busy, handleSubmit, append, chatBody, setData, setInput, selection.tier]);
 
   const regenerate = useCallback(() => {
     stickRef.current = true;
