@@ -292,6 +292,14 @@ const TIER_FRIENDLY: Record<string, string> = {
   max: "Best quality",
 };
 
+/**
+ * The conversation column (thread + docked composer share it). Wide by design:
+ * it fills the workspace up to 1200px (1400px on extra-wide screens) so answers,
+ * tables and long threads use the screen instead of a narrow centre strip with
+ * empty sides.
+ */
+const THREAD_COL = "mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8 2xl:max-w-[1400px]";
+
 /** "Updated 3 days ago" style label from an ISO date, or null. */
 function freshness(iso?: string | null): string | null {
   if (!iso) return null;
@@ -1450,7 +1458,7 @@ export function ChatView({
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
             <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-4 sm:px-6">
+              <div className={cn(THREAD_COL, "pb-4 pt-3")}>
                 {audits.length > 0 && (
                   <div className="mb-5 space-y-3">
                     {audits.map((a) => (
@@ -1463,7 +1471,7 @@ export function ChatView({
                     ))}
                   </div>
                 )}
-                <ul className="space-y-5">
+                <ul className="space-y-4">
                   {messages.map((m, idx) => {
                     const time = hydrated ? messageTime(m) : null;
                     const streamingThis = idx === lastIndex && busy;
@@ -1741,12 +1749,9 @@ export function ChatView({
                   </button>
                 </div>
               )}
-              <div className="mx-auto w-full max-w-3xl px-4 pb-3 pt-1 sm:px-6">
+              <div className={cn(THREAD_COL, "pb-3 pt-1")}>
                 {toolbar}
                 <Composer {...composerCore} variant="dock" />
-                <p className="mt-1.5 hidden text-center text-[11px] text-subtle-foreground sm:block">
-                  Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
-                </p>
               </div>
             </div>
           </div>
