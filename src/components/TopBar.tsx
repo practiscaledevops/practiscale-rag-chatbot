@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
+import { BrainCircuit, Menu, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import type { UsageState } from "@/components/AppShell";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { PwaInstall } from "@/components/PwaInstall";
@@ -48,17 +48,22 @@ export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand
             <PanelLeftOpen size={16} />
           </IconButton>
         )}
-        {/* Wordmark, separator and title share one baseline (mixed sizes). */}
-        <div className="flex min-w-0 items-baseline gap-2">
+        {/* Product mark: brain icon + "Practiscale" (dark green) + "Intelligent
+            Operations" (black). The open thread's title follows on wide screens. */}
+        <div className="flex min-w-0 items-center gap-2">
           <Link
             href="/"
-            className="shrink-0 rounded-md text-lg font-semibold leading-none tracking-[-0.025em] text-[#12202a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="PractiScale home"
+            className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Practiscale Intelligent Operations — home"
           >
-            Practi<span className="text-accent">Scale</span>
+            <BrainCircuit size={20} strokeWidth={2} className="shrink-0 text-accent" aria-hidden />
+            <span className="shrink-0 text-[17px] font-bold leading-none tracking-[-0.02em] text-accent-deep">Practiscale</span>
+            <span className="hidden min-w-0 truncate text-[17px] font-semibold leading-none tracking-[-0.02em] text-foreground md:inline">
+              Intelligent Operations
+            </span>
           </Link>
           {title && (
-            <span className="hidden min-w-0 items-baseline gap-2 md:flex">
+            <span className="hidden min-w-0 items-center gap-2 xl:flex">
               <span className="text-sm font-light text-subtle-foreground" aria-hidden>
                 /
               </span>
@@ -74,6 +79,8 @@ export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand
         <NotificationsBell />
         <Link
           href="/settings"
+          aria-label="Settings"
+          title="Settings"
           aria-current={onSettings ? "page" : undefined}
           className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full bg-[#262626] text-[13px] font-medium text-white transition-colors hover:bg-[#1a1a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-3"
         >
@@ -96,7 +103,7 @@ function UsagePill({ usage }: { usage: UsageState }) {
     >
       <Sparkles size={14} aria-hidden />
       <span className="tabular-nums">{compact}</span>
-      <span className="hidden font-normal opacity-75 lg:inline">tokens this month</span>
+      <span className="hidden font-normal opacity-75 xl:inline">tokens this month</span>
     </div>
   );
 }

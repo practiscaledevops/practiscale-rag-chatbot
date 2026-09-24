@@ -57,6 +57,8 @@ import {
   SourceScopePicker,
   OutputFormatPicker,
   DeepResearchToggle,
+  FloatingMenu,
+  useMenu,
 } from "./ComposerControls";
 import { PromptLibrary } from "./PromptLibrary";
 import { BrainOrb } from "@/components/BrainOrb";
@@ -1387,7 +1389,7 @@ export function ChatView({
         <div className="flex h-full flex-col overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6">
             <div className="flex flex-col items-center text-center">
-              <BrainOrb size={112} active={input.trim().length > 0} className="-mb-2" />
+              <BrainOrb size={140} active={input.trim().length > 0} className="-mb-3" />
               <h2 className="text-[26px] font-medium leading-[1.2] tracking-[-0.02em] sm:text-[30px]">
                 <span className="text-greeting-gradient">Hello, {titleCase(firstName)}</span>
               </h2>
@@ -1929,8 +1931,9 @@ function Composer({
   }
 
   const slashMenu = slashOpen ? (
-    <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp">
+    <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp">
       <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">Templates</p>
+      <div className="columns-1 gap-1 sm:columns-2">
       {matches.map((cmd, i) => (
         <button
           key={cmd.name}
@@ -1939,7 +1942,7 @@ function Composer({
           onClick={() => select(cmd)}
           onMouseMove={() => setActive(i)}
           className={cn(
-            "flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors",
+            "flex h-8 w-full break-inside-avoid items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors",
             i === activeIdx ? "bg-accent-soft" : "hover:bg-surface-muted"
           )}
         >
@@ -1947,6 +1950,7 @@ function Composer({
           <span className="min-w-0 truncate text-xs text-muted-foreground">{cmd.hint}</span>
         </button>
       ))}
+      </div>
     </div>
   ) : null;
 
@@ -2355,26 +2359,28 @@ function RegenerateMenu({
   onRegenerate: () => void;
   onRegenerateWith: (value: string, tier: ModelTier) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
+  const available = options.filter((o) => o.available);
 
   useEffect(() => {
     if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+    const t = window.setTimeout(() => itemsRef.current[0]?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(t);
+  }, [open, itemsRef]);
 
-  const available = options.filter((o) => o.available);
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const list = itemsRef.current.filter((b): b is HTMLButtonElement => !!b);
+    const i = list.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === "ArrowDown" ? (i + 1) % list.length : (i - 1 + list.length) % list.length;
+    list[next]?.focus();
+  }
 
   return (
     <div className="relative flex items-center" ref={ref}>
@@ -2383,6 +2389,7 @@ function RegenerateMenu({
       </IconButton>
       {available.length > 0 && (
         <button
+          ref={triggerRef}
           type="button"
           aria-label="Regenerate with a different model"
           title="Regenerate with…"
@@ -2394,33 +2401,38 @@ function RegenerateMenu({
           <ChevronDown size={12} />
         </button>
       )}
-      {open && (
-        <div
-          role="menu"
-          className="absolute bottom-full left-0 z-30 mb-1.5 max-h-[60vh] w-60 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp"
-        >
-          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">
-            Regenerate with
-          </p>
-          {available.map((o) => (
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={480}
+        align="left"
+        label="Regenerate with"
+        onKeyDown={onMenuKeyDown}
+      >
+        <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">Regenerate with</p>
+        <div className="columns-1 gap-1 sm:columns-2">
+          {available.map((o, i) => (
             <button
               key={`${o.kind}-${o.value}`}
+              ref={(el) => {
+                itemsRef.current[i] = el;
+              }}
               type="button"
               role="menuitem"
               onClick={() => {
-                setOpen(false);
+                close(false);
                 onRegenerateWith(o.value, o.tier);
               }}
-              className="flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-8 w-full break-inside-avoid items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none"
             >
               <span className="min-w-0 truncate">{o.label}</span>
-              {o.kind === "tier" && (
-                <span className="shrink-0 text-[11px] text-subtle-foreground">preset</span>
-              )}
+              {o.kind === "tier" && <span className="shrink-0 text-[11px] text-subtle-foreground">preset</span>}
             </button>
           ))}
         </div>
-      )}
+      </FloatingMenu>
     </div>
   );
 }

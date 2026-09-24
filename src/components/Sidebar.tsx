@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ClipboardCheck,
   Folder,
-  House,
   Lightbulb,
   LogOut,
   MessageSquare,
@@ -22,7 +21,6 @@ import {
   PinOff,
   Plus,
   Search,
-  Settings,
   ShieldCheck,
   Trash2,
   User,
@@ -152,7 +150,6 @@ export function Sidebar({
   onDeleteConversation,
   className,
 }: SidebarProps) {
-  const pathname = usePathname();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [projectsOpen, setProjectsOpen] = useState(true);
@@ -220,13 +217,6 @@ export function Sidebar({
   const visibleProjects = showAllProjects ? projects : projects.slice(0, PROJECTS_VISIBLE);
   const hiddenProjects = Math.max(0, projects.length - PROJECTS_VISIBLE);
 
-  const nav: { href: string; label: string; icon: LucideIcon }[] = [
-    { href: "/", label: "Home", icon: House },
-    { href: "/brain", label: "Brain map", icon: Brain },
-    { href: "/learning", label: "Learnings", icon: Lightbulb },
-    { href: "/settings", label: "Settings", icon: Settings },
-  ];
-
   const signOut = useCallback(async () => {
     try {
       // Loaded on demand so supabase-js stays out of every page's shell bundle.
@@ -268,13 +258,15 @@ export function Sidebar({
           href="/"
           className="flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Logo variant="dark" className="h-[18px]" />
+          <Logo variant="dark" className="h-7" />
         </Link>
         <div className="flex items-center">
           <RailMenu
             label="More"
             icon={<MoreHorizontal size={16} />}
             items={[
+              { label: "Brain map", icon: Brain, onSelect: () => router.push("/brain") },
+              { label: "Learnings", icon: Lightbulb, onSelect: () => router.push("/learning") },
               { label: "Approvals", icon: ClipboardCheck, onSelect: () => router.push("/approvals") },
               { label: "Account", icon: User, onSelect: () => router.push("/account") },
               ...(isAdmin ? [{ label: "Admin", icon: ShieldCheck, onSelect: () => router.push("/admin") }] : []),
@@ -346,19 +338,6 @@ export function Sidebar({
             </section>
           ) : (
             <>
-              {/* Main nav */}
-              <nav className="mt-3 space-y-0.5" aria-label="Main">
-                {nav.map((n) => (
-                  <RailLink
-                    key={n.href}
-                    href={n.href}
-                    icon={n.icon}
-                    label={n.label}
-                    active={n.href === "/" ? pathname === "/" : pathname.startsWith(n.href)}
-                  />
-                ))}
-              </nav>
-
               {/* Projects (folders) */}
               <section className="mt-4" aria-labelledby="rail-projects">
                 <SectionHeader
@@ -513,17 +492,6 @@ function RailButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: s
       </span>
       {label}
     </button>
-  );
-}
-
-function RailLink({ href, icon: Icon, label, active }: { href: string; icon: LucideIcon; label: string; active: boolean }) {
-  return (
-    <Link href={href} aria-current={active ? "page" : undefined} className={cn(ROW, active ? ROW_ACTIVE : ROW_IDLE)}>
-      <span className={cn(ICON_BOX, active && "text-accent")}>
-        <Icon size={16} strokeWidth={1.75} aria-hidden />
-      </span>
-      {label}
-    </Link>
   );
 }
 

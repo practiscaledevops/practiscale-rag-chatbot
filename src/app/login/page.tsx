@@ -189,7 +189,7 @@ function LoginForm() {
         <Logo className="mx-auto block h-5" />
 
         <div className="mt-5 flex flex-col items-center text-center">
-          <BrainOrb size={88} active={pending} />
+          <BrainOrb size={100} active={pending} />
           <h1 className="mt-4 text-xl font-semibold tracking-tight">
             {mfa ? "Two-step verification" : "Welcome back"}
           </h1>

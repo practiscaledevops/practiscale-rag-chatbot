@@ -33,6 +33,7 @@
   /* ---- PractiScale green (replaces the kit's Vivid Violet #9747FF) ---- */
   --accent: 16 163 136;             /* #10A388 — icons, active states, fills */
   --accent-strong: 10 124 106;      /* #0A7C6A — accent TEXT on white (AA) */
+  --accent-deep: 7 94 76;           /* #075E4C — dark brand green (wordmark) */
   --accent-hover: 12 140 117;       /* #0C8C75 */
   --accent-foreground: 255 255 255;
   --accent-soft: 230 247 241;       /* #E6F7F1 — replaces lavender tints (user bubble) */
@@ -148,89 +149,6 @@ body {
   50% { background-position: 100% 50%; }
 }
 
-/* ---- Mini orb (assistant avatar) ------------------------------------------
- * A CSS-only miniature of the hero BrainOrb: frosted membrane, glowing green
- * core, and a drifting dot-grid that reads as a turning globe. Cheap enough to
- * render on every message; only the streaming one gets the `--active` class.
- */
-.orb-mini {
-  position: relative;
-  display: inline-block;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  isolation: isolate;
-}
-.orb-mini::before {
-  /* soft halo */
-  content: "";
-  position: absolute;
-  inset: -18%;
-  border-radius: 9999px;
-  background: radial-gradient(circle, rgb(var(--brand-1) / 0.32), transparent 68%);
-  z-index: -1;
-}
-.orb-mini__membrane {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 56%, #d6f78c 0%, #86e9b9 26%, #22c29f 50%, #0f8c80 72%, transparent 76%),
-    radial-gradient(circle at 34% 28%, #ffffff 0%, #effcf7 40%, #cdeee3 100%);
-  box-shadow:
-    inset 0 0 0 1.5px rgb(255 255 255 / 0.95),
-    inset 0 -3px 6px rgb(10 110 95 / 0.22),
-    0 2px 6px rgb(10 110 95 / 0.22);
-  animation: orb-morph 8s ease-in-out infinite;
-}
-.orb-mini__membrane::after {
-  /* frosted veil + dot globe */
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(circle at 50% 50%, transparent 38%, rgb(255 255 255 / 0.55) 74%),
-    radial-gradient(circle, rgb(255 255 255 / 0.85) 0.55px, transparent 0.9px) 0 0 / 3px 3px;
-  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 76%);
-  mask-image: radial-gradient(circle, #000 60%, transparent 76%);
-  animation: orb-dots 7s linear infinite;
-}
-.orb-mini__gloss {
-  position: absolute;
-  top: 12%;
-  left: 18%;
-  width: 34%;
-  height: 26%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgb(255 255 255 / 0.95), transparent 70%);
-  pointer-events: none;
-}
-.orb-mini--active .orb-mini__membrane {
-  animation-duration: 2.6s;
-}
-.orb-mini--active .orb-mini__membrane::after {
-  animation-duration: 2.2s;
-}
-.orb-mini--active::before {
-  animation: orb-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes orb-morph {
-  0%, 100% { border-radius: 50% 50% 50% 50% / 50% 50% 50% 50%; }
-  25% { border-radius: 54% 46% 52% 48% / 47% 55% 45% 53%; }
-  50% { border-radius: 47% 53% 46% 54% / 54% 46% 53% 47%; }
-  75% { border-radius: 52% 48% 55% 45% / 48% 53% 47% 52%; }
-}
-@keyframes orb-dots {
-  from { background-position: 0 0, 0 0; }
-  to { background-position: 0 0, 30px 0; }
-}
-@keyframes orb-pulse {
-  0%, 100% { opacity: 0.6; transform: scale(0.95); }
-  50% { opacity: 1; transform: scale(1.08); }
-}
-
 /* Typing indicator dots. */
 @keyframes dot-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
@@ -242,9 +160,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .text-greeting-gradient,
-  .orb-mini__membrane,
-  .orb-mini__membrane::after,
-  .orb-mini--active::before,
   .typing-dot {
     animation: none !important;
   }

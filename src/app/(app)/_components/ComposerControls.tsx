@@ -11,6 +11,7 @@
 // composer card and the compact toolbar above the in-thread composer.
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import {
   MessageCircle,
   Pencil,
@@ -109,10 +110,13 @@ function triggerIconSize(size: Size, iconOnly: boolean): number {
 }
 
 const MENU =
-  "absolute bottom-full z-40 mb-2 overflow-y-auto rounded-xl border border-border bg-surface p-1 text-foreground shadow-soft-lg motion-safe:animate-fadeUp";
+  "z-[45] overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-1 text-foreground shadow-soft-lg motion-safe:animate-fadeUp";
+// Menus are laid out in columns (wide, not tall) so they always fit on screen.
+const COLS3 = "columns-1 gap-1 sm:columns-2 lg:columns-3";
+const COLS2 = "columns-1 gap-1 sm:columns-2";
 // Two-line rows (label + hint); single-line rows add ITEM_SINGLE.
 const ITEM =
-  "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40";
+  "flex w-full break-inside-avoid items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40";
 const ITEM_SINGLE = "h-8 items-center py-0";
 const ITEM_LABEL = "block text-[13px] font-medium leading-5";
 const ITEM_HINT = "block text-xs leading-4 text-muted-foreground";
@@ -121,15 +125,18 @@ const ITEM_ICON = "mt-[3px] shrink-0";
 const SECTION = "px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground";
 
 /** Shared open/close + outside-click + focus plumbing for the pickers. */
-function useMenu() {
+export function useMenu() {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const menuRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -138,7 +145,102 @@ function useMenu() {
     setOpen(false);
     if (focusTrigger) triggerRef.current?.focus();
   }, []);
-  return { open, setOpen, ref, triggerRef, itemsRef, close };
+  return { open, setOpen, ref, triggerRef, itemsRef, menuRef, close };
+}
+
+/**
+ * A picker's menu, rendered in a portal with fixed positioning so no scrolling
+ * container can clip it (the new-chat screen scrolls, and a tall drop-up used to
+ * disappear under the header). Opens on whichever side of the trigger has more
+ * room, never wider than the viewport, and its height is capped to the space
+ * available — combined with the column layouts below, menus stay fully visible.
+ */
+export function FloatingMenu({
+  open,
+  triggerRef,
+  menuRef,
+  width,
+  align,
+  label,
+  onKeyDown,
+  onClose,
+  className,
+  children,
+}: {
+  open: boolean;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  width: number;
+  align: "left" | "right";
+  label: string;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  /** Close the menu; `focusTrigger` returns focus to the trigger. */
+  onClose: (focusTrigger?: boolean) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [style, setStyle] = React.useState<React.CSSProperties | null>(null);
+
+  React.useLayoutEffect(() => {
+    if (!open) {
+      setStyle(null);
+      return;
+    }
+    function place() {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const M = 8; // viewport margin
+      const GAP = 6; // space between trigger and menu
+      const w = Math.min(width, vw - M * 2);
+      const left = Math.max(M, Math.min(align === "right" ? r.right - w : r.left, vw - w - M));
+      const above = r.top - GAP - M;
+      const below = vh - r.bottom - GAP - M;
+      setStyle(
+        above >= below
+          ? { position: "fixed", left, width: w, bottom: vh - r.top + GAP, maxHeight: above }
+          : { position: "fixed", left, width: w, top: r.bottom + GAP, maxHeight: below }
+      );
+    }
+    place();
+    // Scrolling the page (not the menu's own list) closes the menu rather than
+    // letting it trail its trigger across the header.
+    function onScroll(e: Event) {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      onClose(false);
+    }
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, width, align, triggerRef, menuRef, onClose]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label={label}
+      onKeyDown={(e) => {
+        // The menu lives at the end of <body>; Tab must not wander off there.
+        // Close + refocus the trigger, and let the browser's Tab move on from it.
+        if (e.key === "Tab") {
+          onClose(true);
+          return;
+        }
+        onKeyDown?.(e);
+      }}
+      style={style ?? { position: "fixed", left: 0, top: 0, visibility: "hidden" }}
+      className={cn(MENU, className)}
+    >
+      {children}
+    </div>,
+    document.body
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +267,7 @@ export function SourceScopePicker({
 }: { value: string[]; onChange: (ids: string[]) => void } & TriggerStyle) {
   const [collections, setCollections] = React.useState<Collection[] | null>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -249,13 +351,16 @@ export function SourceScopePicker({
         )}
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Source scope"
-          onKeyDown={onMenuKeyDown}
-          className={cn(MENU, "max-h-[min(70vh,26rem)] w-72", align === "right" ? "right-0" : "left-0")}
-        >
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={collections.length > 6 ? 520 : 288}
+        align={align}
+        label="Source scope"
+        onKeyDown={onMenuKeyDown}
+      >
           <p className={SECTION}>Search in</p>
           <button
             ref={(el) => {
@@ -279,6 +384,7 @@ export function SourceScopePicker({
 
           <div className="mx-1 my-1 border-t border-border" />
 
+          <div className={collections.length > 6 ? COLS2 : undefined}>
           {collections.map((c, i) => {
             const idx = i + 1;
             const checked = value.includes(c.id);
@@ -309,8 +415,8 @@ export function SourceScopePicker({
               </button>
             );
           })}
-        </div>
-      )}
+          </div>
+      </FloatingMenu>
     </div>
   );
 }
@@ -331,7 +437,7 @@ export function ModelQualityPicker({
   iconOnly = false,
   align = "left",
 }: { options: ModelOption[]; value: ModelOption; onChange: (o: ModelOption) => void } & TriggerStyle) {
-  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
   const enabled = options.map((o, i) => (o.available ? i : -1)).filter((i) => i >= 0);
   const [activeIndex, setActiveIndex] = React.useState(0);
 
@@ -387,25 +493,22 @@ export function ModelQualityPicker({
         )}
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Model quality"
-          onKeyDown={onMenuKeyDown}
-          className={cn(MENU, "max-h-[min(70vh,26rem)] w-72", align === "right" ? "right-0" : "left-0")}
-        >
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={720}
+        align={align}
+        label="Model quality"
+        onKeyDown={onMenuKeyDown}
+      >
+        <div className={COLS3}>
           {options.map((o, i) => {
-            const header =
-              lastKind !== o.kind ? (
-                <p key={`h-${o.kind}`} className={SECTION}>
-                  {o.kind === "tier" ? "Quality" : "Specific models"}
-                </p>
-              ) : null;
+            const isFirst = lastKind !== o.kind;
             lastKind = o.kind;
             const selected = o.value === value.value;
-            return (
-              <React.Fragment key={o.value}>
-                {header}
+            const item = (
                 <button
                   ref={(el) => {
                     itemsRef.current[i] = el;
@@ -429,11 +532,19 @@ export function ModelQualityPicker({
                   </span>
                   {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
                 </button>
-              </React.Fragment>
+            );
+            // Keep each section heading with its first row when columns break.
+            return isFirst ? (
+              <div key={o.value} className="break-inside-avoid">
+                <p className={SECTION}>{o.kind === "tier" ? "Quality" : "Specific models"}</p>
+                {item}
+              </div>
+            ) : (
+              <React.Fragment key={o.value}>{item}</React.Fragment>
             );
           })}
         </div>
-      )}
+      </FloatingMenu>
     </div>
   );
 }
@@ -450,7 +561,7 @@ export function OutputFormatPicker({
   iconOnly = false,
   align = "left",
 }: { value: OutputType; onChange: (o: OutputType) => void } & TriggerStyle) {
-  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
   const current = OUTPUT_TYPES.find((o) => o.id === value) ?? OUTPUT_TYPES[0];
   const [activeIndex, setActiveIndex] = React.useState(0);
 
@@ -499,14 +610,18 @@ export function OutputFormatPicker({
           </>
         )}
       </button>
-      {open && (
-        <div
-          role="menu"
-          aria-label="Response format"
-          onKeyDown={onMenuKeyDown}
-          className={cn(MENU, "max-h-[min(70vh,26rem)] w-64", align === "right" ? "right-0" : "left-0")}
-        >
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={460}
+        align={align}
+        label="Response format"
+        onKeyDown={onMenuKeyDown}
+      >
           <p className={SECTION}>Response format</p>
+          <div className={COLS2}>
           {OUTPUT_TYPES.map((o, i) => {
             const selected = o.id === value;
             return (
@@ -533,8 +648,8 @@ export function OutputFormatPicker({
               </button>
             );
           })}
-        </div>
-      )}
+          </div>
+      </FloatingMenu>
     </div>
   );
 }
@@ -579,7 +694,7 @@ export function WorkModePicker({
   iconOnly = false,
   align = "left",
 }: { modes: WorkModeDef[]; value: WorkMode; onChange: (m: WorkMode) => void } & TriggerStyle) {
-  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
   const [activeIndex, setActiveIndex] = React.useState(0);
 
   const current = modes.find((m) => m.id === value) ?? modes[0];
@@ -647,26 +762,23 @@ export function WorkModePicker({
         )}
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="Work mode"
-          onKeyDown={onMenuKeyDown}
-          className={cn(MENU, "max-h-[min(70vh,30rem)] w-80", align === "right" ? "right-0" : "left-0")}
-        >
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={780}
+        align={align}
+        label="Work mode"
+        onKeyDown={onMenuKeyDown}
+      >
+        <div className={COLS3}>
           {ordered.map((m, i) => {
             const Icon = MODE_ICON[m.id];
             const selected = m.id === value;
-            const header =
-              lastGroup !== m.group ? (
-                <p key={`g-${m.group}`} className={SECTION}>
-                  {m.group === "general" ? "Work mode" : MODE_GROUP_LABELS[m.group]}
-                </p>
-              ) : null;
+            const isFirst = lastGroup !== m.group;
             lastGroup = m.group;
-            return (
-              <React.Fragment key={m.id}>
-                {header}
+            const item = (
                 <button
                   ref={(el) => {
                     itemsRef.current[i] = el;
@@ -695,11 +807,19 @@ export function WorkModePicker({
                   </span>
                   {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
                 </button>
-              </React.Fragment>
+            );
+            // Keep each group heading with its first row when columns break.
+            return isFirst ? (
+              <div key={m.id} className="break-inside-avoid">
+                <p className={SECTION}>{m.group === "general" ? "Work mode" : MODE_GROUP_LABELS[m.group]}</p>
+                {item}
+              </div>
+            ) : (
+              <React.Fragment key={m.id}>{item}</React.Fragment>
             );
           })}
         </div>
-      )}
+      </FloatingMenu>
     </div>
   );
 }
