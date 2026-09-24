@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * streaming so it pulses and spins faster.
  */
 export function OrbAvatar({
-  size = 32,
+  size = 28,
   active = false,
   className,
 }: {

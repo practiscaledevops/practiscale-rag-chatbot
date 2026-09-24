@@ -171,11 +171,11 @@ export function NotificationsBell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={cn("relative", open && "bg-surface-muted text-foreground")}
+        className={cn("relative h-8 w-8", open && "bg-surface-muted text-foreground")}
       >
-        <Bell size={18} />
+        <Bell size={16} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-foreground ring-2 ring-surface">
+          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-accent-foreground ring-2 ring-surface">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -186,21 +186,21 @@ export function NotificationsBell() {
           // A panel of buttons + text, not a menu of menuitems — so "dialog".
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
+          className="absolute right-0 z-40 mt-2 w-[min(20rem,calc(100vw-4.5rem))] overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <div className="-mx-1.5 -mt-1.5 mb-1.5 flex items-center justify-between gap-2 border-b border-border py-2.5 pl-4 pr-2.5">
+          <div className="-mx-1 -mt-1 mb-1 flex h-10 items-center justify-between gap-2 border-b border-border pl-3.5 pr-1.5">
             <span className="text-sm font-semibold">Notifications</span>
             <div className="flex items-center gap-1.5">
-              {loading && <Loader2 size={13} className="animate-spin text-muted-foreground" />}
+              {loading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
               {unread > 0 && (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={markAll}
-                  className="h-7 gap-1 px-2.5 text-muted-foreground hover:text-foreground"
+                  className="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground"
                 >
-                  <CheckCheck size={13} />
+                  <CheckCheck size={14} />
                   Mark all read
                 </Button>
               )}
@@ -209,11 +209,11 @@ export function NotificationsBell() {
 
           <div className="max-h-[60vh] overflow-y-auto">
             {items.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
-                <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent" aria-hidden>
-                  <Bell size={20} />
+              <div className="flex flex-col items-center gap-2.5 px-3 py-8 text-center">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent" aria-hidden>
+                  <Bell size={16} />
                 </span>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-[13px] text-muted-foreground">
                   You&apos;re all caught up.
                 </p>
               </div>
@@ -230,15 +230,17 @@ export function NotificationsBell() {
                         disabled={!clickable && !!n.read_at}
                         onClick={() => openItem(n)}
                         className={cn(
-                          "flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                          "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                           clickable ? "hover:bg-surface-muted" : "cursor-default",
                           !n.read_at && "bg-accent-softer"
                         )}
                       >
-                        <Icon size={16} className={cn("mt-0.5 shrink-0", meta.cls)} aria-hidden />
+                        <span className="flex h-5 w-4 shrink-0 items-center justify-center" aria-hidden>
+                          <Icon size={14} className={meta.cls} />
+                        </span>
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5">
-                            <span className={cn("truncate text-sm", n.read_at ? "text-foreground/90" : "font-semibold text-foreground")}>
+                          <span className="flex h-5 items-center gap-1.5">
+                            <span className={cn("truncate text-[13px]", n.read_at ? "text-foreground/90" : "font-semibold text-foreground")}>
                               {n.title}
                             </span>
                             {!n.read_at && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />}

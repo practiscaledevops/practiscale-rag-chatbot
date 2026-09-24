@@ -15,7 +15,6 @@ import {
   Search,
   ShieldCheck,
   UserPlus,
-  Users as UsersIcon,
   Pencil,
   Trash2,
   AlertTriangle,
@@ -114,7 +113,7 @@ function RoleBadge({ role }: { role: ProfileRole }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
         styles[role]
       )}
     >
@@ -172,7 +171,7 @@ function Switch({
         aria-hidden
         className={cn(
           "inline-block h-4 w-4 transform rounded-full bg-white shadow-soft transition-transform",
-          checked ? "translate-x-4" : "translate-x-0.5"
+          checked ? "translate-x-[18px]" : "translate-x-0.5"
         )}
       />
     </button>
@@ -180,7 +179,10 @@ function Switch({
 }
 
 const inputClass =
-  "h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-9 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
+
+/** Dense toolbar filter controls (search + selects above the table): 32px. */
+const filterClass = "h-8 text-[13px]";
 
 const labelClass = "block text-xs font-medium text-muted-foreground";
 const hintClass = "text-xs text-muted-foreground";
@@ -246,18 +248,19 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <UsersIcon size={22} className="text-accent" />
-            Users
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight">Users</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Manage accounts, roles, and what each person can access.
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <UserPlus size={16} />
+        <Button
+          size="sm"
+          onClick={() => setCreating(true)}
+          className="h-8 shrink-0 self-start text-[13px] sm:self-auto"
+        >
+          <UserPlus size={14} />
           Add user
         </Button>
       </div>
@@ -266,18 +269,18 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
       {notice && (
         <div
           role="status"
-          className="mt-4 flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3.5 py-2.5 text-sm text-foreground"
+          className="mt-4 flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3.5 py-2.5 text-[13px] text-foreground"
         >
-          <Check size={15} className="text-success" />
+          <Check size={14} className="shrink-0 text-success" />
           {notice}
         </div>
       )}
 
       {/* Toolbar */}
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search
-            size={15}
+            size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <input
@@ -286,14 +289,14 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by name, email, or team…"
             aria-label="Search users"
-            className={cn(inputClass, "pl-9")}
+            className={cn(inputClass, filterClass, "pl-8")}
           />
         </div>
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
           aria-label="Filter by role"
-          className={cn(inputClass, "sm:w-44")}
+          className={cn(inputClass, filterClass, "sm:w-40")}
         >
           <option value="all">All roles</option>
           <option value="user">Users</option>
@@ -304,7 +307,7 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           aria-label="Filter by status"
-          className={cn(inputClass, "sm:w-40")}
+          className={cn(inputClass, filterClass, "sm:w-36")}
         >
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -313,18 +316,18 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+      <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-[13px]">
             <thead>
               <tr className="border-b border-border text-xs font-medium text-muted-foreground">
-                <th scope="col" className="px-5 py-3 font-medium">User</th>
-                <th scope="col" className="px-5 py-3 font-medium">Role</th>
-                <th scope="col" className="px-5 py-3 font-medium">Status</th>
-                <th scope="col" className="px-5 py-3 font-medium">Team</th>
-                <th scope="col" className="px-5 py-3 font-medium">Access</th>
-                <th scope="col" className="px-5 py-3 font-medium">Usage</th>
-                <th scope="col" className="px-5 py-3 text-right font-medium">
+                <th scope="col" className="px-4 py-2 font-medium">User</th>
+                <th scope="col" className="px-4 py-2 font-medium">Role</th>
+                <th scope="col" className="px-4 py-2 font-medium">Status</th>
+                <th scope="col" className="px-4 py-2 font-medium">Team</th>
+                <th scope="col" className="px-4 py-2 font-medium">Access</th>
+                <th scope="col" className="px-4 py-2 font-medium">Usage</th>
+                <th scope="col" className="px-4 py-2 text-right font-medium">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -340,15 +343,15 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12">
-                    <div className="flex flex-col items-center gap-3 text-center">
+                  <td colSpan={7} className="px-4 py-5">
+                    <div className="flex flex-col items-center gap-2.5 text-center">
                       <span
                         aria-hidden
-                        className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+                        className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent"
                       >
-                        <Search size={18} />
+                        <Search size={16} />
                       </span>
-                      <p className="text-sm text-muted-foreground">No users match your filters.</p>
+                      <p className="text-[13px] text-muted-foreground">No users match your filters.</p>
                     </div>
                   </td>
                 </tr>
@@ -418,21 +421,21 @@ function UserRow({
   return (
     <tr className="border-b border-border transition-colors last:border-0 hover:bg-surface-muted/60">
       {/* User */}
-      <td className="px-5 py-3">
-        <div className="flex items-center gap-3">
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-brand-gradient text-xs font-semibold text-white"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-gradient text-[11px] font-semibold text-white"
           >
             {initial}
           </span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span className="truncate font-medium">
                 {user.displayName || user.email || "Unknown"}
               </span>
               {isCurrent && (
-                <span className="shrink-0 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                <span className="shrink-0 rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">
                   You
                 </span>
               )}
@@ -445,27 +448,27 @@ function UserRow({
       </td>
 
       {/* Role */}
-      <td className="px-5 py-3">
+      <td className="px-4 py-2">
         <RoleBadge role={user.role} />
       </td>
 
       {/* Status */}
-      <td className="px-5 py-3">
+      <td className="px-4 py-2">
         <StatusPill active={user.isActive} />
       </td>
 
       {/* Team */}
-      <td className="px-5 py-3">
+      <td className="px-4 py-2">
         {user.team ? (
-          <span className="text-sm">{user.team.name}</span>
+          <span>{user.team.name}</span>
         ) : (
-          <span className="text-sm text-muted-foreground">—</span>
+          <span className="text-muted-foreground">—</span>
         )}
       </td>
 
       {/* Access */}
-      <td className="px-5 py-3">
-        <div className="text-sm">{modelSummary(user)}</div>
+      <td className="px-4 py-2">
+        <div>{modelSummary(user)}</div>
         <div className="text-xs text-muted-foreground">
           Features: {featureCount === 0 ? "all" : featureCount} · Tiers:{" "}
           {tierList.length === 0 ? "all" : tierList.join(", ")}
@@ -473,10 +476,10 @@ function UserRow({
       </td>
 
       {/* Usage */}
-      <td className="px-5 py-3">
+      <td className="px-4 py-2">
         {user.usage ? (
           <div>
-            <div className="text-sm">
+            <div>
               {formatTokens(user.usage.totalTokens)} tok ·{" "}
               <span className="text-muted-foreground">{formatUsd(user.usage.costUsd)}</span>
             </div>
@@ -484,16 +487,16 @@ function UserRow({
           </div>
         ) : (
           <div>
-            <div className="text-sm text-muted-foreground">No usage</div>
+            <div className="text-muted-foreground">No usage</div>
             <div className="text-xs text-muted-foreground">{relativeTime(lastActive)}</div>
           </div>
         )}
       </td>
 
       {/* Actions */}
-      <td className="px-5 py-3 text-right">
+      <td className="px-4 py-2 text-right">
         <Button variant="secondary" size="sm" onClick={onEdit}>
-          <Pencil size={13} />
+          <Pencil size={14} />
           Edit
         </Button>
       </td>
@@ -649,16 +652,16 @@ function UserEditor({
       className="max-w-2xl"
     >
       <form onSubmit={submit}>
-        <div className="max-h-[65vh] space-y-6 overflow-y-auto pr-1">
+        <div className="-mr-1 max-h-[65vh] space-y-5 overflow-y-auto pr-1">
           {locked && (
-            <p className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-xs text-foreground">
+            <p className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground">
               <AlertTriangle size={14} className="mt-px shrink-0 text-warning" />
               This is a super admin account. Only another super admin can change it.
             </p>
           )}
 
           {/* --- Identity --- */}
-          <section className="space-y-4">
+          <section className="space-y-3.5">
             {mode === "create" ? (
               <div className="space-y-1.5">
                 <label htmlFor="ue-email" className={labelClass}>
@@ -677,7 +680,7 @@ function UserEditor({
             ) : (
               <div className="space-y-1.5">
                 <span className={labelClass}>Email</span>
-                <div className="flex h-11 items-center rounded-xl border border-border bg-surface-muted px-3.5 text-sm text-muted-foreground">
+                <div className="flex h-9 items-center rounded-xl border border-border bg-surface-muted px-3 text-sm text-muted-foreground">
                   {user?.email ?? "—"}
                 </div>
               </div>
@@ -705,7 +708,7 @@ function UserEditor({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label
                     className={cn(
-                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 text-sm transition-colors",
+                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-[13px] transition-colors",
                       credMode === "password"
                         ? "border-accent bg-accent-softer"
                         : "border-border hover:bg-surface-muted"
@@ -727,7 +730,7 @@ function UserEditor({
                   </label>
                   <label
                     className={cn(
-                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 text-sm transition-colors",
+                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-[13px] transition-colors",
                       credMode === "invite"
                         ? "border-accent bg-accent-softer"
                         : "border-border hover:bg-surface-muted"
@@ -769,7 +772,7 @@ function UserEditor({
           </section>
 
           {/* --- Role, status, team --- */}
-          <section className="grid gap-4 sm:grid-cols-2">
+          <section className="grid gap-3.5 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="ue-role" className={labelClass}>
                 Role
@@ -814,9 +817,9 @@ function UserEditor({
               </select>
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3 sm:col-span-2">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-3 py-2.5 sm:col-span-2">
               <div>
-                <div className="text-sm font-medium">Account active</div>
+                <div className="text-[13px] font-medium">Account active</div>
                 <p className={hintClass}>
                   {isSelf
                     ? "You can't deactivate your own account."
@@ -833,13 +836,13 @@ function UserEditor({
           </section>
 
           {/* --- Model access --- */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
+          <section className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
                 <h3 className="text-sm font-semibold">Model access</h3>
                 <p className={hintClass}>Which AI models this person can choose.</p>
               </div>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex shrink-0 items-center gap-2 text-[13px]">
                 <span>Full access</span>
                 <Switch
                   checked={canAll}
@@ -852,24 +855,24 @@ function UserEditor({
 
             <div
               className={cn(
-                "rounded-xl border border-border p-3",
+                "rounded-xl border border-border p-2",
                 canAll && "pointer-events-none opacity-50"
               )}
               aria-disabled={canAll}
             >
               {canAll ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
                   This user can select any model the Brain offers.
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {grouped.map(([provider, list]) => {
                     const ids = list.map((m) => m.id);
                     const allOn = ids.every((id) => models.includes(id));
                     return (
                       <div key={provider}>
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="px-2 text-xs font-semibold text-muted-foreground">
+                        <div className="mb-0.5 flex h-6 items-center justify-between">
+                          <span className="px-2 text-[11px] font-semibold text-muted-foreground">
                             {providerLabel(provider)}
                           </span>
                           <button
@@ -886,21 +889,21 @@ function UserEditor({
                             {allOn ? "Clear" : "Select all"}
                           </button>
                         </div>
-                        <div className="grid gap-1.5 sm:grid-cols-2">
+                        <div className="grid gap-0.5 sm:grid-cols-2 sm:gap-x-1.5">
                           {list.map((m) => (
                             <label
                               key={m.id}
-                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-surface-muted"
+                              className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] transition-colors hover:bg-surface-muted"
                             >
                               <input
                                 type="checkbox"
-                                className="h-4 w-4 rounded border-border accent-accent"
+                                className="h-4 w-4 shrink-0 rounded border-border accent-accent"
                                 checked={models.includes(m.id)}
                                 onChange={() => toggle(models, setModels, m.id)}
                               />
                               <span className="truncate">{m.label}</span>
                               {m.tier && (
-                                <span className="ml-auto shrink-0 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+                                <span className="ml-auto shrink-0 rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
                                   {m.tier}
                                 </span>
                               )}
@@ -910,7 +913,7 @@ function UserEditor({
                       </div>
                     );
                   })}
-                  <p className={hintClass}>
+                  <p className={cn(hintClass, "px-2 pb-1")}>
                     Tip: with none selected, no model restriction applies. Pick specific
                     models to limit this person to just those.
                   </p>
@@ -922,11 +925,11 @@ function UserEditor({
           {/* --- Features --- */}
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">Features</h3>
-            <div className="grid gap-1.5 rounded-xl border border-border p-3 sm:grid-cols-2">
+            <div className="grid gap-0.5 rounded-xl border border-border p-2 sm:grid-cols-2 sm:gap-x-1.5">
               {data.features.map((f: AdminFeature) => (
                 <label
                   key={f.key}
-                  className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-surface-muted"
+                  className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors hover:bg-surface-muted"
                 >
                   <input
                     type="checkbox"
@@ -959,7 +962,7 @@ function UserEditor({
                     disabled={disabled}
                     onClick={() => toggle(tiers, setTiers, t)}
                     className={cn(
-                      "rounded-full border px-3.5 py-1.5 text-sm font-medium capitalize transition-colors",
+                      "inline-flex h-8 items-center rounded-full border px-3 text-[13px] font-medium capitalize transition-colors",
                       on
                         ? "border-accent/30 bg-accent-soft text-accent-strong"
                         : "border-border bg-surface text-muted-foreground hover:bg-surface-muted hover:text-foreground",
@@ -984,7 +987,7 @@ function UserEditor({
               </p>
               {confirmDelete ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm">Permanently delete this user?</span>
+                  <span className="text-[13px]">Permanently delete this user?</span>
                   <Button
                     type="button"
                     size="sm"
@@ -992,7 +995,7 @@ function UserEditor({
                     onClick={remove}
                     disabled={busy}
                   >
-                    {busy ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                     Yes, delete
                   </Button>
                   <Button
@@ -1013,7 +1016,7 @@ function UserEditor({
                   onClick={() => setConfirmDelete(true)}
                   className="border-danger/30 text-danger hover:bg-danger/10"
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={14} />
                   Delete permanently
                 </Button>
               )}
@@ -1021,26 +1024,26 @@ function UserEditor({
           )}
 
           {err && (
-            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
+            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger">
               {err}
             </p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+        <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="submit" disabled={disabled}>
             {busy ? (
               <>
-                <Loader2 size={15} className="animate-spin" />
+                <Loader2 size={16} className="animate-spin" />
                 Saving…
               </>
             ) : (
               <>
-                {mode === "create" ? <Plus size={15} /> : <Check size={15} />}
+                {mode === "create" ? <Plus size={16} /> : <Check size={16} />}
                 {mode === "create" ? "Create user" : "Save changes"}
               </>
             )}

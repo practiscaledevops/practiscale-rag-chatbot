@@ -56,11 +56,12 @@ const config: Config = {
       borderColor: {
         DEFAULT: "rgb(var(--border) / <alpha-value>)",
       },
+      // Standard-density radii (8 / 12 / 16 / 20).
       borderRadius: {
-        lg: "0.75rem",
-        xl: "1rem",
-        "2xl": "1.25rem",
-        "3xl": "1.75rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        "2xl": "1rem",
+        "3xl": "1.25rem",
       },
       boxShadow: {
         soft: "var(--shadow-soft)",

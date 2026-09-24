@@ -153,7 +153,7 @@ function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="inline-flex rounded-full bg-surface-muted p-1"
+      className="inline-flex h-8 items-center rounded-full bg-surface-muted p-0.5"
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -164,7 +164,7 @@ function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              "inline-flex h-7 items-center rounded-full px-3 text-[13px] font-medium transition-colors",
               active
                 ? "bg-surface text-foreground shadow-soft"
                 : "text-muted-foreground hover:text-foreground"
@@ -181,7 +181,7 @@ function Segmented<T extends string>({
 /** A provider tag pill. */
 function ProviderBadge({ provider }: { provider: string }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+    <span className="inline-flex items-center rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
       {provider || "unknown"}
     </span>
   );
@@ -200,22 +200,22 @@ function KpiCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft">
       <div className="flex items-center gap-2.5 text-muted-foreground">
         <span
-          className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"
           aria-hidden
         >
           {icon}
         </span>
-        <span className="text-sm font-medium">
+        <span className="truncate text-[13px] font-medium">
           {label}
         </span>
       </div>
-      <div className="mt-4 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
+      <div className="mt-3 text-[22px] font-semibold leading-7 tracking-tight tabular-nums text-foreground">
         {value}
       </div>
-      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+      {sub ? <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div> : null}
     </div>
   );
 }
@@ -308,12 +308,12 @@ export function UsageClient() {
   return (
     <div className="w-full">
       {/* Header */}
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Usage &amp; cost
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Requests, token consumption and estimated spend across the workspace.
             {model !== "all" ? (
               <>
@@ -328,6 +328,7 @@ export function UsageClient() {
           variant="secondary"
           size="sm"
           onClick={() => setReloadKey((k) => k + 1)}
+          className="h-8 text-[13px]"
         >
           <RefreshCw size={14} className={cn(loading && "animate-spin")} />
           Refresh
@@ -335,13 +336,13 @@ export function UsageClient() {
       </header>
 
       {/* Filter bar */}
-      <div className="mb-5 flex flex-wrap items-end gap-5 rounded-2xl border border-border bg-surface p-5 shadow-soft">
+      <div className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground">Time range</span>
           <Segmented label="Time range" value={range} options={RANGE_OPTIONS} onChange={setRange} />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <label htmlFor="model-filter" className="text-xs font-medium text-muted-foreground">
             Model
           </label>
@@ -349,7 +350,7 @@ export function UsageClient() {
             id="model-filter"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="h-10 rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-8 max-w-full rounded-xl border border-border bg-surface px-3 text-[13px] text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="all">All models</option>
             {modelOptions.map((m) => (
@@ -371,9 +372,9 @@ export function UsageClient() {
       {error ? (
         <div
           role="alert"
-          className="mb-5 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
+          className="mb-4 flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/10 p-4 text-[13px] text-danger"
         >
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <div>
             <div className="font-medium">Could not load usage</div>
             <div className="text-danger/80">{error}</div>
@@ -385,7 +386,7 @@ export function UsageClient() {
       <section
         aria-label="Key metrics"
         className={cn(
-          "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
+          "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4",
           loading && !data && "animate-pulse"
         )}
       >
@@ -416,12 +417,12 @@ export function UsageClient() {
       </section>
 
       {/* Time-series chart */}
-      <section className="mt-5 rounded-2xl border border-border bg-surface p-5 shadow-soft">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground">Tokens &amp; cost over time</h2>
-          <span className="text-xs text-muted-foreground">Daily · last {rangeLabel}</span>
+      <section className="mt-4 rounded-2xl border border-border bg-surface p-4 shadow-soft">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="truncate text-sm font-semibold text-foreground">Tokens &amp; cost over time</h2>
+          <span className="shrink-0 text-xs text-muted-foreground">Daily · last {rangeLabel}</span>
         </div>
-        <div className="h-72 w-full">
+        <div className="h-64 w-full">
           {mounted && data && hasData ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -511,7 +512,7 @@ export function UsageClient() {
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-xl bg-surface-muted/60 text-sm text-muted-foreground">
+            <div className="flex h-full items-center justify-center rounded-xl bg-surface-muted/60 text-[13px] text-muted-foreground">
               {loading && !data
                 ? "Loading chart…"
                 : "No usage recorded in this range."}
@@ -521,16 +522,16 @@ export function UsageClient() {
       </section>
 
       {/* Scope-driven breakdown */}
-      <section className="mt-5 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
-        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <h2 className="text-base font-semibold text-foreground">
+      <section className="mt-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="truncate text-sm font-semibold text-foreground">
             {scope === "overall"
               ? "By model & provider"
               : scope === "user"
                 ? "By user"
                 : "By team"}
           </h2>
-          <span className="text-xs text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {scope === "overall"
               ? `${data?.byModel.length ?? 0} models`
               : scope === "user"
@@ -557,16 +558,16 @@ export function UsageClient() {
 // Tables
 // ---------------------------------------------------------------------------
 
-const TH = "px-5 py-3 text-left text-xs font-medium text-muted-foreground";
-const THR = "px-5 py-3 text-right text-xs font-medium text-muted-foreground";
-const TD = "px-5 py-3 text-sm text-foreground";
-const TDR = "px-5 py-3 text-right text-sm tabular-nums text-foreground";
+const TH = "px-4 py-2 text-left text-xs font-medium text-muted-foreground";
+const THR = "px-4 py-2 text-right text-xs font-medium text-muted-foreground";
+const TD = "px-4 py-2 text-[13px] text-foreground";
+const TDR = "px-4 py-2 text-right text-[13px] tabular-nums text-foreground";
 const ROW = "border-t border-border transition-colors hover:bg-surface-muted/60";
 
 function EmptyRow({ colSpan, loading }: { colSpan: number; loading: boolean }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-5 py-12 text-center text-sm text-muted-foreground">
+      <td colSpan={colSpan} className="px-4 py-5 text-center text-[13px] text-muted-foreground">
         {loading ? "Loading…" : "No usage in this range."}
       </td>
     </tr>
@@ -682,7 +683,7 @@ function TeamTable({ rows, loading }: { rows: ByTeam[]; loading: boolean }) {
                 ) : (
                   <span
                     className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
                       r.overBudget
                         ? "bg-danger/10 text-danger"
                         : "bg-success/10 text-success"

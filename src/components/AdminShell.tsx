@@ -123,23 +123,23 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
 
       {/* --- Main column: the clean white workspace ---------------------- */}
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        {/* White top bar */}
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background px-4 sm:px-6">
+        {/* White top bar — same 56px height and 32px pills as the main TopBar. */}
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 bg-background px-4 sm:px-6">
           <IconButton
             type="button"
             aria-label="Open menu"
             onClick={() => setDrawerOpen(true)}
-            className="-ml-1 lg:hidden"
+            className="lg:hidden"
           >
             <Menu size={18} />
           </IconButton>
 
           <h1 className="truncate text-sm font-semibold tracking-tight">Control panel</h1>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
             {/* Identity: role chip + email (email hidden on the smallest screens) */}
-            <span className="hidden items-center gap-2 rounded-full bg-surface-muted py-1 pl-1 pr-3 text-xs sm:inline-flex">
-              <span className="rounded-full bg-accent-soft px-2.5 py-0.5 font-semibold text-accent-strong">
+            <span className="hidden h-8 items-center gap-2 rounded-full bg-surface-muted pl-1 pr-3 text-[13px] sm:inline-flex">
+              <span className="inline-flex h-6 items-center rounded-full bg-accent-soft px-2 text-[11px] font-semibold text-accent-strong">
                 {roleLabel}
               </span>
               {email && (
@@ -155,6 +155,7 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
               size="sm"
               onClick={handleSignOut}
               disabled={signingOut}
+              className="h-8 px-3 text-[13px]"
             >
               {signingOut ? (
                 <Loader2 size={14} className="animate-spin" aria-hidden />
@@ -168,7 +169,7 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
 
         {/* Light content area — consistent container for every admin page. */}
         <main className="min-h-0 flex-1 overflow-y-auto bg-background">
-          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">{children}</div>
+          <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">{children}</div>
         </main>
       </div>
     </div>
@@ -189,16 +190,17 @@ function SidebarContent({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-3 bg-sidebar p-3 text-sidebar-foreground">
-      {/* Brand + Admin badge. */}
-      <div className="flex h-10 shrink-0 items-center gap-2 px-1.5">
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      {/* Brand + Admin badge — the logo sits flush with the rows' left edge (x=14),
+          the drawer close button in the rows' trailing column (as in the main rail). */}
+      <div className="flex h-14 shrink-0 items-center justify-between pl-3.5 pr-4">
         <Link
           href="/admin"
           onClick={onNavigate}
-          className="flex items-center gap-2 rounded-lg px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Logo variant="dark" className="h-6" />
-          <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+          <Logo variant="dark" className="h-[18px]" />
+          <span className="inline-flex h-[18px] items-center rounded-full bg-accent/20 px-1.5 text-[11px] font-semibold uppercase leading-none tracking-[0.04em] text-accent">
             Admin
           </span>
         </Link>
@@ -209,7 +211,7 @@ function SidebarContent({
             type="button"
             aria-label="Close menu"
             onClick={onNavigate}
-            className="ml-auto grid h-8 w-8 place-items-center rounded-full text-sidebar-muted transition-colors hover:bg-sidebar-item-hover hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+            className={cn(TRAILING_BTN, "lg:hidden")}
           >
             <X size={16} />
           </button>
@@ -218,60 +220,68 @@ function SidebarContent({
 
       {/* Primary nav, inside the rounded rail panel. */}
       <nav
-        className="scroll-dark flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl bg-sidebar-panel p-2"
+        className="mx-2 flex min-h-0 flex-1 flex-col rounded-2xl bg-sidebar-panel"
         aria-label="Admin sections"
       >
-        <p className="px-2 pb-2 pt-1 text-xs text-sidebar-muted">Control panel</p>
-        <ul className="space-y-1">
-          {NAV.map((item) => {
-            const active = item.exact
-              ? pathname === item.href
-              : pathname === item.href || (pathname?.startsWith(item.href + "/") ?? false);
-            const Icon = item.icon;
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-sidebar-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active
-                      ? "bg-sidebar-item-hover font-medium ring-1 ring-inset ring-white/10"
-                      : "bg-sidebar-item hover:bg-sidebar-item-hover"
-                  )}
-                >
-                  <Icon
-                    size={17}
-                    aria-hidden
-                    className={cn(
-                      "shrink-0 transition-colors",
-                      active ? "text-accent" : "text-sidebar-muted group-hover:text-sidebar-foreground"
-                    )}
-                  />
-                  <span className="truncate">{item.label}</span>
-                  {active && (
-                    <span aria-hidden className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                  )}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="scrollbar-none flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5">
+          <p className={GROUP_LABEL}>Control panel</p>
+          <ul className="space-y-0.5">
+            {NAV.map((item) => {
+              const active = item.exact
+                ? pathname === item.href
+                : pathname === item.href || (pathname?.startsWith(item.href + "/") ?? false);
+              const Icon = item.icon;
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(ROW, active ? ROW_ACTIVE : ROW_IDLE)}
+                  >
+                    <span className={cn(ICON_BOX, active && "text-accent")}>
+                      <Icon size={16} strokeWidth={1.75} aria-hidden />
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       </nav>
 
-      {/* Footer: back to the chat product. */}
-      <div className="shrink-0 rounded-2xl bg-sidebar-panel p-2">
-        <Link
-          href="/"
-          onClick={onNavigate}
-          className="flex items-center gap-3 rounded-xl bg-sidebar-item px-3 py-2.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-item-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ArrowLeft size={17} aria-hidden className="shrink-0 text-sidebar-muted" />
-          Back to chat
+      {/* Footer: back to the chat product (sits where the main rail's profile card does). */}
+      {/* One 32px row in a 44px card, same height as the main rail's profile card.
+          The role caption sits on the row's right edge but outside the link, so the
+          link's accessible name stays "Back to chat". */}
+      <div className="relative m-2 shrink-0 rounded-xl bg-sidebar-panel p-1.5">
+        <Link href="/" onClick={onNavigate} className={cn(ROW, ROW_IDLE)}>
+          <span className={ICON_BOX}>
+            <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
+          </span>
+          <span className="truncate">Back to chat</span>
         </Link>
-        <p className="px-2 pb-0.5 pt-2 text-xs text-sidebar-muted">{roleLabel} access</p>
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-sidebar-muted">
+          {roleLabel}
+        </span>
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Rail grid — identical to the main Sidebar: every row 32px tall, 12px left
+// inset, a fixed 16px icon box, a 10px gap, then the label, so icons and labels
+// line up in two exact columns. Trailing buttons share one 28px column.
+// ---------------------------------------------------------------------------
+
+const ROW =
+  "flex h-8 w-full items-center gap-2.5 rounded-lg pl-3 pr-2 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+const ROW_IDLE = "bg-sidebar-item/70 text-sidebar-foreground/90 hover:bg-sidebar-item-hover hover:text-white";
+const ROW_ACTIVE = "bg-sidebar-item-hover text-white shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)]";
+const ICON_BOX = "flex w-4 shrink-0 items-center justify-center text-sidebar-foreground/70";
+/** Group labels start on the label column (12px inset + 16px icon box + 10px gap). */
+const GROUP_LABEL = "pb-1 pl-[38px] pr-3 pt-1 text-[11px] font-medium text-sidebar-muted/80";
+const TRAILING_BTN =
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";

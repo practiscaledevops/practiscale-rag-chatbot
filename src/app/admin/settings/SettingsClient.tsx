@@ -85,19 +85,19 @@ function Section({
 }) {
   return (
     <section className="rounded-2xl border border-border bg-surface shadow-soft">
-      <header className="flex items-start gap-3 border-b border-border px-5 py-4">
+      <header className="flex items-start gap-3 border-b border-border px-4 py-3">
         <span
-          className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent"
+          className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"
           aria-hidden
         >
           {icon}
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
         </div>
       </header>
-      <div className="p-5">{children}</div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -105,7 +105,7 @@ function Section({
 /** A provider tag pill. */
 function ProviderBadge({ provider }: { provider: string }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+    <span className="inline-flex items-center rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
       {provider || "unknown"}
     </span>
   );
@@ -132,15 +132,15 @@ function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
         checked ? "bg-accent" : "bg-surface-sunken"
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow-soft transition-transform",
-          checked ? "translate-x-[23px]" : "translate-x-[3px]"
+          "inline-block h-4 w-4 transform rounded-full bg-white shadow-soft transition-transform",
+          checked ? "translate-x-[18px]" : "translate-x-0.5"
         )}
       />
     </button>
@@ -291,13 +291,13 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="w-full max-w-4xl">
       {/* Header */}
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+      <header className="mb-5">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Workspace settings
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
           Control which models the workspace can use, the defaults for new chats,
           and the cost rates behind the usage meter. Changes apply to everyone.
         </p>
@@ -307,9 +307,9 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
       {error ? (
         <div
           role="alert"
-          className="mb-5 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
+          className="mb-4 flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/10 p-4 text-[13px] text-danger"
         >
-          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
           <div>
             <div className="font-medium">Could not save settings</div>
             <div className="text-danger/80">{error}</div>
@@ -317,10 +317,10 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
         </div>
       ) : null}
 
-      <div className="space-y-5 pb-28">
+      <div className="space-y-4 pb-5">
         {/* --- Default chat ------------------------------------------------ */}
         <Section
-          icon={<Gauge size={18} />}
+          icon={<Gauge size={16} />}
           title="Defaults for new chats"
           description="The model and grounding a brand-new conversation starts with. Members can still switch per chat."
         >
@@ -340,13 +340,13 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                     aria-checked={active}
                     onClick={() => chooseTier(t.value)}
                     className={cn(
-                      "flex flex-col items-start gap-1 rounded-xl border p-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       active
                         ? "border-accent bg-accent-softer ring-1 ring-accent"
                         : "border-border bg-surface hover:bg-surface-muted"
                     )}
                   >
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <span className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
                       <Zap size={14} className={active ? "text-accent" : "text-muted-foreground"} aria-hidden />
                       {t.label}
                     </span>
@@ -359,7 +359,7 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
             {/* Specific model option */}
             <div
               className={cn(
-                "mt-2 rounded-xl border p-3.5 transition-colors",
+                "mt-2 rounded-xl border px-3 py-2.5 transition-colors",
                 settings.defaultModelKind === "model"
                   ? "border-accent bg-accent-softer ring-1 ring-accent"
                   : "border-border bg-surface"
@@ -371,7 +371,7 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                   role="radio"
                   aria-checked={settings.defaultModelKind === "model"}
                   onClick={chooseSpecific}
-                  className="flex items-center gap-1.5 rounded-md text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex items-center gap-1.5 rounded-md text-[13px] font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Sparkles
                     size={14}
@@ -389,7 +389,7 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                   value={settings.defaultModelKind === "model" ? settings.defaultModel : ""}
                   disabled={settings.defaultModelKind !== "model"}
                   onChange={(e) => patch({ defaultModel: e.target.value, defaultModelKind: "model" })}
-                  className="h-10 min-w-[12rem] flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-9 min-w-[12rem] flex-1 rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {/* Always present so the controlled value always has a match. */}
                   <option value="">Choose a model…</option>
@@ -406,8 +406,8 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
               </div>
 
               {settings.defaultModelKind === "model" && !defaultModelValid ? (
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-                  <AlertCircle size={13} aria-hidden />
+                <p className="mt-2 flex items-start gap-1.5 text-xs text-warning">
+                  <AlertCircle size={13} className="mt-px shrink-0" aria-hidden />
                   This model is disabled or no longer in the catalog. New chats will
                   fall back until you pick an enabled model.
                 </p>
@@ -416,9 +416,9 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
           </fieldset>
 
           {/* RAG default */}
-          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface px-4 py-3.5">
+          <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-border bg-surface px-3 py-2.5">
             <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Knowledge (RAG) grounding on by default</div>
+              <div className="text-[13px] font-medium text-foreground">Knowledge (RAG) grounding on by default</div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 New chats start with grounded, cited answers from the Brain. Members
                 can turn it off per conversation.
@@ -434,11 +434,11 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
 
         {/* --- Enabled models --------------------------------------------- */}
         <Section
-          icon={<Boxes size={18} />}
+          icon={<Boxes size={16} />}
           title="Available models"
           description="Turn models on or off for the whole workspace. A disabled model can't be selected by anyone, regardless of individual permissions."
         >
-          <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="mb-2.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
             <span>
               <span className="font-medium text-foreground">{enabledCount}</span> of{" "}
               {models.length} models enabled
@@ -455,14 +455,14 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
           </div>
 
           {models.length === 0 ? (
-            <p className="rounded-xl border border-border bg-surface-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-border bg-surface-muted/50 px-4 py-5 text-center text-[13px] text-muted-foreground">
               No models reported by the Brain catalog.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {groups.map((group) => (
                 <div key={group.provider}>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
                     {group.label}
                   </p>
                   <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
@@ -471,23 +471,23 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                       return (
                         <li
                           key={m.id}
-                          className="flex items-center justify-between gap-3 bg-surface px-4 py-3"
+                          className="flex items-center justify-between gap-3 bg-surface px-3 py-2"
                         >
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate text-sm font-medium text-foreground">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-[13px] font-medium text-foreground">
                                 {m.label}
                               </span>
                               {m.tier ? (
-                                <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+                                <span className="shrink-0 rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
                                   {m.tier}
                                 </span>
                               ) : null}
                             </div>
-                            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               <span className="truncate">{m.id}</span>
                               {!m.available ? (
-                                <span className="text-warning">· {m.reason || "unavailable on the Brain"}</span>
+                                <span className="shrink-0 text-warning">· {m.reason || "unavailable on the Brain"}</span>
                               ) : null}
                             </div>
                           </div>
@@ -508,28 +508,28 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
 
         {/* --- Pricing overrides ------------------------------------------ */}
         <Section
-          icon={<CircleDollarSign size={18} />}
+          icon={<CircleDollarSign size={16} />}
           title="Pricing overrides"
           description="Optional per-model rates in USD per 1M tokens. Leave blank to use the built-in estimate. These feed the usage meter's cost estimates."
         >
           {pricingRows.length === 0 ? (
-            <p className="rounded-xl border border-border bg-surface-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-border bg-surface-muted/50 px-4 py-5 text-center text-[13px] text-muted-foreground">
               Enable a model to set a price override.
             </p>
           ) : (
             // Bleed to the card edges so rows run full width, like the other admin tables.
-            <div className="-mx-5 overflow-x-auto">
+            <div className="-mx-4 overflow-x-auto">
               <table className="w-full min-w-[520px] border-collapse">
                 <caption className="sr-only">Per-model price overrides in USD per 1M tokens</caption>
                 <thead>
                   <tr>
-                    <th scope="col" className="px-5 pb-3 text-left text-xs font-medium text-muted-foreground">
+                    <th scope="col" className="px-4 pb-2 text-left text-xs font-medium text-muted-foreground">
                       Model
                     </th>
-                    <th scope="col" className="px-5 pb-3 text-right text-xs font-medium text-muted-foreground">
+                    <th scope="col" className="px-4 pb-2 text-right text-xs font-medium text-muted-foreground">
                       Input $/1M
                     </th>
-                    <th scope="col" className="px-5 pb-3 text-right text-xs font-medium text-muted-foreground">
+                    <th scope="col" className="px-4 pb-2 text-right text-xs font-medium text-muted-foreground">
                       Output $/1M
                     </th>
                   </tr>
@@ -542,14 +542,14 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                         key={row.id}
                         className="border-t border-border transition-colors hover:bg-surface-muted/60"
                       >
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground">{row.label}</span>
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[13px] font-medium text-foreground">{row.label}</span>
                             <ProviderBadge provider={row.provider} />
                           </div>
                           <div className="text-xs text-muted-foreground">{row.id}</div>
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-4 py-2 text-right">
                           <RateInput
                             id={`in-${row.id}`}
                             ariaLabel={`Input rate for ${row.label} in USD per 1M tokens`}
@@ -557,7 +557,7 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
                             onChange={(raw) => setOverride(row.id, "inputPerMTok", raw)}
                           />
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-4 py-2 text-right">
                           <RateInput
                             id={`out-${row.id}`}
                             ariaLabel={`Output rate for ${row.label} in USD per 1M tokens`}
@@ -579,7 +579,7 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
       <div className="pointer-events-none sticky bottom-0 z-20 -mx-4 px-4 pb-4 sm:-mx-6 sm:px-6">
         <div
           className={cn(
-            "pointer-events-auto mx-auto flex max-w-4xl items-center justify-between gap-3 rounded-2xl border bg-surface/95 px-5 py-3 shadow-soft-lg backdrop-blur transition-colors",
+            "pointer-events-auto mx-auto flex max-w-4xl items-center justify-between gap-3 rounded-2xl border bg-surface/95 py-2.5 pl-4 pr-2.5 shadow-soft-lg backdrop-blur transition-colors",
             dirty ? "border-accent/40" : "border-border"
           )}
         >
@@ -597,18 +597,19 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               type="button"
               variant="secondary"
               size="sm"
+              className="h-8 text-[13px]"
               onClick={discard}
               disabled={!dirty || saving}
             >
               <RotateCcw size={14} aria-hidden />
               Discard
             </Button>
-            <Button type="button" size="sm" onClick={save} disabled={!dirty || saving}>
+            <Button type="button" size="sm" className="h-8 text-[13px]" onClick={save} disabled={!dirty || saving}>
               {saving ? (
                 <Loader2 size={14} className="animate-spin" aria-hidden />
               ) : (
@@ -639,7 +640,7 @@ function RateInput({
   onChange: (raw: string) => void;
 }) {
   return (
-    <div className="inline-flex h-10 items-center gap-1 rounded-xl border border-border bg-surface px-3 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
+    <div className="inline-flex h-8 items-center gap-1 rounded-xl border border-border bg-surface px-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
       <span className="text-xs text-muted-foreground" aria-hidden>
         $
       </span>
@@ -653,7 +654,7 @@ function RateInput({
         placeholder="default"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
-        className="w-20 bg-transparent text-right text-sm tabular-nums text-foreground outline-none placeholder:text-subtle-foreground focus-visible:outline-none"
+        className="w-20 bg-transparent text-right text-[13px] tabular-nums text-foreground outline-none placeholder:text-subtle-foreground focus-visible:outline-none"
       />
     </div>
   );

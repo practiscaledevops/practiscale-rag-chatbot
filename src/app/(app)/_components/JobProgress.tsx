@@ -64,23 +64,23 @@ export function JobProgress({ jobId, title, onDismiss }: { jobId: string; title:
   const result = (job?.result ?? null) as { totalCalls?: number; consultants?: Consultant[] } | null;
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4">
-      <div className="flex items-center gap-2">
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex items-center gap-2.5">
         <span
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-lg",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
             finished ? "bg-accent/15 text-accent" : "bg-accent/10 text-accent"
           )}
         >
           {finished ? (
-            job?.status === "failed" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />
+            job?.status === "failed" ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />
           ) : (
-            <Bot size={15} />
+            <Bot size={14} />
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{title || job?.title || "Deep audit"}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="truncate text-sm font-medium leading-5">{title || job?.title || "Deep audit"}</p>
+          <p className="text-xs leading-4 text-muted-foreground">
             {error
               ? error
               : !job
@@ -90,13 +90,13 @@ export function JobProgress({ jobId, title, onDismiss }: { jobId: string; title:
                   : `Agents working — ${done} of ${total} batches done`}
           </p>
         </div>
-        {!finished && !error && <Loader2 size={16} className="animate-spin text-muted-foreground" />}
+        {!finished && !error && <Loader2 size={16} className="mr-1.5 shrink-0 animate-spin text-muted-foreground" />}
         {(finished || error) && onDismiss && (
           <button
             type="button"
             aria-label="Dismiss"
             onClick={onDismiss}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X size={14} />
           </button>
@@ -115,42 +115,42 @@ export function JobProgress({ jobId, title, onDismiss }: { jobId: string; title:
 
       {/* Agent/task chips while running */}
       {p && !finished && p.tasks.length > 0 && (
-        <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        <ul className="mt-3 grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2">
           {p.tasks.slice(0, 12).map((t) => (
-            <li key={t.idx} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <li key={t.idx} className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               {t.status === "completed" ? (
-                <CheckCircle2 size={13} className="shrink-0 text-accent" />
+                <CheckCircle2 size={14} className="shrink-0 text-accent" />
               ) : t.status === "running" ? (
-                <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
+                <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
               ) : t.status === "failed" ? (
-                <AlertTriangle size={13} className="shrink-0 text-danger" />
+                <AlertTriangle size={14} className="shrink-0 text-danger" />
               ) : (
-                <CircleDashed size={13} className="shrink-0" />
+                <CircleDashed size={14} className="shrink-0" />
               )}
               <span className="truncate">{t.label}</span>
             </li>
           ))}
-          {p.tasks.length > 12 && <li className="text-xs text-muted-foreground">+{p.tasks.length - 12} more…</li>}
+          {p.tasks.length > 12 && <li className="pl-5 text-xs text-muted-foreground">+{p.tasks.length - 12} more…</li>}
         </ul>
       )}
 
       {/* Report summary when finished */}
       {finished && result?.consultants && result.consultants.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-xs">
-            <thead className="bg-surface-muted text-muted-foreground">
-              <tr>
-                <th className="px-2 py-1 text-left font-medium">Consultant</th>
-                <th className="px-2 py-1 text-right font-medium">Calls</th>
-                <th className="px-2 py-1 text-right font-medium">Avg score</th>
+        <div className="mt-3 overflow-hidden rounded-xl border border-border">
+          <table className="w-full text-[13px] leading-5">
+            <thead className="text-xs text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="px-3 py-2 text-left font-medium">Consultant</th>
+                <th className="px-3 py-2 text-right font-medium">Calls</th>
+                <th className="px-3 py-2 text-right font-medium">Avg score</th>
               </tr>
             </thead>
             <tbody>
               {result.consultants.map((c) => (
                 <tr key={c.name} className="border-t border-border">
-                  <td className="px-2 py-1">{c.name}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{c.calls}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{c.avgScore ?? "—"}</td>
+                  <td className="px-3 py-2">{c.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{c.calls}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{c.avgScore ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

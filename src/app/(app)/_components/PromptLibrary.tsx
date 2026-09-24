@@ -120,8 +120,8 @@ export function PromptLibrary({
     <Modal open={open} onClose={onClose} title="Saved prompts" className="max-w-lg">
       {showEditor ? (
         <div className="space-y-3">
-          <div className="space-y-1">
-            <label htmlFor="pl-title" className="text-xs font-medium text-muted-foreground">
+          <div className="space-y-1.5">
+            <label htmlFor="pl-title" className="block text-xs font-medium text-muted-foreground">
               Title
             </label>
             <input
@@ -129,60 +129,66 @@ export function PromptLibrary({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Weekly report summary"
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="h-9 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
-          <div className="space-y-1">
-            <label htmlFor="pl-body" className="text-xs font-medium text-muted-foreground">
+          <div className="space-y-1.5">
+            <label htmlFor="pl-body" className="block text-xs font-medium text-muted-foreground">
               Prompt
             </label>
             <textarea
               id="pl-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              rows={7}
+              rows={6}
               placeholder="Write the prompt you want to reuse…"
-              className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              className="block w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-sm leading-6 outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={() => setShowEditor(false)} disabled={saving}>
               Cancel
             </Button>
             <Button onClick={save} disabled={saving || !title.trim() || !body.trim()}>
-              {saving && <Loader2 size={14} className="animate-spin" />}
+              {saving && <Loader2 size={16} className="animate-spin" />}
               {editing ? "Save changes" : "Save prompt"}
             </Button>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 text-xs text-muted-foreground">
               Save prompts you use often and drop them into the composer.
             </p>
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" onClick={openCreate} className="shrink-0">
               <Plus size={14} />
               New
             </Button>
           </div>
 
           {error && (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
-              <span>{error}</span>
-              <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
-                <X size={13} />
-              </button>
+            <div className="flex items-center justify-between gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+              <span className="min-w-0">{error}</span>
+              <IconButton
+                type="button"
+                aria-label="Dismiss"
+                size="sm"
+                onClick={() => setError(null)}
+                className="-my-1.5 -mr-1.5 shrink-0 text-danger hover:bg-danger/10 hover:text-danger"
+              >
+                <X size={14} />
+              </IconButton>
             </div>
           )}
 
           {loading ? (
-            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
               <Loader2 size={14} className="animate-spin" />
               Loading…
             </div>
           ) : prompts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
               No saved prompts yet. Create your first one.
             </div>
           ) : (
@@ -191,7 +197,7 @@ export function PromptLibrary({
                 <li
                   key={p.id}
                   className={cn(
-                    "group rounded-2xl border border-border bg-surface p-3.5 transition-colors hover:border-accent/40 hover:bg-accent-softer"
+                    "group rounded-xl border border-border bg-surface px-3 py-2.5 transition-colors hover:border-accent/40 hover:bg-accent-softer"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -201,13 +207,13 @@ export function PromptLibrary({
                       className="min-w-0 flex-1 text-left"
                       title="Insert into composer"
                     >
-                      <div className="flex items-center gap-1.5">
-                        {p.is_pinned && <Pin size={12} className="text-accent" />}
-                        <span className="truncate text-sm font-medium">{p.title}</span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13px] font-medium leading-5">{p.title}</span>
+                        {p.is_pinned && <Pin size={12} className="shrink-0 text-accent" />}
                       </div>
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.body}</p>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-[18px] text-muted-foreground">{p.body}</p>
                     </button>
-                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <div className="-my-1 -mr-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <IconButton
                         aria-label="Insert prompt"
                         size="sm"

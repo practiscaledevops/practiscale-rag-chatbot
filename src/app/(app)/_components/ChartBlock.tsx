@@ -96,13 +96,13 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
               title={disabled ? "Pie needs a single value column" : `${k.label} chart`}
               aria-pressed={active}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+                "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
                 active
                   ? "bg-accent-soft text-accent-strong"
                   : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
               )}
             >
-              <Icon size={13} aria-hidden />
+              <Icon size={14} className="shrink-0" aria-hidden />
               <span className="hidden sm:inline">{k.label}</span>
             </button>
           );
@@ -188,7 +188,7 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
 const TOOLTIP_STYLE: React.CSSProperties = {
   background: "rgb(var(--surface))",
   border: "1px solid rgb(var(--border))",
-  borderRadius: 10,
+  borderRadius: 12,
   fontSize: 12,
   color: "rgb(var(--foreground))",
 };

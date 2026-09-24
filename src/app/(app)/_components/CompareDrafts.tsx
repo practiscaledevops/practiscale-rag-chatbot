@@ -99,11 +99,11 @@ function Pane({ open, messages, mode, pane }: { open: boolean; messages: ChatMes
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2.5">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border pl-3.5 pr-2">
         <span className="truncate text-sm font-semibold">{pane.label}</span>
         {state === "loading" ? (
-          <Loader2 size={14} className="mr-1.5 animate-spin text-muted-foreground" />
+          <Loader2 size={14} className="mr-2 shrink-0 animate-spin text-muted-foreground" />
         ) : (
           <Button
             type="button"
@@ -111,14 +111,14 @@ function Pane({ open, messages, mode, pane }: { open: boolean; messages: ChatMes
             size="sm"
             onClick={copy}
             disabled={!text.trim()}
-            className="h-7 gap-1 px-2.5 text-muted-foreground hover:text-foreground"
+            className="h-7 shrink-0 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground"
           >
-            {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+            {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
             Copy
           </Button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 text-sm">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 text-sm leading-6">
         {state === "error" ? (
           <p className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-danger">This model failed to respond. It may be unavailable.</p>
         ) : text.trim() ? (
@@ -150,16 +150,16 @@ export function CompareDrafts({
 }) {
   return (
     <Modal open={open} onClose={onClose} title="Compare drafts" className="max-w-4xl">
-      <p className="-mt-1 mb-4 text-sm text-muted-foreground">
+      <p className="-mt-1 mb-4 text-[13px] text-muted-foreground">
         The same question, answered by two models. Nothing here is saved — copy the draft you prefer.
       </p>
-      <div className={cn("flex min-h-0 gap-4", "h-[60vh] flex-col sm:flex-row")}>
+      <div className={cn("flex min-h-0 gap-3", "h-[60vh] flex-col sm:flex-row")}>
         <Pane open={open} messages={messages} mode={mode} pane={panes[0]} />
         <Pane open={open} messages={messages} mode={mode} pane={panes[1]} />
       </div>
-      <div className="mt-5 flex justify-end">
+      <div className="mt-4 flex justify-end">
         <Button type="button" variant="secondary" onClick={onClose}>
-          <X size={14} />
+          <X size={16} />
           Close
         </Button>
       </div>

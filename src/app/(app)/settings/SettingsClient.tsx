@@ -33,7 +33,7 @@ interface Collection {
   name: string;
 }
 
-const PANEL = "rounded-[26px] border border-border bg-surface-muted/60";
+const PANEL = "rounded-2xl border border-border bg-surface-muted/60";
 
 export function SettingsClient() {
   const router = useRouter();
@@ -123,62 +123,79 @@ export function SettingsClient() {
         onInsert={(body) => router.push(`/?prompt=${encodeURIComponent(body.slice(0, 4000))}`)}
       />
 
-      <div className="mx-auto w-full max-w-[1180px] px-4 pb-10 sm:px-6 lg:px-10">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-6 sm:px-6">
         {/* Header card */}
-        <div className={cn(PANEL, "flex items-center justify-between gap-4 px-5 py-4 sm:px-6")}>
+        <div className={cn(PANEL, "flex items-center justify-between gap-4 px-4 py-3")}>
           <div className="flex min-w-0 items-center gap-3">
-            <OrbAvatar size={34} />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+              <OrbAvatar size={28} />
+            </span>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold tracking-tight">Assistant settings</h1>
-              <p className="hidden text-sm text-muted-foreground sm:block">Defaults for every new chat. Change any of them per message in the composer.</p>
+              <h1 className="truncate text-xl font-semibold leading-7 tracking-tight">Assistant settings</h1>
+              <p className="hidden truncate text-[13px] leading-5 text-muted-foreground sm:block">
+                Defaults for every new chat. Change any of them per message in the composer.
+              </p>
             </div>
           </div>
-          <Button variant="secondary" onClick={() => save()} disabled={!dirty && !justSaved} className="shrink-0 shadow-soft">
-            {justSaved ? <Check size={16} className="text-accent" /> : null}
-            {justSaved ? "Saved" : "Save changes"}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => save()}
+            disabled={!dirty && !justSaved}
+            className="h-8 shrink-0 text-[13px] shadow-soft"
+          >
+            {justSaved ? <Check size={14} className="text-accent" aria-hidden /> : null}
+            {justSaved ? (
+              "Saved"
+            ) : (
+              <>
+                <span className="sm:hidden">Save</span>
+                <span className="hidden sm:inline">Save changes</span>
+              </>
+            )}
           </Button>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-4">
             {/* Connection card */}
-            <div className={cn(PANEL, "flex items-center gap-4 px-5 py-4")}>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface shadow-soft">
-                <Brain size={20} className="text-accent" aria-hidden />
+            <div className={cn(PANEL, "flex items-center gap-3 px-4 py-3")}>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface shadow-soft">
+                <Brain size={16} className="text-accent" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">PractiScale Brain</p>
-                <p className="truncate text-sm text-muted-foreground">
+                <p className="text-sm font-semibold leading-5">PractiScale Brain</p>
+                <p className="truncate text-xs leading-4 text-muted-foreground">
                   {email ? `Signed in as ${fullName ? `${fullName} · ` : ""}${email}` : "Your company knowledge base"}
                 </p>
               </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-tea px-3 py-1 text-xs font-medium text-tea-foreground">
-                <Check size={13} aria-hidden /> Connected
+              <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-tea px-2.5 text-[11px] font-medium text-tea-foreground">
+                <Check size={12} aria-hidden /> Connected
               </span>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               {/* Saved prompts */}
-              <section className={cn(PANEL, "flex min-h-[420px] flex-col")} aria-labelledby="set-prompts">
-                <header className="flex items-center justify-between gap-2 px-5 pb-3 pt-4">
-                  <h2 id="set-prompts" className="flex min-w-0 items-center gap-2 text-[15px] font-semibold">
-                    <PenLine size={17} className="shrink-0" aria-hidden /> <span className="truncate">Your saved prompts</span>
+              <section className={cn(PANEL, "flex min-h-[340px] min-w-0 flex-col")} aria-labelledby="set-prompts">
+                <header className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
+                  <h2 id="set-prompts" className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    <PenLine size={16} className="shrink-0" aria-hidden /> <span className="truncate">Your saved prompts</span>
                   </h2>
                   <button
                     type="button"
                     onClick={() => setLibraryOpen(true)}
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 text-[13px] font-medium shadow-soft transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 text-xs font-medium shadow-soft transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Plus size={14} aria-hidden /> Add prompt
                   </button>
                 </header>
-                <div className="flex-1 space-y-2.5 px-4 pb-4">
+                <div className="flex-1 space-y-2 px-4 pb-4">
                   {prompts === null ? (
-                    <div className="flex items-center gap-2 px-1 py-6 text-sm text-muted-foreground">
-                      <Loader2 size={15} className="animate-spin" aria-hidden /> Loading…
+                    <div className="flex items-center gap-2 px-1 py-6 text-[13px] text-muted-foreground">
+                      <Loader2 size={14} className="animate-spin" aria-hidden /> Loading…
                     </div>
                   ) : prompts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
                       {promptsError ?? "Save prompts you use often, then drop them into any chat."}
                     </div>
                   ) : (
@@ -188,10 +205,10 @@ export function SettingsClient() {
                         type="button"
                         onClick={() => router.push(`/?prompt=${encodeURIComponent(p.body.slice(0, 4000))}`)}
                         title="Start a chat with this prompt"
-                        className="block w-full rounded-2xl bg-surface p-4 text-left shadow-soft transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="block w-full rounded-xl bg-surface px-3 py-2.5 text-left shadow-soft transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <span className="block text-[13px] font-semibold text-foreground">{p.title}</span>
-                        <span className="mt-1 line-clamp-2 block text-[13px] leading-snug text-muted-foreground">{p.body}</span>
+                        <span className="block truncate text-[13px] font-medium leading-5 text-foreground">{p.title}</span>
+                        <span className="mt-0.5 line-clamp-2 block text-xs leading-[18px] text-muted-foreground">{p.body}</span>
                       </button>
                     ))
                   )}
@@ -199,7 +216,7 @@ export function SettingsClient() {
                     <button
                       type="button"
                       onClick={() => setLibraryOpen(true)}
-                      className="w-full rounded-full px-3 py-2 text-[13px] font-medium text-accent-strong hover:bg-accent-soft"
+                      className="h-8 w-full rounded-full px-3 text-[13px] font-medium text-accent-strong hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       View all {prompts.length} prompts
                     </button>
@@ -208,14 +225,14 @@ export function SettingsClient() {
               </section>
 
               {/* Response format */}
-              <section className={cn(PANEL, "flex min-h-[420px] flex-col")} aria-labelledby="set-output">
-                <header className="flex items-center justify-between gap-2 px-5 pb-3 pt-4">
-                  <h2 id="set-output" className="flex items-center gap-2 text-[15px] font-semibold">
-                    <Wand2 size={17} className="shrink-0" aria-hidden /> Your output
+              <section className={cn(PANEL, "flex min-h-[340px] min-w-0 flex-col")} aria-labelledby="set-output">
+                <header className="flex h-12 shrink-0 items-center justify-between gap-2 px-4">
+                  <h2 id="set-output" className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    <Wand2 size={16} className="shrink-0" aria-hidden /> <span className="truncate">Your output</span>
                   </h2>
-                  <span className="whitespace-nowrap text-[13px] text-muted-foreground">Response format</span>
+                  <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">Response format</span>
                 </header>
-                <div className="flex flex-wrap gap-2 px-5" role="radiogroup" aria-labelledby="set-output">
+                <div className="flex flex-wrap gap-2 px-4" role="radiogroup" aria-labelledby="set-output">
                   {OUTPUT_TYPES.map((o) => {
                     const on = draft.outputType === o.id;
                     return (
@@ -227,25 +244,25 @@ export function SettingsClient() {
                         title={o.hint}
                         onClick={() => setDraft((d) => ({ ...d, outputType: o.id }))}
                         className={cn(
-                          "inline-flex h-8 items-center gap-1 rounded-full px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "inline-flex h-8 items-center gap-1 rounded-full px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           on
                             ? "bg-accent-soft text-accent-strong ring-1 ring-inset ring-accent/30"
                             : "bg-surface text-foreground shadow-soft hover:bg-surface-sunken"
                         )}
                       >
-                        {on && <Check size={13} aria-hidden />}
+                        {on && <Check size={14} className="-ml-0.5 shrink-0" aria-hidden />}
                         {o.label}
                       </button>
                     );
                   })}
                 </div>
-                <div className="mt-auto px-5 pb-5 pt-6">
-                  <div className="rounded-2xl bg-surface p-4 shadow-soft">
-                    <p className="flex items-center gap-2 text-[13px] font-semibold">
-                      <Sparkles size={15} className="text-accent" aria-hidden />
+                <div className="mt-auto px-4 pb-4 pt-5">
+                  <div className="rounded-xl bg-surface p-3.5 shadow-soft">
+                    <p className="flex items-center gap-2 text-[13px] font-semibold leading-5">
+                      <Sparkles size={14} className="shrink-0 text-accent" aria-hidden />
                       {OUTPUT_TYPES.find((o) => o.id === draft.outputType)?.label ?? "Answer"}
                     </p>
-                    <p className="mt-1 text-[13px] text-muted-foreground">
+                    <p className="mt-1 text-xs leading-[18px] text-muted-foreground">
                       {OUTPUT_TYPES.find((o) => o.id === draft.outputType)?.hint}. New answers start in this format; the
                       Brain never invents data to fill a shape.
                     </p>
@@ -256,12 +273,12 @@ export function SettingsClient() {
           </div>
 
           {/* Right panel: defaults */}
-          <aside className={cn(PANEL, "flex flex-col p-5")} aria-label="Chat defaults">
+          <aside className={cn(PANEL, "flex min-w-0 flex-col p-4")} aria-label="Chat defaults">
             <Field label="Model">
               <Select
                 value={draft.model}
                 onChange={(v) => setDraft((d) => ({ ...d, model: v }))}
-                icon={<OrbAvatar size={18} />}
+                icon={<OrbAvatar size={16} />}
               >
                 {(["tier", "model"] as const).map((kind) => {
                   const group = usableModels.filter((o) => o.kind === kind);
@@ -289,10 +306,10 @@ export function SettingsClient() {
               </Select>
             </Field>
 
-            <div className="mt-5 flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">Response format</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-medium">Response format</span>
               <div className="w-36">
-                <Select compact value={draft.outputType} onChange={(v) => setDraft((d) => ({ ...d, outputType: v as OutputType }))}>
+                <Select value={draft.outputType} onChange={(v) => setDraft((d) => ({ ...d, outputType: v as OutputType }))}>
                   {OUTPUT_TYPES.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.label}
@@ -302,17 +319,17 @@ export function SettingsClient() {
               </div>
             </div>
 
-            <div className="mt-6">
-              <p className="text-sm font-medium">Knowledge</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Which knowledge new chats search.</p>
-              <div className="mt-2.5 space-y-1.5">
+            <div className="mt-4">
+              <p className="text-[13px] font-medium leading-5">Knowledge</p>
+              <p className="text-xs text-muted-foreground">Which knowledge new chats search.</p>
+              <div className="mt-2 space-y-0.5">
                 <ScopeRow
                   label="All company knowledge"
                   checked={draft.collectionIds.length === 0}
                   onClick={() => setDraft((d) => ({ ...d, collectionIds: [] }))}
                 />
                 {collections === null ? (
-                  <p className="px-1 text-xs text-muted-foreground">Loading collections…</p>
+                  <p className="flex h-8 items-center px-3 text-xs text-muted-foreground">Loading collections…</p>
                 ) : (
                   collections.map((c) => {
                     const on = draft.collectionIds.includes(c.id);
@@ -335,9 +352,9 @@ export function SettingsClient() {
             </div>
 
             {quickTiers.length > 0 && (
-              <div className="mt-6">
-                <p className="text-sm font-medium">Quick presets</p>
-                <div className="mt-2.5 flex flex-wrap gap-2">
+              <div className="mt-4">
+                <p className="text-[13px] font-medium leading-5">Quick presets</p>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {quickTiers.map((o) => {
                     const on = draft.model === o.value;
                     return (
@@ -347,7 +364,7 @@ export function SettingsClient() {
                         aria-pressed={on}
                         onClick={() => setDraft((d) => ({ ...d, model: o.value }))}
                         className={cn(
-                          "h-8 rounded-full px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "inline-flex h-8 items-center rounded-full px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           on ? "bg-[#262626] text-white" : "bg-surface text-foreground shadow-soft hover:bg-surface-sunken"
                         )}
                       >
@@ -359,9 +376,9 @@ export function SettingsClient() {
               </div>
             )}
 
-            <div className="mt-auto pt-8">
+            <div className="mt-auto pt-6">
               <Button variant="tea" size="lg" className="w-full" onClick={() => save(true)}>
-                <Plus size={17} aria-hidden />
+                <Plus size={16} aria-hidden />
                 Save & start a new chat
               </Button>
             </div>
@@ -374,8 +391,8 @@ export function SettingsClient() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="mb-5 block">
-      <span className="mb-2 block text-sm font-medium">{label}</span>
+    <label className="mb-4 block">
+      <span className="mb-2 block text-[13px] font-medium leading-5">{label}</span>
       {children}
     </label>
   );
@@ -387,31 +404,32 @@ function Select({
   onChange,
   children,
   icon,
-  compact = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   children: React.ReactNode;
   icon?: React.ReactNode;
-  compact?: boolean;
 }) {
   return (
     <span className="relative block">
-      {icon && <span className="pointer-events-none absolute left-4 top-1/2 flex -translate-y-1/2 items-center">{icon}</span>}
+      {icon && (
+        <span className="pointer-events-none absolute left-3 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center">
+          {icon}
+        </span>
+      )}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          "w-full cursor-pointer appearance-none rounded-2xl bg-surface pr-10 text-sm font-medium text-foreground shadow-soft outline-none transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-          compact ? "h-10 pl-3.5" : "h-12",
-          icon ? "pl-11" : compact ? "" : "pl-4"
+          "h-9 w-full cursor-pointer appearance-none truncate rounded-xl bg-surface pr-8 text-sm font-medium text-foreground shadow-soft outline-none transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          icon ? "pl-9" : "pl-3"
         )}
       >
         {children}
       </select>
       <ChevronsUpDown
-        size={16}
-        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+        size={14}
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
         aria-hidden
       />
     </span>
@@ -426,7 +444,7 @@ function ScopeRow({ label, checked, onClick }: { label: string; checked: boolean
       aria-checked={checked}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex h-8 w-full items-center gap-2 rounded-lg px-3 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         checked ? "bg-surface shadow-soft" : "hover:bg-surface/70"
       )}
     >

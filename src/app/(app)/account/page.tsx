@@ -111,15 +111,15 @@ export default async function AccountPage() {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+        <header className="mb-5">
+          <h1 className="text-xl font-semibold tracking-tight">Account</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Manage your profile and review your access and usage.
           </p>
         </header>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Identity + sign out (interactive) */}
           <AccountClient
             displayName={displayName}
@@ -130,7 +130,7 @@ export default async function AccountPage() {
           {/* This-month usage */}
           <section
             aria-labelledby="usage-heading"
-            className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6"
+            className="rounded-2xl border border-border bg-surface p-4 shadow-soft"
           >
             <h2 id="usage-heading" className="text-sm font-semibold">
               Usage this month
@@ -138,7 +138,7 @@ export default async function AccountPage() {
             <p className="mt-0.5 text-xs text-muted-foreground">
               Estimated from token pricing; resets at the start of each month.
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <Stat
                 icon={Coins}
                 label="Tokens"
@@ -163,7 +163,7 @@ export default async function AccountPage() {
           {/* Access summary */}
           <section
             aria-labelledby="access-heading"
-            className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6"
+            className="rounded-2xl border border-border bg-surface p-4 shadow-soft"
           >
             <h2 id="access-heading" className="text-sm font-semibold">
               Your access
@@ -172,12 +172,12 @@ export default async function AccountPage() {
               Set by your workspace administrator.
             </p>
 
-            <dl className="mt-4 space-y-4">
+            <dl className="mt-3.5 space-y-2.5">
               <Row label="Models">
                 {modelAllowlist ? (
                   <ChipList items={modelAllowlist} />
                 ) : (
-                  <span className="text-sm text-foreground">All available models</span>
+                  <span className="text-[13px] leading-6 text-foreground">All available models</span>
                 )}
               </Row>
 
@@ -191,7 +191,7 @@ export default async function AccountPage() {
                     items={enabledFeatures.map((f) => FEATURE_LABEL[f] ?? f)}
                   />
                 ) : (
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-[13px] leading-6 text-muted-foreground">
                     Standard access
                   </span>
                 )}
@@ -199,8 +199,8 @@ export default async function AccountPage() {
 
               {profile.team && (
                 <Row label="Team">
-                  <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
-                    <Users size={14} className="text-muted-foreground" />
+                  <span className="inline-flex items-center gap-1.5 text-[13px] leading-6 text-foreground">
+                    <Users size={14} className="shrink-0 text-muted-foreground" />
                     {profile.team.name}
                   </span>
                 </Row>
@@ -208,7 +208,7 @@ export default async function AccountPage() {
 
               {memberSince && (
                 <Row label="Member since">
-                  <span className="text-sm text-foreground">{memberSince}</span>
+                  <span className="text-[13px] leading-6 text-foreground">{memberSince}</span>
                 </Row>
               )}
             </dl>
@@ -221,11 +221,11 @@ export default async function AccountPage() {
           {isAdmin && (
             <a
               href="/admin"
-              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5 shadow-soft transition-colors hover:bg-surface-muted"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 shadow-soft transition-colors hover:bg-surface-muted"
             >
-              <span className="flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent">
-                  <ShieldCheck size={18} />
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                  <ShieldCheck size={16} />
                 </span>
                 <span>
                   <span className="block text-sm font-medium">Control panel</span>
@@ -258,12 +258,12 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-xl bg-surface-muted p-4">
+    <div className="rounded-xl bg-surface-muted px-3.5 py-3">
       <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon size={14} aria-hidden />
+        <Icon size={14} className="shrink-0" aria-hidden />
         <span className="text-xs font-medium">{label}</span>
       </div>
-      <p className="mt-1.5 text-xl font-semibold tabular-nums tracking-tight">
+      <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight">
         {value}
       </p>
       {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
@@ -274,8 +274,8 @@ function Stat({
 /** A label / value row inside the access card. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <dt className="text-sm font-medium text-muted-foreground sm:w-32 sm:shrink-0">
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <dt className="text-[13px] font-medium leading-6 text-muted-foreground sm:w-32 sm:shrink-0">
         {label}
       </dt>
       <dd className="min-w-0 sm:flex-1">{children}</dd>
@@ -290,7 +290,7 @@ function ChipList({ items }: { items: string[] }) {
       {items.map((item) => (
         <span
           key={item}
-          className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-foreground"
+          className="inline-flex h-6 items-center rounded-full bg-surface-muted px-2.5 text-xs font-medium text-foreground"
         >
           {item}
         </span>

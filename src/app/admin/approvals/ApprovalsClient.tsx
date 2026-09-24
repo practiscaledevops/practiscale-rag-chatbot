@@ -67,25 +67,22 @@ export function ApprovalsClient() {
   return (
     <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ClipboardCheck size={22} className="text-accent" />
-          Approvals
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-xl font-semibold tracking-tight">Approvals</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
           Review content submitted by the team. Approving, rejecting, or requesting
           changes notifies the person who submitted it.
         </p>
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
-        <div className="inline-flex rounded-full bg-surface-muted p-1">
+      <div className="mt-5 flex items-center gap-3">
+        <div className="inline-flex h-8 items-center rounded-full bg-surface-muted p-0.5">
           {(["pending", "all"] as const).map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                "inline-flex h-7 items-center rounded-full px-3 text-[13px] font-medium transition-colors",
                 filter === f
                   ? "bg-surface text-foreground shadow-soft"
                   : "text-muted-foreground hover:text-foreground"
@@ -99,20 +96,20 @@ export function ApprovalsClient() {
       </div>
 
       {items && !enabled ? (
-        <p className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+        <p className="mt-5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground">
           Approvals aren&apos;t enabled yet — run migration 0010_approvals.sql in Supabase.
         </p>
       ) : (
-        <ul className="mt-4 space-y-3">
+        <ul className="mt-3 space-y-2">
           {(items ?? []).map((it) => (
             <ApprovalRow key={it.id} item={it} onReviewed={load} />
           ))}
           {!loading && (items?.length ?? 0) === 0 && (
-            <li className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
-                <ClipboardCheck size={20} />
+            <li className="flex flex-col items-center gap-2.5 rounded-xl border border-border bg-surface p-5 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent">
+                <ClipboardCheck size={16} />
               </span>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 {filter === "pending" ? "Nothing waiting for review." : "No submissions yet."}
               </p>
             </li>
@@ -147,23 +144,23 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
   );
 
   return (
-    <li className="rounded-2xl border border-border bg-surface shadow-soft">
-      <div className="flex items-start gap-3 p-4">
+    <li className="rounded-xl border border-border bg-surface shadow-soft">
+      <div className="flex items-start gap-2.5 px-4 py-3">
         <IconButton
           type="button"
           size="sm"
           onClick={() => setExpanded((e) => !e)}
-          className="-mt-0.5 shrink-0"
+          className="-ml-1.5 -mt-1 shrink-0"
           aria-label={expanded ? "Collapse" : "Expand"}
         >
-          {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </IconButton>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-medium">{item.title}</span>
             <span
               className={cn(
-                "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                "rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
                 STATUS_CLS[item.status]
               )}
             >
@@ -182,13 +179,13 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-4 py-4">
+        <div className="border-t border-border px-4 py-3.5">
           {item.prompt && (
             <p className="mb-2 text-xs text-muted-foreground">
               <span className="font-semibold">Prompt:</span> {item.prompt}
             </p>
           )}
-          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-4 text-sm text-foreground/90">
+          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-3.5 text-[13px] leading-relaxed text-foreground/90">
             {item.content}
           </div>
 
@@ -199,13 +196,13 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
           )}
 
           {isPending && (
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-2.5">
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional note to the submitter…"
                 rows={2}
-                className="w-full resize-none rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full resize-none rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="flex flex-wrap items-center gap-2">
                 <Button

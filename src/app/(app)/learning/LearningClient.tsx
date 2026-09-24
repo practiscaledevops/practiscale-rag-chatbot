@@ -37,7 +37,7 @@ function relTime(iso: string): string {
 }
 
 const selectCls =
-  "h-10 rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-8 rounded-xl border border-border bg-surface px-3 text-[13px] text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function LearningClient() {
   const [status, setStatus] = useState("");
@@ -104,16 +104,13 @@ export function LearningClient() {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
         <header className="mb-5">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Lightbulb size={22} className="text-accent" />
-            My learnings
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="text-xl font-semibold tracking-tight">My learnings</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             What the team decided, tried, measured and learned — saved from chat and
             reviewed in the Brain&apos;s Learning Lab.
-            {loading && <Loader2 size={13} className="ml-2 inline animate-spin text-muted-foreground" />}
+            {loading && <Loader2 size={12} className="ml-2 inline animate-spin text-muted-foreground" />}
           </p>
         </header>
 
@@ -134,40 +131,40 @@ export function LearningClient() {
             ))}
           </select>
           {filtered && (
-            <Button variant="ghost" size="sm" onClick={() => { setStatus(""); setType(""); }}>
+            <Button variant="ghost" size="sm" className="h-8 px-3 text-[13px]" onClick={() => { setStatus(""); setType(""); }}>
               Clear
             </Button>
           )}
         </div>
 
         {error && (
-          <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger">
             <p>{error}</p>
             <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReload((n) => n + 1)}>
-              <RefreshCw size={13} />
+              <RefreshCw size={14} />
               Retry
             </Button>
           </div>
         )}
 
         {loading && !error ? (
-          <ul className="space-y-3" aria-hidden>
+          <ul className="space-y-2" aria-hidden>
             {Array.from({ length: 4 }).map((_, i) => (
-              <li key={i} className="h-24 animate-pulse rounded-2xl bg-surface-muted" />
+              <li key={i} className="h-24 animate-pulse rounded-xl bg-surface-muted" />
             ))}
           </ul>
         ) : !error && records.length === 0 ? (
-          <div className="flex flex-col items-center rounded-2xl border border-border bg-surface px-6 py-12 text-center text-sm text-muted-foreground">
+          <div className="flex flex-col items-center gap-2.5 rounded-xl border border-border bg-surface p-5 text-center text-[13px] text-muted-foreground">
             <span
               aria-hidden
-              className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+              className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent"
             >
-              <Lightbulb size={20} />
+              <Lightbulb size={16} />
             </span>
             {filtered ? (
               "No learnings match these filters."
             ) : (
-              <>
+              <div>
                 <p className="text-sm font-medium text-foreground">No learnings yet.</p>
                 <p className="mx-auto mt-1 max-w-md">
                   When the assistant spots a decision, experiment or result in a conversation, it
@@ -175,11 +172,11 @@ export function LearningClient() {
                   the answer. Saved learnings appear here and are completed and validated in the
                   Brain&apos;s Learning Lab.
                 </p>
-              </>
+              </div>
             )}
           </div>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {records.map((r) => (
               <LearningRow key={r.id} r={r} onOpenRef={setDrawerRef} />
             ))}
@@ -189,7 +186,7 @@ export function LearningClient() {
         {hasMore && !loading && !error && (
           <div className="mt-4 flex justify-center">
             <Button variant="secondary" size="sm" onClick={loadMore} disabled={loadingMore}>
-              {loadingMore ? <Loader2 size={13} className="animate-spin" /> : null}
+              {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null}
               Load more
             </Button>
           </div>
@@ -205,12 +202,12 @@ function LearningRow({ r, onOpenRef }: { r: LearningRecord; onOpenRef: (ref: str
   const missing = Array.isArray(r.missing_evidence) ? r.missing_evidence : [];
   const playbooks = Array.isArray(r.playbooks) ? r.playbooks : [];
   return (
-    <li className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+    <li className="rounded-xl border border-border bg-surface px-4 py-3 shadow-soft">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-mono text-xs text-accent-strong">{r.ref}</span>
         <span
           className={cn(
-            "rounded-full border px-2.5 py-0.5 text-xs font-medium",
+            "rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4",
             LEARNING_TYPE_TONE[r.record_type] ?? "border-border text-muted-foreground"
           )}
         >
@@ -222,7 +219,7 @@ function LearningRow({ r, onOpenRef }: { r: LearningRecord; onOpenRef: (ref: str
           {r.created_at ? relTime(r.created_at) : ""}
         </span>
       </div>
-      <p className="mt-1.5 text-sm font-medium text-foreground">{r.title}</p>
+      <p className="mt-1.5 text-sm font-medium leading-5 text-foreground">{r.title}</p>
       {r.summary && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{r.summary}</p>}
       {(playbooks.length > 0 || missing.length > 0) && (
         <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -232,14 +229,14 @@ function LearningRow({ r, onOpenRef }: { r: LearningRecord; onOpenRef: (ref: str
               type="button"
               onClick={() => onOpenRef(p.ref)}
               title={p.name}
-              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-0.5 font-mono text-[11px] text-accent-strong transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent-soft px-2 py-0.5 font-mono text-[11px] leading-4 text-accent-strong transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {p.ref}
             </button>
           ))}
           {missing.map((m) => (
             <Chip key={m} tone="warning" title="Evidence still missing">
-              <AlertTriangle size={11} aria-hidden />
+              <AlertTriangle size={12} aria-hidden />
               {m}
             </Chip>
           ))}

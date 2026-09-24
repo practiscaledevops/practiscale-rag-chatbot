@@ -42,7 +42,7 @@ export function Markdown({ content }: { content: string }) {
   const blocks = splitBlocks(content);
 
   return (
-    <div className="space-y-3 leading-relaxed">
+    <div className="space-y-3 leading-6">
       {blocks.map((text, i) => (
         <MarkdownBlock key={i} text={text} citeKey={citeKey} />
       ))}
@@ -119,13 +119,15 @@ function renderContent(content: string, citeMap: Map<string, number>): ReactNode
   return blocks;
 }
 
+// Sized against a 14px / 24px answer body: headings step up gently, never
+// shouting over the text they introduce.
 const HEADING_CLS: Record<number, string> = {
-  1: "mt-1 text-lg font-semibold text-foreground",
-  2: "mt-1 text-base font-semibold text-foreground",
-  3: "text-[15px] font-semibold text-foreground",
-  4: "text-sm font-semibold text-foreground/90",
-  5: "text-sm font-semibold text-foreground/80",
-  6: "text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+  1: "mt-1 text-[15px] font-semibold leading-6 tracking-tight text-foreground",
+  2: "mt-1 text-[15px] font-semibold leading-6 text-foreground",
+  3: "text-sm font-semibold leading-6 text-foreground",
+  4: "text-sm font-semibold leading-6 text-foreground/90",
+  5: "text-[13px] font-semibold leading-5 text-foreground/80",
+  6: "text-xs font-semibold uppercase leading-5 tracking-wide text-muted-foreground",
 };
 
 /** Parse a non-code chunk into headings, lists, tables, quotes, rules, paragraphs. */
@@ -190,11 +192,11 @@ function renderTextBlocks(
       const rawRows = rows.map((r) => header.map((_, ci) => (r[ci] ?? "").trim()));
       const tableNode = (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-[13px] leading-5">
             <thead>
               <tr className="border-b border-border">
                 {header.map((c, idx) => (
-                  <th key={idx} className="px-2.5 py-1.5 text-left font-semibold text-foreground">
+                  <th key={idx} className="px-2.5 py-2 text-left text-xs font-medium text-muted-foreground first:pl-0 last:pr-0">
                     {renderInline(c, `${key}-h${idx}`, citeMap)}
                   </th>
                 ))}
@@ -204,7 +206,7 @@ function renderTextBlocks(
               {rows.map((r, ri) => (
                 <tr key={ri} className="border-b border-border/60">
                   {header.map((_, ci) => (
-                    <td key={ci} className="px-2.5 py-1.5 align-top text-foreground/90">
+                    <td key={ci} className="px-2.5 py-2 align-top text-foreground/90 first:pl-0 last:pr-0">
                       {renderInline(r[ci] ?? "", `${key}-${ri}-${ci}`, citeMap)}
                     </td>
                   ))}
@@ -243,7 +245,7 @@ function renderTextBlocks(
                   <span
                     aria-hidden
                     className={cn(
-                      "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px]",
+                      "mt-1 grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px]",
                       checked
                         ? "border-accent bg-accent-soft text-accent-strong"
                         : "border-border text-transparent"
@@ -432,7 +434,7 @@ function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
   return (
     <sup className="mx-0.5">
       <span
-        className="inline-flex items-center rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold text-accent-strong ring-1 ring-inset ring-accent/20"
+        className="inline-flex h-4 items-center rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold leading-none text-accent-strong ring-1 ring-inset ring-accent/20"
         title={`Source ${id}`}
         aria-label={`Source ${ordinal ? `${ordinal}` : id}`}
       >
@@ -446,13 +448,13 @@ function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
 function CodeBlock({ lang, code }: { lang?: string; code: string }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface-muted">
-      <div className="flex items-center justify-between border-b border-border/70 px-3 py-1">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex h-8 items-center justify-between border-b border-border/70 pl-3 pr-1">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {lang || "code"}
         </span>
         <CopyCodeButton code={code} />
       </div>
-      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-relaxed">
+      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-5">
         <code>{code}</code>
       </pre>
     </div>

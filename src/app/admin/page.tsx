@@ -88,12 +88,12 @@ export default function AdminOverviewPage() {
   }, [load]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Overview</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h2 className="text-xl font-semibold tracking-tight">Overview</h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Workspace activity over the last {data?.range.days ?? 30} days.
           </p>
         </div>
@@ -103,6 +103,7 @@ export default function AdminOverviewPage() {
           size="sm"
           onClick={() => void load()}
           disabled={loading}
+          className="h-8 text-[13px]"
         >
           <RefreshCw size={14} className={cn(loading && "animate-spin")} aria-hidden />
           Refresh
@@ -112,9 +113,9 @@ export default function AdminOverviewPage() {
       {error ? (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
+          className="flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/10 p-4 text-[13px] text-danger"
         >
-          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden />
           <div>
             <p className="font-medium">Couldn&apos;t load the overview</p>
             <p className="mt-0.5 text-danger/80">{error}</p>
@@ -123,7 +124,7 @@ export default function AdminOverviewPage() {
       ) : (
         <>
           {/* Summary cards */}
-          <section aria-label="Summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <section aria-label="Summary" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard
               icon={Users}
               label="Total users"
@@ -196,23 +197,23 @@ function StatCard({
   title?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft">
       <div className="flex items-center gap-2.5 text-muted-foreground">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Icon size={16} aria-hidden />
         </span>
-        <span className="text-sm font-medium">{label}</span>
+        <span className="truncate text-[13px] font-medium">{label}</span>
       </div>
-      <div className="mt-4">
+      <div className="mt-3">
         {value === null ? (
-          <div className="h-8 w-24 animate-pulse rounded-lg bg-surface-muted" aria-hidden />
+          <div className="h-7 w-24 animate-pulse rounded-lg bg-surface-muted" aria-hidden />
         ) : (
-          <p className="text-2xl font-semibold tabular-nums tracking-tight" title={title}>
+          <p className="text-[22px] font-semibold leading-7 tabular-nums tracking-tight" title={title}>
             {value}
           </p>
         )}
         {hint && !(value === null) && (
-          <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
         )}
       </div>
     </div>
@@ -232,39 +233,39 @@ function TopModels({
       aria-label="Top models"
       className="overflow-hidden rounded-2xl border border-border bg-surface shadow-soft"
     >
-      <div className="border-b border-border px-5 py-4">
-        <h3 className="text-base font-semibold">Top models (30d)</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">By token volume.</p>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <h3 className="text-sm font-semibold">Top models (30d)</h3>
+        <p className="shrink-0 text-xs text-muted-foreground">By token volume</p>
       </div>
 
       {loading ? (
         <div className="divide-y divide-border">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center justify-between gap-4 px-5 py-3.5">
+            <div key={i} className="flex items-center justify-between gap-4 px-4 py-2.5">
               <div className="h-4 w-40 animate-pulse rounded-full bg-surface-muted" aria-hidden />
               <div className="h-4 w-16 animate-pulse rounded-full bg-surface-muted" aria-hidden />
             </div>
           ))}
         </div>
       ) : models.length === 0 ? (
-        <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+        <p className="px-4 py-5 text-center text-[13px] text-muted-foreground">
           No usage recorded in this window yet.
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="text-left text-xs font-medium text-muted-foreground">
-                <th scope="col" className="px-5 py-2.5 font-medium">
+                <th scope="col" className="px-4 py-2 font-medium">
                   Model
                 </th>
-                <th scope="col" className="px-5 py-2.5 text-right font-medium">
+                <th scope="col" className="px-4 py-2 text-right font-medium">
                   Tokens
                 </th>
-                <th scope="col" className="hidden px-5 py-2.5 text-right font-medium sm:table-cell">
+                <th scope="col" className="hidden px-4 py-2 text-right font-medium sm:table-cell">
                   Calls
                 </th>
-                <th scope="col" className="px-5 py-2.5 text-right font-medium">
+                <th scope="col" className="px-4 py-2 text-right font-medium">
                   Est. cost
                 </th>
               </tr>
@@ -275,24 +276,24 @@ function TopModels({
                   key={m.model}
                   className="border-t border-border transition-colors hover:bg-surface-muted/60"
                 >
-                  <td className="px-5 py-3">
+                  <td className="px-4 py-2">
                     <span className="font-medium">{m.model}</span>
                     {m.provider && (
-                      <span className="ml-2 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                      <span className="ml-1.5 rounded-full bg-surface-muted px-1.5 py-px text-[11px] text-muted-foreground">
                         {m.provider}
                       </span>
                     )}
                   </td>
                   <td
-                    className="px-5 py-3 text-right tabular-nums"
+                    className="px-4 py-2 text-right tabular-nums"
                     title={`${numberFmt.format(m.tokens)} tokens`}
                   >
                     {compact(m.tokens)}
                   </td>
-                  <td className="hidden px-5 py-3 text-right tabular-nums text-muted-foreground sm:table-cell">
+                  <td className="hidden px-4 py-2 text-right tabular-nums text-muted-foreground sm:table-cell">
                     {numberFmt.format(m.events)}
                   </td>
-                  <td className="px-5 py-3 text-right tabular-nums">
+                  <td className="px-4 py-2 text-right tabular-nums">
                     {currencyFmt.format(m.costUsd)}
                   </td>
                 </tr>

@@ -16,7 +16,6 @@ import {
   LogOut,
   MessageSquare,
   MoreHorizontal,
-  MoreVertical,
   PanelLeftClose,
   Pencil,
   Pin,
@@ -253,32 +252,32 @@ export function Sidebar({
     <aside
       aria-label="Sidebar"
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex h-full w-[18.5rem] shrink-0 flex-col bg-sidebar text-sidebar-foreground",
+        "fixed inset-y-0 left-0 z-40 flex h-full w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground",
         "-translate-x-full transition-[transform,width,opacity] duration-200 ease-out",
         mobileOpen && "translate-x-0 shadow-soft-lg",
         "lg:static lg:z-auto lg:translate-x-0",
-        collapsed ? "lg:w-0 lg:min-w-0 lg:overflow-hidden lg:opacity-0" : "lg:w-[18.5rem]",
+        collapsed ? "lg:w-0 lg:min-w-0 lg:overflow-hidden lg:opacity-0" : "lg:w-64",
         className
       )}
     >
-      {/* Brand + menu */}
-      <div className="flex h-[76px] shrink-0 items-center justify-between pl-6 pr-4">
+      {/* Brand + menu — the logo sits flush with the rows' left edge (x=14, like
+          the profile avatar), the menu button in the rows' trailing-action
+          column (ending at x=240). */}
+      <div className="flex h-14 shrink-0 items-center justify-between pl-3.5 pr-4">
         <Link
           href="/"
-          className="flex items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Logo variant="dark" className="h-[22px]" />
+          <Logo variant="dark" className="h-[18px]" />
         </Link>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center">
           <RailMenu
             label="More"
-            icon={<MoreHorizontal size={20} />}
+            icon={<MoreHorizontal size={16} />}
             items={[
               { label: "Approvals", icon: ClipboardCheck, onSelect: () => router.push("/approvals") },
               { label: "Account", icon: User, onSelect: () => router.push("/account") },
-              ...(isAdmin
-                ? [{ label: "Admin", icon: ShieldCheck, onSelect: () => router.push("/admin") }]
-                : []),
+              ...(isAdmin ? [{ label: "Admin", icon: ShieldCheck, onSelect: () => router.push("/admin") }] : []),
               ...(onCollapse
                 ? [{ label: "Collapse sidebar", icon: PanelLeftClose, onSelect: onCollapse, desktopOnly: true }]
                 : []),
@@ -289,34 +288,36 @@ export function Sidebar({
             type="button"
             onClick={onCloseMobile}
             aria-label="Close sidebar"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+            className={cn(TRAILING_BTN, "lg:hidden")}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
       </div>
 
       {/* The rounded panel */}
-      <div className="mx-3 flex min-h-0 flex-1 flex-col rounded-[22px] bg-sidebar-panel">
-        <div className="scroll-dark flex min-h-0 flex-1 flex-col overflow-y-auto p-2.5">
-          <div className="space-y-1.5">
-            <RailButton icon={Plus} label="New Chat" onClick={onNewChat} />
-            <label className="group flex h-11 cursor-text items-center gap-3 rounded-xl bg-sidebar-item px-3.5 text-[15px] transition-colors focus-within:bg-sidebar-item-hover focus-within:ring-1 focus-within:ring-inset focus-within:ring-white/15 hover:bg-sidebar-item-hover">
-              <Search size={18} className="shrink-0 text-sidebar-muted group-focus-within:text-sidebar-foreground" aria-hidden />
+      <div className="mx-2 flex min-h-0 flex-1 flex-col rounded-2xl bg-sidebar-panel">
+        <div className="scrollbar-none fade-bottom flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5 pb-5">
+          <div className="space-y-0.5">
+            <RailButton icon={Plus} label="New chat" onClick={onNewChat} />
+            <label className={cn(ROW, ROW_IDLE, "cursor-text focus-within:bg-sidebar-item-hover")}>
+              <span className={ICON_BOX}>
+                <Search size={16} strokeWidth={1.75} aria-hidden />
+              </span>
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search"
+                placeholder="Search chats"
                 aria-label="Search chats"
-                className="min-w-0 flex-1 bg-transparent text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/85 [&::-webkit-search-cancel-button]:hidden"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/70 [&::-webkit-search-cancel-button]:hidden"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery("")}
                   aria-label="Clear search"
-                  className="rounded-full p-0.5 text-sidebar-muted hover:text-sidebar-foreground"
+                  className="-mr-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-sidebar-muted hover:bg-white/10 hover:text-sidebar-foreground"
                 >
                   <X size={14} />
                 </button>
@@ -325,11 +326,13 @@ export function Sidebar({
           </div>
 
           {searching ? (
-            <section className="mt-4" aria-label="Search results">
-              <p className="px-2 pb-1.5 text-xs text-sidebar-muted">
-                {searchResults.length ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}` : "No chats match your search."}
+            <section className="mt-3" aria-label="Search results">
+              <p className={GROUP_LABEL}>
+                {searchResults.length
+                  ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`
+                  : "No chats match your search."}
               </p>
-              <ul className="space-y-1.5">
+              <ul className="space-y-0.5">
                 {searchResults.map(({ conversation, snippet }) => (
                   <ConversationRow
                     key={conversation.id}
@@ -344,7 +347,7 @@ export function Sidebar({
           ) : (
             <>
               {/* Main nav */}
-              <nav className="mt-4 space-y-1.5" aria-label="Main">
+              <nav className="mt-3 space-y-0.5" aria-label="Main">
                 {nav.map((n) => (
                   <RailLink
                     key={n.href}
@@ -357,7 +360,7 @@ export function Sidebar({
               </nav>
 
               {/* Projects (folders) */}
-              <section className="mt-5" aria-labelledby="rail-projects">
+              <section className="mt-4" aria-labelledby="rail-projects">
                 <SectionHeader
                   id="rail-projects"
                   label="Projects"
@@ -372,12 +375,12 @@ export function Sidebar({
                       <button
                         type="button"
                         onClick={onNewProject}
-                        className="mt-1 w-full rounded-xl border border-dashed border-white/15 px-3 py-2.5 text-left text-sm text-sidebar-muted transition-colors hover:border-white/25 hover:text-sidebar-foreground"
+                        className="mt-0.5 w-full rounded-lg border border-dashed border-white/15 px-3 py-2 text-left text-xs leading-snug text-sidebar-muted transition-colors hover:border-white/25 hover:text-sidebar-foreground"
                       >
                         Create a project to group chats, files and instructions
                       </button>
                     ) : (
-                      <ul className="mt-1 space-y-1.5">
+                      <ul className="space-y-0.5">
                         {visibleProjects.map((p) => (
                           <ProjectRow
                             key={p.id}
@@ -395,9 +398,11 @@ export function Sidebar({
                       <button
                         type="button"
                         onClick={() => setShowAllProjects((s) => !s)}
-                        className="mt-2 flex items-center gap-2 px-2 py-1 text-sm text-sidebar-muted transition-colors hover:text-sidebar-foreground"
+                        className={cn(ROW, "h-7 text-xs text-sidebar-muted hover:text-sidebar-foreground")}
                       >
-                        <Plus size={15} className={cn("transition-transform", showAllProjects && "rotate-45")} aria-hidden />
+                        <span className={ICON_BOX}>
+                          <Plus size={14} className={cn("transition-transform", showAllProjects && "rotate-45")} aria-hidden />
+                        </span>
                         {showAllProjects ? "Show less" : `Show ${hiddenProjects} more`}
                       </button>
                     )}
@@ -406,7 +411,7 @@ export function Sidebar({
               </section>
 
               {/* Chats */}
-              <section className="mt-5" aria-labelledby="rail-chats">
+              <section className="mt-4" aria-labelledby="rail-chats">
                 <SectionHeader
                   id="rail-chats"
                   label="Chats"
@@ -428,19 +433,14 @@ export function Sidebar({
                 />
                 {chatsOpen &&
                   (active.length === 0 ? (
-                    <p className="px-2 pt-1 text-sm text-sidebar-muted">Your conversations will appear here.</p>
+                    <p className="py-1 pl-[38px] pr-3 text-xs text-sidebar-muted">Your chats will appear here.</p>
                   ) : (
                     groups.map((group) => (
                       <div key={group.label}>
-                        <p className="px-2 pb-1.5 pt-3 text-[13px] text-sidebar-muted">{group.label}</p>
-                        <ul className="space-y-1.5">
+                        <p className={GROUP_LABEL}>{group.label}</p>
+                        <ul className="space-y-0.5">
                           {group.items.map((c) => (
-                            <ConversationRow
-                              key={c.id}
-                              conversation={c}
-                              active={c.id === activeConversationId}
-                              {...rowProps}
-                            />
+                            <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
                           ))}
                         </ul>
                       </div>
@@ -448,15 +448,10 @@ export function Sidebar({
                   ))}
                 {chatsOpen && archivedOpen && archivedList.length > 0 && (
                   <div>
-                    <p className="px-2 pb-1.5 pt-3 text-[13px] text-sidebar-muted">Archived</p>
-                    <ul className="space-y-1.5">
+                    <p className={GROUP_LABEL}>Archived</p>
+                    <ul className="space-y-0.5">
                       {archivedList.map((c) => (
-                        <ConversationRow
-                          key={c.id}
-                          conversation={c}
-                          active={c.id === activeConversationId}
-                          {...rowProps}
-                        />
+                        <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
                       ))}
                     </ul>
                   </div>
@@ -468,28 +463,24 @@ export function Sidebar({
       </div>
 
       {/* Profile card */}
-      <div className="m-3 flex shrink-0 items-center gap-3 rounded-2xl bg-sidebar-panel p-2.5 pr-2">
+      {/* Avatar flush with the rows' left edge (x=14) so the name starts on the
+          label column (x=52); sign-out ends on the trailing column (x=240). */}
+      <div className="m-2 flex shrink-0 items-center gap-2.5 rounded-xl bg-sidebar-panel py-2 pl-1.5 pr-2">
         <Link
           href="/account"
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title="Account"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-tea text-sm font-semibold text-tea-foreground">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-tea text-[11px] font-semibold text-tea-foreground">
             {initials(fullName, email)}
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium text-sidebar-foreground">{fullName || "Account"}</span>
-            {email && <span className="block truncate text-xs text-sidebar-muted">{email}</span>}
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate text-[13px] font-medium text-sidebar-foreground">{fullName || "Account"}</span>
+            {email && <span className="block truncate text-[11px] text-sidebar-muted">{email}</span>}
           </span>
         </Link>
-        <button
-          type="button"
-          onClick={signOut}
-          aria-label="Sign out"
-          title="Sign out"
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <LogOut size={17} />
+        <button type="button" onClick={signOut} aria-label="Sign out" title="Sign out" className={TRAILING_BTN}>
+          <LogOut size={16} />
         </button>
       </div>
     </aside>
@@ -497,16 +488,29 @@ export function Sidebar({
 }
 
 // ---------------------------------------------------------------------------
-// Rail pieces
+// Rail grid. Every row: 32px tall, 12px left inset, a fixed 16px icon box, a
+// 10px gap, then the label — so icons and labels line up in two exact columns
+// across nav rows, folders, chats, section headers, group labels and "Show
+// more". Trailing actions (+ / •••, 16px glyphs) share one 28px column on the
+// right, ending at x=240.
 // ---------------------------------------------------------------------------
 
-const rowBase =
-  "flex h-11 w-full items-center gap-3 rounded-xl px-3.5 text-left text-[15px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const ROW =
+  "flex h-8 w-full items-center gap-2.5 rounded-lg pl-3 pr-2 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+const ROW_IDLE = "bg-sidebar-item/70 text-sidebar-foreground/90 hover:bg-sidebar-item-hover hover:text-white";
+const ROW_ACTIVE = "bg-sidebar-item-hover text-white shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)]";
+const ICON_BOX = "flex w-4 shrink-0 items-center justify-center text-sidebar-foreground/70";
+/** Group labels start on the label column (12px inset + 16px icon box + 10px gap). */
+const GROUP_LABEL = "pb-1 pl-[38px] pr-3 pt-2.5 text-[11px] font-medium text-sidebar-muted/80";
+const TRAILING_BTN =
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function RailButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick?: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cn(rowBase, "bg-sidebar-item text-sidebar-foreground hover:bg-sidebar-item-hover")}>
-      <Icon size={18} className="shrink-0 text-sidebar-foreground/80" aria-hidden />
+    <button type="button" onClick={onClick} className={cn(ROW, ROW_IDLE, "font-medium")}>
+      <span className={ICON_BOX}>
+        <Icon size={16} strokeWidth={1.75} aria-hidden />
+      </span>
       {label}
     </button>
   );
@@ -514,17 +518,10 @@ function RailButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: s
 
 function RailLink({ href, icon: Icon, label, active }: { href: string; icon: LucideIcon; label: string; active: boolean }) {
   return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        rowBase,
-        active
-          ? "bg-sidebar-item-hover text-white ring-1 ring-inset ring-white/10"
-          : "bg-sidebar-item text-sidebar-foreground hover:bg-sidebar-item-hover"
-      )}
-    >
-      <Icon size={18} className={cn("shrink-0", active ? "text-accent" : "text-sidebar-foreground/80")} aria-hidden />
+    <Link href={href} aria-current={active ? "page" : undefined} className={cn(ROW, active ? ROW_ACTIVE : ROW_IDLE)}>
+      <span className={cn(ICON_BOX, active && "text-accent")}>
+        <Icon size={16} strokeWidth={1.75} aria-hidden />
+      </span>
       {label}
     </Link>
   );
@@ -548,30 +545,26 @@ function SectionHeader({
   menu?: MenuItem[];
 }) {
   return (
-    <div className="flex items-center justify-between pl-1 pr-0.5">
+    <div className="flex h-7 items-center pr-0.5">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-lg px-1 py-1 text-[15px] text-sidebar-muted transition-colors hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md pl-3 text-left text-xs font-medium text-sidebar-muted transition-colors hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ChevronDown size={16} className={cn("transition-transform", !open && "-rotate-90")} aria-hidden />
+        <span className="flex w-4 shrink-0 items-center justify-center">
+          <ChevronDown size={14} className={cn("transition-transform", !open && "-rotate-90")} aria-hidden />
+        </span>
         <span id={id}>{label}</span>
       </button>
-      <div className="flex items-center">
-        {onAdd && (
-          <button
-            type="button"
-            onClick={onAdd}
-            aria-label={addLabel}
-            title={addLabel}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Plus size={17} />
-          </button>
-        )}
-        {menu && menu.length > 0 && <RailMenu label={`${label} options`} icon={<MoreVertical size={16} />} items={menu} />}
-      </div>
+      {/* The optional menu renders first so + always holds the rightmost
+          trailing column, aligned across sections and with the rows' •••. */}
+      {menu && menu.length > 0 && <RailMenu label={`${label} options`} icon={<MoreHorizontal size={16} />} items={menu} />}
+      {onAdd && (
+        <button type="button" onClick={onAdd} aria-label={addLabel} title={addLabel} className={TRAILING_BTN}>
+          <Plus size={16} />
+        </button>
+      )}
     </div>
   );
 }
@@ -599,36 +592,42 @@ function ConversationRow({
     { label: c.pinned ? "Unpin" : "Pin", icon: c.pinned ? PinOff : Pin, onSelect: () => onPin?.(c.id, !c.pinned) },
     { label: "Rename", icon: Pencil, onSelect: () => onRename?.(c.id) },
     ...(onArchive
-      ? [{ label: c.archived ? "Unarchive" : "Archive", icon: c.archived ? ArchiveRestore : Archive, onSelect: () => onArchive(c.id, !c.archived) }]
+      ? [
+          {
+            label: c.archived ? "Unarchive" : "Archive",
+            icon: c.archived ? ArchiveRestore : Archive,
+            onSelect: () => onArchive(c.id, !c.archived),
+          },
+        ]
       : []),
     { label: "Delete", icon: Trash2, onSelect: () => onDelete?.(c.id), danger: true },
   ];
   return (
-    <li
-      className={cn(
-        "group relative flex items-center rounded-xl transition-colors",
-        active ? "bg-sidebar-item-hover ring-1 ring-inset ring-white/10" : "bg-sidebar-item hover:bg-sidebar-item-hover"
-      )}
-    >
+    <li className={cn("group relative flex items-center rounded-lg transition-colors", active ? ROW_ACTIVE : ROW_IDLE)}>
       <button
         type="button"
         onClick={() => onSelect?.(c.id)}
         aria-current={active ? "page" : undefined}
-        className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3 rounded-xl py-2 pl-3.5 pr-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {c.pinned ? (
-          <Pin size={17} className="shrink-0 text-accent" aria-hidden />
-        ) : (
-          <MessageSquare size={17} className={cn("shrink-0", active ? "text-accent" : "text-sidebar-foreground/75")} aria-hidden />
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-3 pr-1 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          snippet ? "py-1.5" : "h-8"
         )}
+      >
+        <span className={cn(ICON_BOX, snippet && "self-start pt-0.5", (active || c.pinned) && "text-accent")}>
+          {c.pinned ? <Pin size={16} strokeWidth={1.75} aria-hidden /> : <MessageSquare size={16} strokeWidth={1.75} aria-hidden />}
+        </span>
         <span className="min-w-0 flex-1">
-          <span className={cn("fade-truncate block text-[15px]", active ? "text-white" : "text-sidebar-foreground")}>
-            {c.title || "Untitled"}
-          </span>
-          {snippet && <span className="block truncate text-xs text-sidebar-muted">{snippet}</span>}
+          <span className="fade-truncate block">{c.title || "Untitled"}</span>
+          {snippet && <span className="mt-0.5 block truncate text-[11px] text-sidebar-muted">{snippet}</span>}
         </span>
       </button>
-      <RailMenu label={`Options for ${c.title || "chat"}`} icon={<MoreHorizontal size={17} />} items={items} className="mr-1.5" />
+      <RailMenu
+        label={`Options for ${c.title || "chat"}`}
+        icon={<MoreHorizontal size={16} />}
+        items={items}
+        className="mr-0.5 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+        activeClassName="opacity-100"
+      />
     </li>
   );
 }
@@ -653,24 +652,28 @@ function ProjectRow({
     ...(onDelete ? [{ label: "Delete", icon: Trash2, onSelect: () => onDelete(project.id), danger: true }] : []),
   ];
   return (
-    <li
-      className={cn(
-        "group relative flex items-center overflow-hidden rounded-xl transition-colors",
-        active ? "bg-sidebar-item-hover ring-1 ring-inset ring-white/10" : "bg-sidebar-item hover:bg-sidebar-item-hover"
-      )}
-    >
-      <span className={cn("absolute inset-y-0 left-0 w-[3px]", bar)} aria-hidden />
+    <li className={cn("group relative flex items-center overflow-hidden rounded-lg transition-colors", active ? ROW_ACTIVE : ROW_IDLE)}>
+      {/* Folder color bar — absolutely placed so it never shifts the grid. */}
+      <span className={cn("absolute inset-y-1.5 left-0 w-[3px] rounded-r-full", bar)} aria-hidden />
       <button
         type="button"
         onClick={() => onSelect?.(project.id)}
         aria-current={active ? "page" : undefined}
-        className="flex h-11 min-w-0 flex-1 items-center gap-3 pl-4 pr-1 text-left text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex h-8 min-w-0 flex-1 items-center gap-2.5 pl-3 pr-1 text-left text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        <Folder size={18} className="shrink-0 text-sidebar-foreground/80" aria-hidden />
-        <span className={cn("truncate", active ? "text-white" : "text-sidebar-foreground")}>{project.name}</span>
+        <span className={cn(ICON_BOX, active && "text-accent")}>
+          <Folder size={16} strokeWidth={1.75} aria-hidden />
+        </span>
+        <span className="truncate">{project.name}</span>
       </button>
       {items.length > 0 && (
-        <RailMenu label={`Options for ${project.name}`} icon={<MoreHorizontal size={17} />} items={items} className="mr-1.5" />
+        <RailMenu
+          label={`Options for ${project.name}`}
+          icon={<MoreHorizontal size={16} />}
+          items={items}
+          className="mr-0.5 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+          activeClassName="opacity-100"
+        />
       )}
     </li>
   );
@@ -690,16 +693,21 @@ interface MenuItem {
   desktopOnly?: boolean;
 }
 
+const MENU_WIDTH = 188;
+
 function RailMenu({
   label,
   icon,
   items,
   className,
+  activeClassName,
 }: {
   label: string;
   icon: React.ReactNode;
   items: MenuItem[];
   className?: string;
+  /** Classes applied while the menu is open (e.g. keep a hover-only trigger visible). */
+  activeClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -711,11 +719,10 @@ function RailMenu({
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const width = 200;
-    const height = items.length * 40 + 12;
-    const left = Math.min(window.innerWidth - width - 8, Math.max(8, r.right - width));
-    const below = r.bottom + 6;
-    const top = below + height > window.innerHeight - 8 ? Math.max(8, r.top - height - 6) : below;
+    const height = items.length * 32 + 10;
+    const left = Math.min(window.innerWidth - MENU_WIDTH - 8, Math.max(8, r.right - MENU_WIDTH));
+    const below = r.bottom + 4;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, r.top - height - 4) : below;
     setPos({ top, left });
   }, [items.length]);
 
@@ -772,11 +779,7 @@ function RailMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className={cn(
-          "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sidebar-muted transition-colors hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          open && "bg-white/10 text-sidebar-foreground",
-          className
-        )}
+        className={cn(TRAILING_BTN, className, open && cn("bg-white/10 text-sidebar-foreground", activeClassName))}
       >
         {icon}
       </button>
@@ -788,8 +791,8 @@ function RailMenu({
             role="menu"
             aria-label={label}
             onKeyDown={onMenuKeyDown}
-            style={{ top: pos.top, left: pos.left, width: 200 }}
-            className="fixed z-[60] rounded-2xl border border-white/10 bg-[#232323] p-1.5 text-sidebar-foreground shadow-[0_18px_44px_-10px_rgb(0_0_0/0.6)] motion-safe:animate-fadeUp"
+            style={{ top: pos.top, left: pos.left, width: MENU_WIDTH }}
+            className="fixed z-[60] rounded-xl border border-white/10 bg-[#232323] p-1 text-sidebar-foreground shadow-[0_16px_40px_-10px_rgb(0_0_0/0.6)] motion-safe:animate-fadeUp"
           >
             {items.map((it, i) => (
               <button
@@ -804,12 +807,12 @@ function RailMenu({
                   it.onSelect();
                 }}
                 className={cn(
-                  "flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:bg-white/[0.08] hover:bg-white/[0.08]",
+                  "flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors hover:bg-white/[0.08] focus-visible:bg-white/[0.08] focus-visible:outline-none",
                   it.danger ? "text-[#ff8f86]" : "text-sidebar-foreground",
                   it.desktopOnly && "hidden lg:flex"
                 )}
               >
-                <it.icon size={15} className="shrink-0 opacity-85" aria-hidden />
+                <it.icon size={14} className="shrink-0 opacity-85" aria-hidden />
                 {it.label}
               </button>
             ))}

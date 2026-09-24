@@ -98,12 +98,12 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         aria-labelledby={titleId}
         onMouseDown={(e) => e.stopPropagation()}
         className={cn(
-          "w-full max-w-md rounded-3xl border border-border bg-surface p-6 text-foreground shadow-soft-lg motion-safe:animate-fadeUp",
+          "w-full max-w-md rounded-2xl border border-border bg-surface p-5 text-foreground shadow-soft-lg motion-safe:animate-fadeUp",
           className
         )}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 id={titleId} className="text-base font-semibold tracking-tight">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 id={titleId} className="text-[15px] font-semibold tracking-tight">
             {title}
           </h2>
           <IconButton aria-label="Close dialog" size="sm" onClick={onClose}>

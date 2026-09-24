@@ -81,16 +81,18 @@ interface TriggerStyle {
   align?: "left" | "right";
 }
 
+// Standard density: "sm" triggers are 28px (toolbar above the in-thread
+// composer), "md" triggers are 32px (new-chat composer card).
 function triggerClass(size: Size, iconOnly: boolean, tone: Tone): string {
   return cn(
     "inline-flex shrink-0 items-center justify-center rounded-full font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     iconOnly
       ? size === "sm"
-        ? "h-8 w-8"
-        : "h-9 w-9"
+        ? "h-7 w-7"
+        : "h-8 w-8"
       : size === "sm"
-        ? "h-8 gap-1.5 px-2.5 text-xs"
-        : "h-9 gap-1.5 px-3 text-[13px]",
+        ? "h-7 gap-1.5 px-2.5 text-xs"
+        : "h-8 gap-1.5 px-2.5 text-[13px]",
     tone === "accent"
       ? "border border-accent/25 bg-accent-soft text-accent-strong hover:bg-accent-soft/80"
       : tone === "private"
@@ -101,10 +103,21 @@ function triggerClass(size: Size, iconOnly: boolean, tone: Tone): string {
   );
 }
 
+/** Trigger icon size: 16px on a standalone 32px icon button, 14px inside chips. */
+function triggerIconSize(size: Size, iconOnly: boolean): number {
+  return iconOnly && size === "md" ? 16 : 14;
+}
+
 const MENU =
-  "absolute bottom-full z-40 mb-2 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 text-foreground shadow-soft-lg motion-safe:animate-fadeUp";
+  "absolute bottom-full z-40 mb-2 overflow-y-auto rounded-xl border border-border bg-surface p-1 text-foreground shadow-soft-lg motion-safe:animate-fadeUp";
+// Two-line rows (label + hint); single-line rows add ITEM_SINGLE.
 const ITEM =
-  "flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40";
+  "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40";
+const ITEM_SINGLE = "h-8 items-center py-0";
+const ITEM_LABEL = "block text-[13px] font-medium leading-5";
+const ITEM_HINT = "block text-xs leading-4 text-muted-foreground";
+// Leading/trailing icons in two-line rows sit on the label's 20px line.
+const ITEM_ICON = "mt-[3px] shrink-0";
 const SECTION = "px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground";
 
 /** Shared open/close + outside-click + focus plumbing for the pickers. */
@@ -227,11 +240,11 @@ export function SourceScopePicker({
         className={triggerClass(size, iconOnly, narrowed ? "accent" : "neutral")}
         title="Choose which knowledge to search"
       >
-        <Database size={size === "sm" ? 14 : 16} aria-hidden />
+        <Database size={triggerIconSize(size, iconOnly)} className="shrink-0" aria-hidden />
         {!iconOnly && (
           <>
             <span className="max-w-[9rem] truncate">{label}</span>
-            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown size={12} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
           </>
         )}
       </button>
@@ -253,14 +266,18 @@ export function SourceScopePicker({
             aria-checked={value.length === 0}
             tabIndex={activeIndex === 0 ? 0 : -1}
             onClick={() => onChange([])}
-            className={cn(ITEM, "items-center", value.length === 0 ? "bg-accent-soft" : "hover:bg-surface-muted")}
+            className={cn(ITEM, ITEM_SINGLE, value.length === 0 ? "bg-accent-soft" : "hover:bg-surface-muted")}
           >
-            <Database size={15} className={cn("shrink-0", value.length === 0 ? "text-accent" : "text-muted-foreground")} aria-hidden />
-            <span className="flex-1 text-sm font-medium">All company knowledge</span>
-            {value.length === 0 && <Check size={15} className="shrink-0 text-accent" aria-hidden />}
+            {/* Same 14px leading indicator box as the collection checkboxes, so
+                both row types read [indicator][icon][label] and labels align. */}
+            <span className="grid h-3.5 w-3.5 shrink-0 place-items-center" aria-hidden>
+              {value.length === 0 && <Check size={12} className="text-accent" />}
+            </span>
+            <Database size={14} className={cn("shrink-0", value.length === 0 ? "text-accent" : "text-muted-foreground")} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">All company knowledge</span>
           </button>
 
-          <div className="my-1 border-t border-border" />
+          <div className="mx-1 my-1 border-t border-border" />
 
           {collections.map((c, i) => {
             const idx = i + 1;
@@ -276,19 +293,19 @@ export function SourceScopePicker({
                 aria-checked={checked}
                 tabIndex={activeIndex === idx ? 0 : -1}
                 onClick={() => toggle(c.id)}
-                className={cn(ITEM, "items-center", checked ? "bg-accent-soft" : "hover:bg-surface-muted")}
+                className={cn(ITEM, ITEM_SINGLE, checked ? "bg-accent-soft" : "hover:bg-surface-muted")}
               >
                 <span
                   className={cn(
-                    "grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border",
+                    "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border",
                     checked ? "border-accent bg-accent text-accent-foreground" : "border-border"
                   )}
                   aria-hidden
                 >
-                  {checked && <Check size={12} />}
+                  {checked && <Check size={10} strokeWidth={3} />}
                 </span>
                 <Layers size={14} className="shrink-0 text-muted-foreground" aria-hidden />
-                <span className="flex-1 truncate text-sm">{c.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">{c.name}</span>
               </button>
             );
           })}
@@ -361,11 +378,11 @@ export function ModelQualityPicker({
         onClick={() => setOpen((o) => !o)}
         className={triggerClass(size, iconOnly, "neutral")}
       >
-        <Cpu size={size === "sm" ? 14 : 16} className={iconOnly ? undefined : "text-accent"} aria-hidden />
+        <Cpu size={triggerIconSize(size, iconOnly)} className={iconOnly ? "shrink-0" : "shrink-0 text-accent"} aria-hidden />
         {!iconOnly && (
           <>
             <span className="max-w-[9rem] truncate">{value.label}</span>
-            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown size={12} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
           </>
         )}
       </button>
@@ -405,12 +422,12 @@ export function ModelQualityPicker({
                   className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium">{o.label}</span>
+                    <span className={ITEM_LABEL}>{o.label}</span>
                     {(o.hint || o.reason) && (
-                      <span className="block text-xs text-muted-foreground">{o.available ? o.hint : o.reason ?? "Unavailable"}</span>
+                      <span className={ITEM_HINT}>{o.available ? o.hint : o.reason ?? "Unavailable"}</span>
                     )}
                   </span>
-                  {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+                  {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
                 </button>
               </React.Fragment>
             );
@@ -474,11 +491,11 @@ export function OutputFormatPicker({
         onClick={() => setOpen((o) => !o)}
         className={triggerClass(size, iconOnly, custom ? "accent" : "neutral")}
       >
-        <LayoutList size={size === "sm" ? 14 : 16} aria-hidden />
+        <LayoutList size={triggerIconSize(size, iconOnly)} className="shrink-0" aria-hidden />
         {!iconOnly && (
           <>
-            <span>{custom ? current.label : "Format"}</span>
-            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+            <span className="whitespace-nowrap">{custom ? current.label : "Format"}</span>
+            <ChevronDown size={12} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
           </>
         )}
       </button>
@@ -509,10 +526,10 @@ export function OutputFormatPicker({
                 className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{o.label}</span>
-                  <span className="block text-xs text-muted-foreground">{o.hint}</span>
+                  <span className={ITEM_LABEL}>{o.label}</span>
+                  <span className={ITEM_HINT}>{o.hint}</span>
                 </span>
-                {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+                {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
               </button>
             );
           })}
@@ -544,8 +561,8 @@ export function DeepResearchToggle({
       title="Thorough, structured, multi-angle analysis on the strongest model"
       className={triggerClass(size, false, on ? "accent" : "neutral")}
     >
-      <Atom size={size === "sm" ? 14 : 16} className={on ? undefined : "text-accent"} aria-hidden />
-      Deep research
+      <Atom size={14} className={on ? "shrink-0" : "shrink-0 text-accent"} aria-hidden />
+      <span className="whitespace-nowrap">Deep research</span>
     </button>
   );
 }
@@ -621,11 +638,11 @@ export function WorkModePicker({
         title="Which expert answers. Auto picks per message."
         className={triggerClass(size, iconOnly, tone)}
       >
-        <CurrentIcon size={size === "sm" ? 14 : 16} className={tone === "neutral" ? "text-accent" : undefined} aria-hidden />
+        <CurrentIcon size={triggerIconSize(size, iconOnly)} className={tone === "neutral" ? "shrink-0 text-accent" : "shrink-0"} aria-hidden />
         {!iconOnly && (
           <>
             <span className="max-w-[10rem] truncate">{current?.label ?? "Mode"}</span>
-            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown size={12} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
           </>
         )}
       </button>
@@ -665,18 +682,18 @@ export function WorkModePicker({
                   className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
                 >
                   <Icon
-                    size={16}
-                    className={cn("mt-0.5 shrink-0", selected || m.id === "auto" ? "text-accent" : "text-muted-foreground")}
+                    size={14}
+                    className={cn(ITEM_ICON, selected || m.id === "auto" ? "text-accent" : "text-muted-foreground")}
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <span className="flex items-center gap-1.5 text-[13px] font-medium leading-5">
                       {m.label}
-                      {m.restricted && <ShieldCheck size={11} className="text-accent" aria-label="Restricted" />}
+                      {m.restricted && <ShieldCheck size={12} className="shrink-0 text-accent" aria-label="Restricted" />}
                     </span>
-                    <span className="block text-xs text-muted-foreground">{m.hint}</span>
+                    <span className={ITEM_HINT}>{m.hint}</span>
                   </span>
-                  {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+                  {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
                 </button>
               </React.Fragment>
             );

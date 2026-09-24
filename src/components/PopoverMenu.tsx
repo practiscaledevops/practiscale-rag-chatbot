@@ -43,7 +43,8 @@ export function PopoverMenu({
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const height = items.length * 38 + 12;
+    // Estimated menu height: 32px rows + p-1 padding + border.
+    const height = items.length * 32 + 10;
     const left = Math.min(window.innerWidth - width - 8, Math.max(8, r.left));
     const below = r.bottom + 6;
     const top = below + height > window.innerHeight - 8 ? Math.max(8, r.top - height - 6) : below;
@@ -118,7 +119,7 @@ export function PopoverMenu({
             aria-label={label}
             onKeyDown={onMenuKeyDown}
             style={{ top: pos.top, left: pos.left, width }}
-            className="fixed z-[60] rounded-2xl border border-border bg-surface p-1.5 text-foreground shadow-soft-lg motion-safe:animate-fadeUp"
+            className="fixed z-[60] rounded-xl border border-border bg-surface p-1 text-foreground shadow-soft-lg motion-safe:animate-fadeUp"
           >
             {items.map((it, i) => (
               <button
@@ -134,13 +135,13 @@ export function PopoverMenu({
                   it.onSelect();
                 }}
                 className={cn(
-                  "flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-sm transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+                  "flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
                   it.danger && "text-danger",
                   it.active && "text-accent-strong"
                 )}
               >
-                <it.icon size={15} className={cn("shrink-0", it.active ? "text-accent" : "text-muted-foreground")} aria-hidden />
-                {it.label}
+                <it.icon size={14} className={cn("shrink-0", it.active ? "text-accent" : "text-muted-foreground")} aria-hidden />
+                <span className="min-w-0 truncate">{it.label}</span>
               </button>
             ))}
           </div>,

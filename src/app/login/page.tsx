@@ -11,11 +11,11 @@ import { cn } from "@/lib/utils";
 
 /** Shared text-field look (pill-soft rounded, green focus). Height set per field. */
 const fieldClass =
-  "w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
+  "w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
 
 /** Inline error callout. */
 const alertClass =
-  "rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger";
+  "rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger";
 
 /**
  * Constrain the post-login redirect to a SAME-ORIGIN path. `redirectedFrom`
@@ -184,16 +184,16 @@ function LoginForm() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 py-10">
-      <div className="w-full max-w-[420px] rounded-3xl border border-border bg-surface p-8 shadow-float">
+      <div className="w-full max-w-[380px] rounded-2xl border border-border bg-surface p-5 shadow-float">
         {/* Dark wordmark on the white card. */}
-        <Logo className="h-6" />
+        <Logo className="mx-auto block h-5" />
 
-        <div className="mt-6 flex flex-col items-center text-center">
-          <BrainOrb size={104} active={pending} />
-          <h1 className="mt-5 text-2xl font-semibold tracking-tight">
+        <div className="mt-5 flex flex-col items-center text-center">
+          <BrainOrb size={88} active={pending} />
+          <h1 className="mt-4 text-xl font-semibold tracking-tight">
             {mfa ? "Two-step verification" : "Welcome back"}
           </h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
+          <p className="mt-1 text-[13px] text-muted-foreground">
             {mfa
               ? "Enter the 6-digit code from your authenticator app."
               : demo
@@ -205,9 +205,9 @@ function LoginForm() {
         {deactivated && !mfa && (
           <p
             role="status"
-            className="mt-6 flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm text-foreground"
+            className="mt-5 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-foreground"
           >
-            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden />
+            <AlertTriangle size={14} className="mt-[3px] shrink-0 text-warning" aria-hidden />
             <span>
               Your account has been deactivated. Contact your workspace admin to regain access.
             </span>
@@ -215,7 +215,7 @@ function LoginForm() {
         )}
 
         {mfa ? (
-          <form onSubmit={onSubmitMfa} className="mt-7 space-y-4" noValidate>
+          <form onSubmit={onSubmitMfa} className="mt-5 space-y-3.5" noValidate>
             <div className="space-y-1.5">
               <label
                 htmlFor="mfa-code"
@@ -233,7 +233,7 @@ function LoginForm() {
                 value={mfaCode}
                 onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123456"
-                className={cn(fieldClass, "h-12 text-center font-mono text-lg tracking-[0.4em]")}
+                className={cn(fieldClass, "h-10 text-center font-mono text-sm tracking-[0.4em]")}
               />
             </div>
 
@@ -267,13 +267,13 @@ function LoginForm() {
               variant="ghost"
               onClick={cancelMfa}
               disabled={pending}
-              className="w-full text-muted-foreground hover:text-foreground"
+              className="h-9 w-full text-[13px] text-muted-foreground hover:text-foreground"
             >
               Use a different account
             </Button>
           </form>
         ) : (
-          <form onSubmit={onSubmit} className="mt-7 space-y-4" noValidate>
+          <form onSubmit={onSubmit} className="mt-5 space-y-3.5" noValidate>
             <div className="space-y-1.5">
               <label htmlFor="email" className="block text-xs font-medium text-muted-foreground">
                 Email
@@ -285,7 +285,7 @@ function LoginForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={cn(fieldClass, "h-11")}
+                className={cn(fieldClass, "h-10")}
               />
             </div>
 
@@ -300,7 +300,7 @@ function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={cn(fieldClass, "h-11")}
+                className={cn(fieldClass, "h-10")}
               />
             </div>
 
@@ -310,7 +310,7 @@ function LoginForm() {
               </p>
             )}
 
-            <Button type="submit" size="lg" disabled={pending} className="mt-2 w-full">
+            <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full">
               {pending ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />

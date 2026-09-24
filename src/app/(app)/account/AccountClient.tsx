@@ -87,12 +87,12 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3.5">
           <span
             aria-hidden
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-brand-gradient text-lg font-semibold text-white shadow-soft"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-gradient text-sm font-semibold text-white shadow-soft"
           >
             {initialsOf(name, email)}
           </span>
@@ -119,7 +119,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                     autoFocus
                     maxLength={120}
                     disabled={saving}
-                    className="h-10 w-full max-w-xs rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-9 w-full max-w-xs rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <Button
                     type="button"
@@ -127,6 +127,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                     onClick={save}
                     disabled={saving || !draft.trim()}
                     aria-label="Save name"
+                    className="h-9 shrink-0 px-3.5 text-[13px]"
                   >
                     {saving ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -142,6 +143,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                     onClick={cancelEdit}
                     disabled={saving}
                     aria-label="Cancel"
+                    className="h-9 w-9 shrink-0 px-0"
                   >
                     <X size={14} />
                   </Button>
@@ -155,7 +157,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <h2 className="truncate text-lg font-semibold tracking-tight">
+                  <h2 className="truncate text-[15px] font-semibold tracking-tight">
                     {name}
                   </h2>
                   <IconButton
@@ -168,8 +170,8 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                     <Pencil size={14} />
                   </IconButton>
                 </div>
-                <p className="truncate text-sm text-muted-foreground">{email}</p>
-                <span className="mt-2 inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
+                <p className="truncate text-[13px] text-muted-foreground">{email}</p>
+                <span className="mt-1.5 inline-flex items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium leading-4 text-accent-strong">
                   {roleLabel}
                 </span>
               </>

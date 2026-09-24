@@ -21,7 +21,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         "hover:bg-surface-muted hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
-        size === "sm" ? "h-7 w-7" : size === "lg" ? "h-11 w-11" : "h-9 w-9",
+        size === "sm" ? "h-7 w-7" : size === "lg" ? "h-9 w-9" : "h-8 w-8",
         className
       )}
       {...props}

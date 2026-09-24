@@ -21,24 +21,24 @@ export default function AppError({
 
   return (
     <div className="flex h-full min-h-[60vh] items-center justify-center bg-background px-4 py-10">
-      <div className="flex w-full max-w-md flex-col items-center gap-5 rounded-3xl border border-border bg-surface p-8 text-center shadow-soft">
-        <span className="grid h-12 w-12 place-items-center rounded-full bg-danger/10 text-danger">
-          <AlertTriangle size={20} aria-hidden />
+      <div className="flex w-full max-w-[380px] flex-col items-center gap-4 rounded-2xl border border-border bg-surface p-5 text-center shadow-soft">
+        <span className="grid h-10 w-10 place-items-center rounded-full bg-danger/10 text-danger">
+          <AlertTriangle size={16} aria-hidden />
         </span>
-        <div className="space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Something broke on this page
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             The assistant is still running. You can retry this view, or head back to a new chat.
           </p>
           {error.digest ? (
-            <p className="pt-1 text-xs text-subtle-foreground">Reference: {error.digest}</p>
+            <p className="pt-1 text-[11px] text-subtle-foreground">Reference: {error.digest}</p>
           ) : null}
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           <Button variant="primary" onClick={reset}>
-            <RotateCcw size={15} />
+            <RotateCcw size={16} />
             Try again
           </Button>
           <Button variant="secondary" onClick={() => (window.location.href = "/")}>

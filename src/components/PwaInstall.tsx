@@ -62,9 +62,9 @@ export function PwaInstall() {
       aria-label="Install the Assistant as an app"
       title="Install app"
       onClick={install}
-      className="gap-1.5 px-2.5 sm:px-3.5"
+      className="h-8 w-8 gap-1.5 px-0 text-[13px] sm:w-auto sm:px-3"
     >
-      <MonitorDown size={15} className="shrink-0 text-accent" aria-hidden />
+      <MonitorDown size={14} className="shrink-0 text-accent" aria-hidden />
       <span className="hidden sm:inline">Install app</span>
     </Button>
   );

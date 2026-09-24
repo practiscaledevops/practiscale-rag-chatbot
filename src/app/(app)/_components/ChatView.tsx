@@ -1316,33 +1316,37 @@ export function ChatView({
     />
   );
 
-  // In-thread: a compact settings row above the pill composer.
+  // In-thread: a compact settings row above the pill composer. Pickers and
+  // status chips wrap inside the left group; Evidence / Export keep a fixed
+  // top-right column. Format + scope are icon-only here, as on the hero card.
   const toolbar = (
-    <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
-      <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
-      <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
-      <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" />
-      <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} size="sm" />
-      {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
-      {selection.value === "smart" && activity.routedTier && (
-        <span className="inline-flex h-8 items-center rounded-full bg-surface-muted px-2.5 text-[11px] text-muted-foreground">
-          Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
-        </span>
-      )}
-      {mode === "auto" && activity.modeInfo && (
-        <span
-          className="inline-flex h-8 items-center gap-1 rounded-full bg-accent-soft px-2.5 text-[11px] font-medium text-accent-strong"
-          title="The Brain picked this expert for your last message. Choose a mode to override."
-        >
-          <Sparkles size={11} aria-hidden /> Auto → {activity.modeInfo.label}
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-0.5">
+    <div className="mb-2 flex items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
+        <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
+        <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" iconOnly />
+        <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} size="sm" iconOnly />
+        {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
+        {selection.value === "smart" && activity.routedTier && (
+          <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full bg-surface-muted px-2.5 text-xs text-muted-foreground">
+            Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
+          </span>
+        )}
+        {mode === "auto" && activity.modeInfo && (
+          <span
+            className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-soft px-2.5 text-xs font-medium text-accent-strong"
+            title="The Brain picked this expert for your last message. Choose a mode to override."
+          >
+            <Sparkles size={14} className="shrink-0" aria-hidden /> Auto → {activity.modeInfo.label}
+          </span>
+        )}
+      </div>
+      <div className="flex h-7 shrink-0 items-center gap-0.5">
         {activity.sourcesCount ? (
           <button
             type="button"
             onClick={() => setEvidenceOpen((o) => !o)}
-            className="hidden h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+            className="hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
           >
             <PanelRight size={14} aria-hidden />
             {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
@@ -1381,34 +1385,34 @@ export function ChatView({
         // -------- New chat (reference "Cortex"): orb, greeting, composer card,
         //          suggestion cards --------------------------------------------
         <div className="flex h-full flex-col overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6">
             <div className="flex flex-col items-center text-center">
-              <BrainOrb size={156} active={input.trim().length > 0} className="-mb-3" />
-              <h2 className="text-[30px] font-medium leading-[1.15] tracking-[-0.025em] sm:text-[40px]">
+              <BrainOrb size={112} active={input.trim().length > 0} className="-mb-2" />
+              <h2 className="text-[26px] font-medium leading-[1.2] tracking-[-0.02em] sm:text-[30px]">
                 <span className="text-greeting-gradient">Hello, {titleCase(firstName)}</span>
               </h2>
-              <p className="text-[30px] font-semibold leading-[1.15] tracking-[-0.03em] text-foreground sm:text-[40px]">
+              <p className="text-[26px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground sm:text-[30px]">
                 {isCeoMode ? "What needs your attention?" : "How can I assist you today?"}
               </p>
             </div>
 
-            <div className="mt-9">{heroComposer}</div>
+            <div className="mt-6">{heroComposer}</div>
 
             {isCeoMode ? (
               <>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
                   {CEO_ACTIONS.map((a) => (
                     <button
                       key={a.label}
                       type="button"
                       onClick={() => prefill(a.prompt)}
-                      className="rounded-2xl border border-border bg-surface px-4 py-3.5 text-left text-[15px] font-medium text-foreground transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="rounded-xl border border-border bg-surface p-3.5 text-left text-[13px] font-semibold leading-5 text-foreground transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {a.label}
                     </button>
                   ))}
                 </div>
-                <div className="mt-5 flex items-center justify-center">
+                <div className="mt-4 flex items-center justify-center">
                   <Button variant="secondary" size="sm" onClick={() => setMemoryOpen(true)}>
                     <Crown size={14} />
                     Executive context
@@ -1420,21 +1424,21 @@ export function ChatView({
               </>
             ) : (
               <>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
                   {suggestions.map((s) => (
                     <button
                       key={s.title}
                       type="button"
                       onClick={() => prefill(s.prompt)}
-                      className="group flex flex-col rounded-2xl border border-border bg-surface p-4 text-left transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="group flex flex-col rounded-xl border border-border bg-surface p-3.5 text-left transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <s.icon size={20} className="text-muted-foreground transition-colors group-hover:text-accent" aria-hidden />
-                      <span className="mt-5 text-[15px] font-semibold text-foreground">{s.title}</span>
-                      <span className="mt-1 text-[13px] leading-snug text-muted-foreground">{s.hint}</span>
+                      <s.icon size={18} className="shrink-0 text-muted-foreground transition-colors group-hover:text-accent" aria-hidden />
+                      <span className="mt-3 text-[13px] font-semibold leading-5 text-foreground">{s.title}</span>
+                      <span className="mt-0.5 text-xs leading-4 text-muted-foreground">{s.hint}</span>
                     </button>
                   ))}
                 </div>
-                <p className="mt-6 text-center text-xs text-subtle-foreground">
+                <p className="mt-5 text-center text-xs text-subtle-foreground">
                   Answers are grounded in your PractiScale knowledge base, with sources you can trace.
                 </p>
               </>
@@ -1446,9 +1450,9 @@ export function ChatView({
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
             <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-[880px] px-4 pb-6 pt-3 sm:px-8">
+              <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-4 sm:px-6">
                 {audits.length > 0 && (
-                  <div className="mb-6 space-y-3">
+                  <div className="mb-5 space-y-3">
                     {audits.map((a) => (
                       <JobProgress
                         key={a.id}
@@ -1459,7 +1463,7 @@ export function ChatView({
                     ))}
                   </div>
                 )}
-                <ul className="space-y-7">
+                <ul className="space-y-5">
                   {messages.map((m, idx) => {
                     const time = hydrated ? messageTime(m) : null;
                     const streamingThis = idx === lastIndex && busy;
@@ -1468,15 +1472,18 @@ export function ChatView({
                       return (
                         <li key={m.id}>
                           {editingId === m.id ? (
-                            <EditBox
-                              initial={m.content}
-                              onCancel={() => setEditingId(null)}
-                              onSave={(text) => submitEdit(m.id, text)}
-                            />
+                            <div className="flex items-start justify-end gap-2.5">
+                              <EditBox
+                                initial={m.content}
+                                onCancel={() => setEditingId(null)}
+                                onSave={(text) => submitEdit(m.id, text)}
+                              />
+                              <UserAvatar name={firstName} />
+                            </div>
                           ) : (
-                            <div className="group flex items-start justify-end gap-3">
+                            <div className="group flex items-start justify-end gap-2.5">
                               <div className="flex min-w-0 max-w-[80%] flex-col items-end">
-                                <div className="whitespace-pre-wrap break-words rounded-[20px] rounded-tr-md bg-accent-soft px-4 py-3 text-[15px] leading-relaxed text-foreground">
+                                <div className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-accent-soft px-3.5 py-2 text-sm leading-6 text-foreground">
                                   {m.content}
                                   {time && <MessageTime label={time} className="float-right ml-3 mt-[7px]" />}
                                 </div>
@@ -1507,12 +1514,12 @@ export function ChatView({
                     const approved = approvedIds.has(m.id);
                     return (
                       <li key={m.id}>
-                        <div className="group flex items-start gap-3">
-                          <OrbAvatar size={36} active={streamingThis} className="mt-0.5" />
+                        <div className="group flex items-start gap-2.5">
+                          <OrbAvatar size={28} active={streamingThis} className="mt-0.5 shrink-0" />
                           <div className="min-w-0 flex-1">
                             <div
                               className={cn(
-                                "max-w-full rounded-[20px] rounded-tl-md border border-border bg-surface px-5 py-3.5 text-[15px] leading-relaxed text-foreground shadow-[0_1px_2px_rgb(17_19_21/0.03)]",
+                                "max-w-full rounded-2xl rounded-tl-md border border-border bg-surface px-4 py-2.5 text-sm leading-6 text-foreground shadow-[0_1px_2px_rgb(17_19_21/0.03)]",
                                 wide ? "w-full" : "w-fit"
                               )}
                             >
@@ -1521,7 +1528,7 @@ export function ChatView({
                                 <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
                               )}
                               {time && !streamingThis && m.content.trim() && (
-                                <div className="mt-1.5 flex justify-end">
+                                <div className="mt-1 flex justify-end">
                                   <MessageTime label={time} />
                                 </div>
                               )}
@@ -1532,8 +1539,8 @@ export function ChatView({
                             typeof activity.confidence === "number" &&
                             activity.confidence < 0.34 &&
                             m.content.trim() ? (
-                              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs text-warning">
-                                <AlertTriangle size={12} aria-hidden />
+                              <div className="mt-2 inline-flex min-h-7 items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning">
+                                <AlertTriangle size={14} className="shrink-0" aria-hidden />
                                 Limited supporting knowledge — verify before relying on this.
                               </div>
                             ) : null}
@@ -1572,7 +1579,7 @@ export function ChatView({
                             {!streamingThis && m.content.trim() && (
                               <div
                                 className={cn(
-                                  "mt-1.5 flex items-center gap-0.5 transition-opacity",
+                                  "mt-1 flex items-center gap-0.5 transition-opacity",
                                   idx === lastIndex
                                     ? "opacity-100"
                                     : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
@@ -1593,7 +1600,7 @@ export function ChatView({
                                         : undefined
                                     }
                                   >
-                                    {speakingId === m.id ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                                    {speakingId === m.id ? <VolumeX size={14} /> : <Volume2 size={14} />}
                                   </IconButton>
                                 )}
                                 <IconButton
@@ -1602,7 +1609,7 @@ export function ChatView({
                                   size="sm"
                                   onClick={() => copy(m.id, m.content)}
                                 >
-                                  {copiedId === m.id ? <Check size={15} className="text-success" /> : <Copy size={15} />}
+                                  {copiedId === m.id ? <Check size={14} className="text-success" /> : <Copy size={14} />}
                                 </IconButton>
                                 <IconButton
                                   aria-label="Good response"
@@ -1611,7 +1618,7 @@ export function ChatView({
                                   onClick={() => sendFeedback(m, idx, "up")}
                                   className={feedback[m.id] === "up" ? "text-accent-strong" : undefined}
                                 >
-                                  <ThumbsUp size={15} className={feedback[m.id] === "up" ? "fill-current" : ""} />
+                                  <ThumbsUp size={14} className={feedback[m.id] === "up" ? "fill-current" : ""} />
                                 </IconButton>
                                 <IconButton
                                   aria-label="Bad response"
@@ -1620,11 +1627,11 @@ export function ChatView({
                                   onClick={() => sendFeedback(m, idx, "down")}
                                   className={feedback[m.id] === "down" ? "text-danger" : undefined}
                                 >
-                                  <ThumbsDown size={15} className={feedback[m.id] === "down" ? "fill-current" : ""} />
+                                  <ThumbsDown size={14} className={feedback[m.id] === "down" ? "fill-current" : ""} />
                                 </IconButton>
                                 <PopoverMenu
                                   label="More actions"
-                                  trigger={<MoreHorizontal size={16} />}
+                                  trigger={<MoreHorizontal size={14} />}
                                   triggerClassName="h-7 w-7"
                                   items={[
                                     {
@@ -1662,13 +1669,13 @@ export function ChatView({
                   {/* Awaiting the first streamed token: the orb pulses beside a
                       typing indicator and the live pipeline stage. */}
                   {status === "submitted" && (
-                    <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-3">
-                      <OrbAvatar size={36} active className="mt-0.5" />
-                      <div className="flex flex-wrap items-center gap-3 pt-0.5">
-                        <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-accent-soft px-4" aria-hidden>
-                          <span className="typing-dot h-2 w-2 rounded-full bg-accent" />
-                          <span className="typing-dot h-2 w-2 rounded-full bg-accent [animation-delay:150ms]" />
-                          <span className="typing-dot h-2 w-2 rounded-full bg-accent [animation-delay:300ms]" />
+                    <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-2.5">
+                      <OrbAvatar size={28} active className="mt-0.5 shrink-0" />
+                      <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
+                        <span className="inline-flex h-7 items-center gap-1 rounded-full bg-accent-soft px-3" aria-hidden>
+                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent" />
+                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:150ms]" />
+                          <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:300ms]" />
                         </span>
                         <span className="text-sm text-muted-foreground">{activity.label ?? "Thinking"}…</span>
                       </div>
@@ -1679,7 +1686,7 @@ export function ChatView({
                 {error && (
                   <div
                     role="alert"
-                    className="mt-6 flex flex-col gap-2 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3.5 text-sm text-danger"
+                    className="mt-5 flex flex-col gap-1.5 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger"
                   >
                     <span className="font-medium">Couldn’t generate a response.</span>
                     <p className="text-danger/90">{friendlyError(error)}</p>
@@ -1698,7 +1705,7 @@ export function ChatView({
                 {emptyOutput && (
                   <div
                     role="alert"
-                    className="mt-6 flex flex-col gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3.5 text-sm text-foreground"
+                    className="mt-5 flex flex-col gap-1.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground"
                   >
                     <span className="font-medium">The model returned no output.</span>
                     <p className="text-muted-foreground">
@@ -1723,21 +1730,21 @@ export function ChatView({
             {/* Docked composer */}
             <div className="relative shrink-0 bg-background">
               {!atBottom && messages.length > 0 && (
-                <div className="pointer-events-none absolute inset-x-0 -top-6 flex justify-center">
+                <div className="pointer-events-none absolute inset-x-0 -top-10 flex justify-center">
                   <button
                     type="button"
                     onClick={jumpToLatest}
-                    className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-1.5 text-xs font-medium text-foreground shadow-soft-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-fadeUp"
+                    className="pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-xs font-medium text-foreground shadow-soft-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-fadeUp"
                   >
-                    <ArrowDown size={13} aria-hidden />
+                    <ArrowDown size={14} aria-hidden />
                     Jump to latest
                   </button>
                 </div>
               )}
-              <div className="mx-auto w-full max-w-[880px] px-4 pb-4 pt-1 sm:px-8">
+              <div className="mx-auto w-full max-w-3xl px-4 pb-3 pt-1 sm:px-6">
                 {toolbar}
                 <Composer {...composerCore} variant="dock" />
-                <p className="mt-2 hidden text-center text-[11px] text-subtle-foreground sm:block">
+                <p className="mt-1.5 hidden text-center text-[11px] text-subtle-foreground sm:block">
                   Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
                 </p>
               </div>
@@ -1778,7 +1785,7 @@ function MessageTime({ label, className }: { label: string; className?: string }
       )}
     >
       {label}
-      <CheckCheck size={13} className="text-accent/80" aria-hidden />
+      <CheckCheck size={12} className="shrink-0 text-accent/80" aria-hidden />
     </span>
   );
 }
@@ -1788,7 +1795,7 @@ function UserAvatar({ name }: { name: string }) {
   return (
     <span
       aria-hidden
-      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#262626] text-sm font-semibold text-white"
+      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#262626] text-[11px] font-semibold text-white"
     >
       {(name || "?").charAt(0).toUpperCase()}
     </span>
@@ -1922,8 +1929,8 @@ function Composer({
   }
 
   const slashMenu = slashOpen ? (
-    <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp">
-      <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">Templates</p>
+    <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp">
+      <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">Templates</p>
       {matches.map((cmd, i) => (
         <button
           key={cmd.name}
@@ -1932,12 +1939,12 @@ function Composer({
           onClick={() => select(cmd)}
           onMouseMove={() => setActive(i)}
           className={cn(
-            "flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
+            "flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors",
             i === activeIdx ? "bg-accent-soft" : "hover:bg-surface-muted"
           )}
         >
-          <span className="font-medium text-foreground">/{cmd.name}</span>
-          <span className="truncate text-xs text-muted-foreground">{cmd.hint}</span>
+          <span className="shrink-0 font-medium text-foreground">/{cmd.name}</span>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">{cmd.hint}</span>
         </button>
       ))}
     </div>
@@ -1958,7 +1965,7 @@ function Composer({
 
   const tray =
     attachments.length > 0 ? (
-      <ul className={cn("flex flex-wrap gap-1.5", variant === "hero" ? "mb-2.5" : "mb-2 px-1")}>
+      <ul className={cn("flex flex-wrap gap-1.5", variant === "hero" ? "mb-2" : "mb-2 px-1")}>
         {attachments.map((a) => (
           <AttachmentChip
             key={a.id}
@@ -2010,7 +2017,7 @@ function Composer({
         className
       )}
     >
-      <Square size={15} className="fill-current" />
+      <Square size={13} className="fill-current" />
     </button>
   );
 
@@ -2021,46 +2028,46 @@ function Composer({
         <div
           {...dragProps}
           className={cn(
-            "rounded-[26px] border bg-surface shadow-float transition-[border-color,box-shadow] duration-200",
+            "rounded-2xl border bg-surface shadow-float transition-[border-color,box-shadow] duration-200",
             dragging
               ? "border-accent/60 ring-4 ring-accent/15"
               : "border-border focus-within:border-accent/40 focus-within:ring-4 focus-within:ring-accent/10"
           )}
         >
           {fileInput}
-          <div className="px-5 pt-4">
+          <div className="px-4 pt-3">
             {tray}
             {textarea(
               "Ask me anything…  (type / for templates)",
-              "block max-h-[200px] min-h-[56px] w-full resize-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-subtle-foreground"
+              "block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
             )}
           </div>
-          <div className="flex items-center gap-2 px-3 pb-3 pt-2">
+          <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-1.5">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">{leftTools}</div>
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               {rightTools}
               <VoiceInput onText={onDictate} />
               {busy ? (
-                stopButton("ml-1 h-10 w-10")
+                stopButton("ml-1 h-8 w-8")
               ) : (
                 <button
                   type="submit"
                   aria-label="Send message"
                   disabled={!canSend}
-                  className="ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_6px_16px_-6px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_8px_22px_-6px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_4px_12px_-4px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_6px_16px_-4px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <ArrowUp size={18} />
+                  <ArrowUp size={16} />
                 </button>
               )}
             </div>
           </div>
-          <div className="flex items-center justify-between gap-2 rounded-b-[26px] border-t border-border bg-accent-softer px-3 py-2">
+          <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-border bg-accent-softer px-2.5 py-1.5">
             <button
               type="button"
               onClick={onOpenLibrary}
-              className="inline-flex h-8 items-center gap-2 rounded-full px-2.5 text-[13px] font-medium text-accent-strong transition-colors hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-accent-strong transition-colors hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Sparkles size={15} aria-hidden />
+              <Sparkles size={14} className="shrink-0" aria-hidden />
               Saved prompts
             </button>
             <button
@@ -2068,9 +2075,9 @@ function Composer({
               onClick={pickFiles}
               disabled={atMax}
               title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Paperclip size={14} aria-hidden />
+              <Paperclip size={14} className="shrink-0" aria-hidden />
               Attach file
             </button>
           </div>
@@ -2086,7 +2093,7 @@ function Composer({
       <div
         {...dragProps}
         className={cn(
-          "flex items-end gap-1.5 rounded-[32px] border p-2 transition-[border-color,background-color,box-shadow] duration-200",
+          "flex items-end gap-1 rounded-[24px] border p-2 transition-[border-color,background-color,box-shadow] duration-200",
           dragging
             ? "border-accent/60 bg-surface ring-4 ring-accent/15"
             : "border-border bg-surface-muted focus-within:border-accent/35 focus-within:bg-surface focus-within:shadow-float"
@@ -2099,15 +2106,15 @@ function Composer({
           disabled={atMax}
           aria-label={atMax ? `Attachment limit reached (${MAX_FILES})` : "Attach files"}
           title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-[transform,background-color] duration-150 hover:bg-[#1a1a1a] active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-[transform,background-color] duration-150 hover:bg-[#1a1a1a] active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <Paperclip size={19} />
+          <Paperclip size={16} />
         </button>
         {textarea(
           "Type your prompt here…",
-          "block max-h-[200px] min-h-[48px] flex-1 resize-none bg-transparent px-2.5 py-[13px] text-[15px] leading-[22px] text-foreground outline-none placeholder:text-subtle-foreground"
+          "block max-h-[200px] min-h-[32px] flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
         )}
-        <div className="flex h-12 shrink-0 items-center gap-0.5">
+        <div className="flex h-8 shrink-0 items-center gap-0.5">
           <IconButton
             type="button"
             aria-label="Saved prompts"
@@ -2115,19 +2122,19 @@ function Composer({
             onClick={onOpenLibrary}
             className="hidden sm:inline-flex"
           >
-            <Sparkles size={17} />
+            <Sparkles size={16} />
           </IconButton>
           <VoiceInput onText={onDictate} />
           {busy ? (
-            stopButton("ml-1 h-12 w-12")
+            stopButton("ml-0.5 h-8 w-8")
           ) : (
             <button
               type="submit"
               aria-label="Send message"
               disabled={!canSend}
-              className="ml-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <ArrowRight size={20} />
+              <ArrowRight size={16} />
             </button>
           )}
         </div>
@@ -2154,20 +2161,21 @@ function AttachmentChip({
   return (
     <li
       className={cn(
-        "group flex max-w-[240px] items-center gap-1.5 rounded-full border py-1 pl-2.5 pr-1 text-xs",
+        "group flex h-7 max-w-[240px] items-center gap-1.5 rounded-full border pl-2.5 pr-1 text-xs",
         isError ? "border-danger/40 bg-danger/10 text-danger" : "border-border bg-surface text-foreground shadow-soft"
       )}
       title={isError ? att.error : att.truncated ? `${att.name} (trimmed to fit)` : att.name}
     >
       {isUploading ? (
-        <Loader2 size={13} className="shrink-0 animate-spin text-muted-foreground" />
+        <Loader2 size={14} className="shrink-0 animate-spin text-muted-foreground" />
       ) : isError ? (
-        <AlertTriangle size={13} className="shrink-0" />
+        <AlertTriangle size={14} className="shrink-0" />
       ) : (
-        <KindIcon size={13} className="shrink-0 text-accent" />
+        <KindIcon size={14} className="shrink-0 text-accent" />
       )}
-      <span className="truncate font-medium">{att.name}</span>
-      <span className={cn("shrink-0", isError ? "" : "text-muted-foreground")}>
+      <span className={cn("truncate font-medium", isError ? "min-w-[2.5rem]" : "min-w-0")}>{att.name}</span>
+      {/* The error string is long; it truncates (full text is in the chip title). */}
+      <span className={cn(isError ? "min-w-0 truncate" : "shrink-0 text-muted-foreground")}>
         {isUploading ? statusLabelFor(att.name) : isError ? att.error : formatBytes(att.size)}
       </span>
       {isError && att.file && (
@@ -2175,7 +2183,7 @@ function AttachmentChip({
           type="button"
           onClick={onRetry}
           aria-label={`Retry ${att.name}`}
-          className="shrink-0 rounded-full p-1 hover:bg-surface-muted"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-surface-muted"
         >
           <RotateCw size={12} />
         </button>
@@ -2184,7 +2192,7 @@ function AttachmentChip({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${att.name}`}
-        className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-muted hover:text-foreground"
       >
         <X size={12} />
       </button>
@@ -2221,7 +2229,7 @@ function EditBox({
   }, [value]);
 
   return (
-    <div className="ml-auto w-full max-w-[85%] rounded-[20px] border border-accent/40 bg-surface p-2.5 shadow-float">
+    <div className="w-full min-w-0 max-w-[80%] rounded-2xl border border-accent/40 bg-surface p-2 shadow-float">
       <textarea
         ref={ref}
         value={value}
@@ -2236,7 +2244,7 @@ function EditBox({
           }
         }}
         rows={1}
-        className="max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-[15px] text-foreground outline-none focus-visible:outline-none"
+        className="max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-foreground outline-none focus-visible:outline-none"
         aria-label="Edit your message"
       />
       <div className="mt-1 flex items-center justify-end gap-2">
@@ -2300,22 +2308,22 @@ function ExportMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {exporting ? (
-          <Loader2 size={14} className="animate-spin" aria-hidden />
+          <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden />
         ) : (
-          <Download size={14} aria-hidden />
+          <Download size={14} className="shrink-0" aria-hidden />
         )}
         Export chat
-        <ChevronDown size={12} className="opacity-60" aria-hidden />
+        <ChevronDown size={12} className="shrink-0 opacity-60" aria-hidden />
       </button>
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 z-30 mb-1.5 w-56 rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
+          className="absolute bottom-full right-0 z-30 mb-1.5 w-52 rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">Export as</p>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">Export as</p>
           {items.map((it) => (
             <button
               key={it.fmt}
@@ -2326,7 +2334,7 @@ function ExportMenu({
                 setOpen(false);
                 onExport(it.fmt);
               }}
-              className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <span>{it.label}</span>
               {it.note && <span className="shrink-0 text-[11px] text-subtle-foreground">{it.note}</span>}
@@ -2371,7 +2379,7 @@ function RegenerateMenu({
   return (
     <div className="relative flex items-center" ref={ref}>
       <IconButton aria-label="Regenerate" title="Regenerate" size="sm" onClick={onRegenerate}>
-        <RefreshCw size={15} />
+        <RefreshCw size={14} />
       </IconButton>
       {available.length > 0 && (
         <button
@@ -2389,9 +2397,9 @@ function RegenerateMenu({
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-30 mb-1.5 max-h-[60vh] w-60 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
+          className="absolute bottom-full left-0 z-30 mb-1.5 max-h-[60vh] w-60 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground">
             Regenerate with
           </p>
           {available.map((o) => (
@@ -2403,9 +2411,9 @@ function RegenerateMenu({
                 setOpen(false);
                 onRegenerateWith(o.value, o.tier);
               }}
-              className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-8 w-full items-center justify-between gap-2 rounded-lg px-2.5 text-left text-[13px] text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span className="truncate">{o.label}</span>
+              <span className="min-w-0 truncate">{o.label}</span>
               {o.kind === "tier" && (
                 <span className="shrink-0 text-[11px] text-subtle-foreground">preset</span>
               )}
@@ -2428,28 +2436,28 @@ function SourcesDisclosure({ count, sources }: { count: number; sources: SourceI
         onClick={() => has && setOpen((o) => !o)}
         aria-expanded={has ? open : undefined}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full px-1 text-xs font-medium text-muted-foreground transition-colors",
+          "inline-flex h-7 items-center gap-1 rounded-full px-1.5 text-xs font-medium text-muted-foreground transition-colors",
           has && "hover:text-accent-strong"
         )}
       >
         {has && (
           <ChevronRight
             size={12}
-            className={cn("transition-transform", open && "rotate-90")}
+            className={cn("shrink-0 transition-transform", open && "rotate-90")}
             aria-hidden
           />
         )}
         Grounded in {count} source{count === 1 ? "" : "s"}
       </button>
       {open && has && (
-        <ul className="mt-1.5 space-y-1.5">
+        <ul className="mt-1 space-y-1.5">
           {sources.map((s, i) => (
             <li
               key={s.id}
-              className="rounded-xl border border-border bg-surface px-3 py-2 text-xs"
+              className="rounded-xl border border-border bg-surface px-3 py-2.5 text-xs leading-5"
             >
-              <div className="mb-0.5 flex items-center gap-1.5 text-[11px] font-medium capitalize text-muted-foreground">
-                <FileText size={11} aria-hidden />
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium capitalize leading-4 text-muted-foreground">
+                <FileText size={12} className="shrink-0" aria-hidden />
                 <span>
                   {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
                 </span>
@@ -2481,14 +2489,14 @@ function OptionsPicker({
   const [other, setOther] = useState("");
 
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
       {options.map((o, i) => (
         <button
           key={i}
           type="button"
           disabled={disabled}
           onClick={() => onPick(o)}
-          className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm text-foreground transition-colors hover:border-accent/40 hover:bg-accent-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-8 rounded-full border border-border bg-surface px-3 py-1 text-left text-[13px] leading-5 text-foreground transition-colors hover:border-accent/40 hover:bg-accent-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {o}
         </button>
@@ -2498,7 +2506,7 @@ function OptionsPicker({
           type="button"
           disabled={disabled}
           onClick={() => setOtherOpen(true)}
-          className="rounded-full border border-dashed border-border bg-transparent px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-8 rounded-full border border-dashed border-border bg-transparent px-3 text-[13px] text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Other…
         </button>
@@ -2513,7 +2521,7 @@ function OptionsPicker({
               setOtherOpen(false);
             }
           }}
-          className="flex items-center gap-1 rounded-full border border-accent/50 bg-surface px-2 py-1 shadow-soft"
+          className="flex h-8 items-center gap-1 rounded-full border border-accent/50 bg-surface pl-1.5 pr-0.5 shadow-soft"
         >
           <input
             autoFocus
@@ -2528,16 +2536,16 @@ function OptionsPicker({
             disabled={disabled}
             placeholder="Type your answer…"
             aria-label="Your answer"
-            className="w-40 bg-transparent px-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="w-40 bg-transparent px-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
           />
           <IconButton
             type="submit"
             aria-label="Send answer"
             size="sm"
             disabled={disabled || !other.trim()}
-            className="bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground disabled:opacity-40"
+            className="h-6 w-6 bg-accent text-accent-foreground hover:bg-accent-hover hover:text-accent-foreground disabled:opacity-40"
           >
-            <ArrowUp size={15} />
+            <ArrowUp size={14} />
           </IconButton>
         </form>
       )}
@@ -2565,15 +2573,15 @@ function LearningCard({
   const [notes, setNotes] = useState("");
   const saved = state.status === "saved";
   return (
-    <div className="mt-3 rounded-2xl border border-accent/25 bg-accent-softer p-4 text-sm">
-      <div className="flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground" aria-hidden>
-          <Lightbulb size={16} />
+    <div className="mt-3 rounded-xl border border-accent/25 bg-accent-softer p-4 text-sm">
+      <div className="flex items-start gap-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground" aria-hidden>
+          <Lightbulb size={14} />
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-accent-strong">
+        <div className="min-w-0 flex-1 pt-1">
+          <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-accent-strong">
             {saved ? "Saved as organizational learning" : "Possible organizational learning"}
-            <span className="ml-2 rounded-full border border-accent/30 bg-surface px-2 py-px font-medium">{candidate.kind}</span>
+            <span className="inline-flex h-5 items-center rounded-full border border-accent/30 bg-surface px-2 text-[11px] font-medium">{candidate.kind}</span>
           </p>
           <p className="mt-1 font-medium text-foreground">{candidate.title}</p>
           {candidate.change && <p className="mt-0.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Change:</span> {candidate.change}</p>}
@@ -2601,13 +2609,13 @@ function LearningCard({
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
                   placeholder="Add the evidence: date range, baseline number, new number, sample size…"
-                  className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2 text-xs text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2 text-[13px] text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 />
               )}
               {state.status === "error" && <p className="mt-1 text-xs text-danger">{state.error}</p>}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                 <Button size="sm" variant="primary" disabled={state.status === "saving"} onClick={() => onSave(notes)}>
-                  {state.status === "saving" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  {state.status === "saving" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                   {addingEvidence ? "Save with evidence" : "Save as learning"}
                 </Button>
                 {!addingEvidence && (
@@ -2656,26 +2664,26 @@ function EvidencePanel({
         type="button"
         onClick={() => onOpenRef(ref)}
         title={`Open ${ref}`}
-        className="inline-flex items-center gap-1 rounded font-mono text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-w-0 max-w-full items-center gap-1 rounded font-mono text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {ref}
-        {label ? <span className="font-sans font-medium text-foreground">{label}</span> : null}
+        <span className="shrink-0">{ref}</span>
+        {label ? <span className="min-w-0 truncate font-sans font-medium text-foreground">{label}</span> : null}
       </button>
     ) : (
-      <span className="font-mono text-accent-strong">
-        {ref}
-        {label ? <span className="ml-1 font-sans font-medium text-foreground">{label}</span> : null}
+      <span className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono text-accent-strong">
+        <span className="shrink-0">{ref}</span>
+        {label ? <span className="min-w-0 truncate font-sans font-medium text-foreground">{label}</span> : null}
       </span>
     );
   return (
     <aside
       aria-label="Evidence"
-      className="hidden w-[22rem] shrink-0 flex-col border-l border-border bg-accent-softer/60 lg:flex"
+      className="hidden w-80 shrink-0 flex-col border-l border-border bg-accent-softer/60 lg:flex"
     >
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
-        <h2 className="text-[15px] font-semibold text-foreground">Evidence</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2.5">
+        <h2 className="text-sm font-semibold text-foreground">Evidence</h2>
+        <div className="flex items-center gap-1.5">
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
             {count} source{count === 1 ? "" : "s"}
           </span>
           <IconButton aria-label="Close evidence panel" size="sm" onClick={onClose}>
@@ -2686,7 +2694,7 @@ function EvidencePanel({
       {conf && (
         <div
           className={cn(
-            "flex items-center gap-2 border-b border-border px-5 py-2.5 text-xs font-medium",
+            "flex items-center gap-2 border-b border-border px-4 py-2 text-xs font-medium",
             conf.tone === "high" && "text-success",
             conf.tone === "medium" && "text-warning",
             conf.tone === "low" && "text-danger"
@@ -2706,35 +2714,37 @@ function EvidencePanel({
           <span className="text-muted-foreground/70">· {conf.pct}% match</span>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {sources.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
             The sources used to ground the latest answer will appear here, with the
             same numbers as the inline citations.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {sources.map((s, i) => (
               <li
                 key={s.id}
-                className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-xs shadow-soft"
+                className="rounded-xl border border-border bg-surface px-3 py-2.5 text-xs leading-5 shadow-soft"
               >
-                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium capitalize text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <FileText size={11} aria-hidden />
-                    {i + 1}. {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
+                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium capitalize leading-4 text-muted-foreground">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <FileText size={12} className="shrink-0" aria-hidden />
+                    <span className="truncate">
+                      {i + 1}. {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
+                    </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 normal-case text-muted-foreground/70">
-                    {s.authority && <span className="rounded-full border border-border px-1.5" title="Authority">{s.authority}</span>}
-                    {s.endorsement === "practiscale_standard" && <span className="rounded-full border border-accent/40 bg-accent-soft px-1.5 text-accent-strong" title="PractiScale Standard">Std</span>}
-                    {s.current === false && <span className="rounded-full border border-warning/40 px-1.5 text-warning" title="Historical or expired">past</span>}
-                    {freshness(s.date) && <span>{freshness(s.date)}</span>}
+                    {s.authority && <span className="rounded-full border border-border px-1.5 leading-[14px]" title="Authority">{s.authority}</span>}
+                    {s.endorsement === "practiscale_standard" && <span className="rounded-full border border-accent/40 bg-accent-soft px-1.5 leading-[14px] text-accent-strong" title="PractiScale Standard">Std</span>}
+                    {s.current === false && <span className="rounded-full border border-warning/40 px-1.5 leading-[14px] text-warning" title="Historical or expired">past</span>}
+                    {freshness(s.date) && <span className="whitespace-nowrap">{freshness(s.date)}</span>}
                   </span>
                 </div>
                 {s.ref && (
-                  <p className="mb-0.5 truncate text-[11px] font-medium text-foreground" title={`${s.ref} ${s.name ?? ""}`}>
+                  <p className="mb-0.5 flex min-w-0 items-center gap-1 text-xs font-medium text-foreground" title={`${s.ref} ${s.name ?? ""}`}>
                     {refButton(s.ref, s.name)}
-                    {s.via === "relationship" && <span className="ml-1 text-muted-foreground/70">· connected</span>}
+                    {s.via === "relationship" && <span className="shrink-0 text-muted-foreground/70">· connected</span>}
                   </p>
                 )}
                 <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
@@ -2745,8 +2755,8 @@ function EvidencePanel({
 
         {performance.length > 0 && (
           <section className="mt-4" aria-label="Verified numbers">
-            <h3 className="text-xs font-semibold text-foreground">Verified numbers</h3>
-            <p className="mb-1.5 text-[11px] text-muted-foreground/80">
+            <h3 className="px-1 text-[13px] font-semibold text-foreground">Verified numbers</h3>
+            <p className="mb-1.5 px-1 text-[11px] text-muted-foreground/80">
               Structured results the Brain used as verified business data
             </p>
             <ul className="space-y-1.5">
@@ -2754,7 +2764,7 @@ function EvidencePanel({
                 const period = formatPeriod(m.period_start, m.period_end);
                 const dims = m.dimensions ? Object.entries(m.dimensions).filter(([, v]) => v != null && v !== "") : [];
                 return (
-                  <li key={m.key} className="rounded-2xl border border-border bg-surface px-3.5 py-2.5 text-xs shadow-soft">
+                  <li key={m.key} className="rounded-xl border border-border bg-surface px-3 py-2.5 text-xs shadow-soft">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0 truncate font-medium text-foreground" title={m.label}>{m.label}</span>
                       <span className="shrink-0 font-semibold tabular-nums text-accent-strong">{formatMetricValue(m)}</span>
@@ -2769,7 +2779,7 @@ function EvidencePanel({
                     {dims.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {dims.map(([k, v]) => (
-                          <span key={k} className="rounded-full border border-border bg-surface-muted/60 px-1.5 py-px text-[10px] text-muted-foreground">
+                          <span key={k} className="rounded-full border border-border bg-surface-muted/60 px-1.5 py-px text-[11px] text-muted-foreground">
                             {k}: {String(v)}
                           </span>
                         ))}
@@ -2784,11 +2794,11 @@ function EvidencePanel({
 
         {conflicts.length > 0 && (
           <section className="mt-4" aria-label="Known disagreements">
-            <h3 className="mb-1.5 text-xs font-semibold text-foreground">Known disagreements</h3>
+            <h3 className="mb-1.5 px-1 text-[13px] font-semibold text-foreground">Known disagreements</h3>
             <ul className="space-y-1.5">
               {conflicts.map((p, i) => (
-                <li key={`${p.a.ref}-${p.b.ref}-${i}`} className="rounded-2xl border border-warning/30 bg-warning/5 px-3.5 py-2.5 text-xs">
-                  <p className="text-foreground">
+                <li key={`${p.a.ref}-${p.b.ref}-${i}`} className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-2.5 text-xs">
+                  <p className="leading-5 text-foreground">
                     {refButton(p.a.ref)} disagrees with {refButton(p.b.ref)} — the Brain favoured the
                     higher-authority, current source
                   </p>
@@ -2829,7 +2839,7 @@ function ApprovalSubmitModal({
 }) {
   return (
     <Modal open={open} onClose={onClose} title="Submit for approval">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[13px] text-muted-foreground">
         Send this answer to your workspace reviewers. You&apos;ll be notified when
         it&apos;s approved or sent back.
       </p>
@@ -2841,7 +2851,7 @@ function ApprovalSubmitModal({
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder="Short label for reviewers"
           maxLength={120}
-          className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="mt-1.5 h-9 w-full rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         />
       </label>
 
@@ -2855,11 +2865,11 @@ function ApprovalSubmitModal({
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button size="sm" onClick={onSubmit} disabled={busy || !content.trim()}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+        <Button onClick={onSubmit} disabled={busy || !content.trim()}>
+          {busy ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
           Submit
         </Button>
       </div>
@@ -2908,7 +2918,7 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <Modal open={open} onClose={onClose} title="Executive context (private)">
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Your priorities, principles, communication preferences, and ongoing decisions.
           Used to tailor Executive mode. Private to you — it never appears in other users’
           chats.
@@ -2924,18 +2934,18 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
               ? "Loading…"
               : "e.g. My top priorities this quarter are…\nHow I like recommendations framed…\nOpen decisions and their owners…"
           }
-          className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         />
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p role="alert" className="text-xs text-danger">
             {error}
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" onClick={save} disabled={loading || saving}>
+          <Button onClick={save} disabled={loading || saving}>
             {saving ? "Saving…" : "Save"}
           </Button>
         </div>

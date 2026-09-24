@@ -276,10 +276,17 @@ body {
 *::-webkit-scrollbar-thumb:hover {
   background-color: rgb(var(--muted-foreground) / 0.5);
 }
-/* The dark rail gets light-on-dark scrollbars. */
-.scroll-dark {
-  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+/* Scroll areas with no visible scrollbar (the rail panel, like the reference).
+   Setting the standard scrollbar-* properties makes Chrome ignore the webkit
+   styles and draw classic arrow buttons on Windows — so hide it outright. */
+.scrollbar-none {
+  scrollbar-width: none;
 }
-.scroll-dark::-webkit-scrollbar-thumb {
-  background-color: rgb(255 255 255 / 0.14);
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+/* Soft fade at the bottom edge of a scroll area (hints there's more below). */
+.fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }

@@ -195,198 +195,204 @@ export function ProjectClient({
   }, []);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+    <div className="h-full overflow-y-auto bg-background">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6 sm:px-6">
+        {/* Header */}
+        <div>
           <Link
             href="/"
-            className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="mb-1.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft size={13} /> Back to chat
+            <ArrowLeft size={14} /> Back to chat
           </Link>
-          {editingName ? (
-            <input
-              autoFocus
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onBlur={saveName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveName();
-                if (e.key === "Escape") {
-                  setNameDraft(name);
-                  setEditingName(false);
-                }
-              }}
-              maxLength={120}
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-xl font-semibold tracking-tight outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-            />
-          ) : (
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-              <span className="truncate">{name}</span>
-              <IconButton
-                aria-label="Rename project"
-                size="sm"
-                onClick={() => {
-                  setNameDraft(name);
-                  setEditingName(true);
-                }}
-              >
-                <Pencil size={14} />
-              </IconButton>
-            </h1>
-          )}
-          <p className="mt-1 text-sm text-muted-foreground">
-            {chats.length} {chats.length === 1 ? "chat" : "chats"}
-            {filesAvailable && files.length > 0 ? ` · ${files.length} files` : ""}
-          </p>
-        </div>
-        <Button onClick={newChat} disabled={creating} className="shrink-0">
-          {creating ? <Loader2 size={15} className="animate-spin" /> : <MessageSquarePlus size={15} />}
-          New chat
-        </Button>
-      </div>
-
-      {error && (
-        <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          {error}
-        </p>
-      )}
-
-      {/* Instructions */}
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Instructions</h2>
-          <div className="flex items-center gap-2">
-            {instrSaved && (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong">
-                <Check size={13} /> Saved
-              </span>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={saveInstructions}
-              disabled={savingInstr || instructions === savedInstructions}
-            >
-              {savingInstr ? <Loader2 size={13} className="animate-spin" /> : null}
-              Save
-            </Button>
-          </div>
-        </div>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Added to every chat in this project — tone, role, rules, what to focus on.
-        </p>
-        <textarea
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-          onBlur={saveInstructions}
-          rows={4}
-          maxLength={8000}
-          placeholder="e.g. You are helping the sales team. Always ground answers in call data and cite sources."
-          className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-        />
-      </section>
-
-      {/* Project knowledge (files) */}
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Project knowledge</h2>
-          {filesAvailable && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files)}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? <Loader2 size={13} className="animate-spin" /> : <Paperclip size={13} />}
-                Add file
-              </Button>
-            </>
-          )}
-        </div>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Files here are read once and added as shared context to every chat in this project.
-        </p>
-
-        {!filesAvailable ? (
-          <div className="rounded-xl border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
-            Project files need a one-time database setup. Run the migration{" "}
-            <code className="rounded-md bg-surface-muted px-1">supabase/migrations/0012_project_files.sql</code>{" "}
-            in Supabase, then reload. Everything else in the project works now.
-          </div>
-        ) : files.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No files yet.</p>
-        ) : (
-          <ul className="space-y-2">
-            {files.map((f) => (
-              <li
-                key={f.id}
-                className="group flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5 transition-colors hover:bg-surface-muted/60"
-              >
-                <FileText size={15} className="shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">{f.name}</span>
-                  {fileMeta(f) && (
-                    <span className="block truncate text-xs text-muted-foreground">{fileMeta(f)}</span>
-                  )}
-                </span>
-                <IconButton
-                  aria-label={`Remove ${f.name}`}
-                  size="sm"
-                  className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-                  onClick={() => removeFile(f.id)}
-                >
-                  <Trash2 size={14} />
-                </IconButton>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Chats in this project */}
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
-        <h2 className="mb-2 text-sm font-semibold">Chats in this project</h2>
-        {chats.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <span
-              aria-hidden
-              className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
-            >
-              <MessageSquarePlus size={20} />
-            </span>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              No chats yet. Start one — it will use this project&apos;s instructions and files.
-            </p>
-            <Button onClick={newChat} disabled={creating} size="sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              {editingName ? (
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveName();
+                    if (e.key === "Escape") {
+                      setNameDraft(name);
+                      setEditingName(false);
+                    }
+                  }}
+                  maxLength={120}
+                  className="-my-1 block h-9 w-full rounded-xl border border-border bg-surface px-3 text-xl font-semibold tracking-tight outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                />
+              ) : (
+                <h1 className="flex items-center gap-1.5 text-xl font-semibold tracking-tight">
+                  <span className="truncate">{name}</span>
+                  <IconButton
+                    aria-label="Rename project"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      setNameDraft(name);
+                      setEditingName(true);
+                    }}
+                  >
+                    <Pencil size={14} />
+                  </IconButton>
+                </h1>
+              )}
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                {chats.length} {chats.length === 1 ? "chat" : "chats"}
+                {filesAvailable && files.length > 0 ? ` · ${files.length} files` : ""}
+              </p>
+            </div>
+            <Button size="sm" onClick={newChat} disabled={creating} className="h-8 shrink-0 text-[13px]">
               {creating ? <Loader2 size={14} className="animate-spin" /> : <MessageSquarePlus size={14} />}
               New chat
             </Button>
           </div>
-        ) : (
-          <ul className="-mx-2 space-y-0.5">
-            {chats.map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={`/c/${c.id}`}
-                  className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-surface-muted"
-                >
-                  <span className="truncate">{c.title || "New chat"}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{relTime(c.updatedAt)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger">
+            {error}
+          </p>
         )}
-      </section>
+
+        {/* Instructions */}
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">Instructions</h2>
+            <div className="flex shrink-0 items-center gap-2">
+              {instrSaved && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong">
+                  <Check size={14} /> Saved
+                </span>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={saveInstructions}
+                disabled={savingInstr || instructions === savedInstructions}
+              >
+                {savingInstr ? <Loader2 size={14} className="animate-spin" /> : null}
+                Save
+              </Button>
+            </div>
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Added to every chat in this project — tone, role, rules, what to focus on.
+          </p>
+          <textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            onBlur={saveInstructions}
+            rows={4}
+            maxLength={8000}
+            placeholder="e.g. You are helping the sales team. Always ground answers in call data and cite sources."
+            className="w-full resize-y rounded-xl border border-border bg-surface px-3 py-2 text-sm leading-6 outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          />
+        </section>
+
+        {/* Project knowledge (files) */}
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">Project knowledge</h2>
+            {filesAvailable && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => onPickFile(e.target.files)}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="shrink-0"
+                >
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                  Add file
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Files here are read once and added as shared context to every chat in this project.
+          </p>
+
+          {!filesAvailable ? (
+            <div className="rounded-xl border border-dashed border-border px-3.5 py-2.5 text-xs text-muted-foreground">
+              Project files need a one-time database setup. Run the migration{" "}
+              <code className="rounded-md bg-surface-muted px-1">supabase/migrations/0012_project_files.sql</code>{" "}
+              in Supabase, then reload. Everything else in the project works now.
+            </div>
+          ) : files.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">No files yet.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {files.map((f) => (
+                <li
+                  key={f.id}
+                  className="group flex items-center gap-2.5 rounded-xl border border-border bg-surface px-3 py-2 transition-colors hover:bg-surface-muted/60"
+                >
+                  <FileText size={16} className="shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px]">{f.name}</span>
+                    {fileMeta(f) && (
+                      <span className="block truncate text-[11px] text-muted-foreground">{fileMeta(f)}</span>
+                    )}
+                  </span>
+                  <IconButton
+                    aria-label={`Remove ${f.name}`}
+                    size="sm"
+                    className="shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                    onClick={() => removeFile(f.id)}
+                  >
+                    <Trash2 size={14} />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* Chats in this project */}
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+          <h2 className="mb-2 text-sm font-semibold">Chats in this project</h2>
+          {chats.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-5 text-center">
+              <span
+                aria-hidden
+                className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent"
+              >
+                <MessageSquarePlus size={16} />
+              </span>
+              <p className="max-w-sm text-[13px] text-muted-foreground">
+                No chats yet. Start one — it will use this project&apos;s instructions and files.
+              </p>
+              <Button onClick={newChat} disabled={creating} size="sm" className="h-8 text-[13px]">
+                {creating ? <Loader2 size={14} className="animate-spin" /> : <MessageSquarePlus size={14} />}
+                New chat
+              </Button>
+            </div>
+          ) : (
+            <ul className="-mx-2 space-y-0.5">
+              {chats.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/c/${c.id}`}
+                    className="flex h-8 items-center justify-between gap-3 rounded-lg px-2 text-[13px] transition-colors hover:bg-surface-muted"
+                  >
+                    <span className="truncate">{c.title || "New chat"}</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">{relTime(c.updatedAt)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

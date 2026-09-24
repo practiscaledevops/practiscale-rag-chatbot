@@ -39,27 +39,27 @@ export default function GlobalError({
           style={{
             textAlign: "center",
             width: "100%",
-            maxWidth: 420,
-            padding: 32,
+            maxWidth: 380,
+            padding: 20,
             boxSizing: "border-box",
             background: "#FFFFFF",
             border: "1px solid #EAECEC",
-            borderRadius: 28,
+            borderRadius: 16,
             boxShadow: "0 1px 2px rgb(10 90 75 / 0.04), 0 10px 34px -6px rgb(10 90 75 / 0.12)",
           }}
         >
           <h1
             style={{
-              fontSize: 24,
-              lineHeight: "32px",
+              fontSize: 20,
+              lineHeight: "28px",
               fontWeight: 600,
               letterSpacing: "-0.025em",
-              margin: "0 0 8px",
+              margin: "0 0 4px",
             }}
           >
             The app hit an unexpected error
           </h1>
-          <p style={{ fontSize: 14, lineHeight: "20px", color: "#6E7375", margin: "0 0 20px" }}>
+          <p style={{ fontSize: 13, lineHeight: "20px", color: "#6E7375", margin: "0 0 16px" }}>
             Please reload. If it keeps happening, sign out and back in.
           </p>
           <button
@@ -67,8 +67,8 @@ export default function GlobalError({
             style={{
               fontSize: 14,
               fontWeight: 500,
-              height: 40,
-              padding: "0 20px",
+              height: 36,
+              padding: "0 16px",
               borderRadius: 9999,
               border: "none",
               cursor: "pointer",

@@ -85,24 +85,21 @@ export function AuditClient() {
   return (
     <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <ScrollText size={22} className="text-accent" />
-          Audit log
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-xl font-semibold tracking-tight">Audit log</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
           Governance trail: who used what, which mode, and when sensitive data was in scope.
         </p>
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
-        <div className="inline-flex rounded-full bg-surface-muted p-1">
+      <div className="mt-5 flex items-center gap-3">
+        <div className="inline-flex h-8 items-center rounded-full bg-surface-muted p-0.5">
           {(["all", "chat", "ceo_memory_write"] as const).map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                "inline-flex h-7 items-center rounded-full px-3 text-[13px] font-medium transition-colors",
                 filter === f
                   ? "bg-surface text-foreground shadow-soft"
                   : "text-muted-foreground hover:text-foreground"
@@ -116,11 +113,11 @@ export function AuditClient() {
       </div>
 
       {items && !enabled ? (
-        <p className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+        <p className="mt-5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground">
           Audit log isn’t enabled yet — run migration 0008_audit_log.sql in Supabase.
         </p>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
           <ul className="divide-y divide-border">
             {(items ?? []).map((it) => {
               const meta = actionMeta(it.action);
@@ -129,24 +126,24 @@ export function AuditClient() {
               return (
                 <li
                   key={it.id}
-                  className="flex items-start gap-3 px-5 py-4 transition-colors hover:bg-surface-muted/60"
+                  className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-muted/60"
                 >
                   <span
                     className={cn(
-                      "grid h-9 w-9 shrink-0 place-items-center rounded-xl",
+                      "grid h-7 w-7 shrink-0 place-items-center rounded-lg",
                       sensitive ? "bg-warning/10 text-warning" : "bg-surface-muted text-muted-foreground"
                     )}
                   >
-                    {sensitive ? <ShieldAlert size={16} /> : <Icon size={16} />}
+                    {sensitive ? <ShieldAlert size={14} /> : <Icon size={14} />}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[13px]">
                       <span className="font-medium">{meta.label}</span>
                       <span className="text-muted-foreground">· {it.user || "system"}</span>
-                      <span className="ml-auto text-xs text-muted-foreground">{relTime(it.createdAt)}</span>
+                      <span className="ml-auto text-[11px] text-muted-foreground">{relTime(it.createdAt)}</span>
                     </div>
                     {summarize(it.action, it.detail) && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      <p className="truncate text-xs text-muted-foreground">
                         {summarize(it.action, it.detail)}
                       </p>
                     )}
@@ -155,11 +152,11 @@ export function AuditClient() {
               );
             })}
             {!loading && (items?.length ?? 0) === 0 && (
-              <li className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-                <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
-                  <ScrollText size={20} />
+              <li className="flex flex-col items-center gap-2.5 px-4 py-5 text-center">
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent">
+                  <ScrollText size={16} />
                 </span>
-                <p className="text-sm text-muted-foreground">No audit events yet.</p>
+                <p className="text-[13px] text-muted-foreground">No audit events yet.</p>
               </li>
             )}
           </ul>

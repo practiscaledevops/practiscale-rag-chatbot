@@ -138,7 +138,7 @@ function BudgetBar({ spend, budget }: { spend: number; budget: number | null }) 
 
       {hasBudget ? (
         <div
-          className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface-sunken"
+          className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken"
           role="progressbar"
           aria-label="Monthly budget used"
           aria-valuenow={Math.round(pct)}
@@ -157,8 +157,8 @@ function BudgetBar({ spend, budget }: { spend: number; budget: number | null }) 
       )}
 
       {over && (
-        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger">
-          <AlertTriangle size={12} aria-hidden />
+        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
+          <AlertTriangle size={11} aria-hidden />
           Over budget by {formatUsd(spend - budget)}
         </div>
       )}
@@ -178,7 +178,7 @@ function RoleBadge({ role }: { role: TeamRole }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
         styles[role]
       )}
     >
@@ -204,16 +204,16 @@ function MemberRow({
   const isOwner = member.role === "owner";
 
   return (
-    <li className="flex items-center gap-3 py-2">
+    <li className="flex items-center gap-2.5 py-2">
       <div
         aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-muted text-xs font-semibold text-muted-foreground"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-muted text-[11px] font-semibold text-muted-foreground"
       >
         {initials(member.displayName || member.email)}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{name}</span>
+          <span className="truncate text-[13px] font-medium">{name}</span>
           <RoleBadge role={member.role} />
         </div>
         {member.displayName && member.email && (
@@ -222,7 +222,7 @@ function MemberRow({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="-mr-1 flex shrink-0 items-center gap-0.5">
         {!isOwner && (
           <IconButton
             aria-label={`Make ${name} the team owner`}
@@ -231,7 +231,7 @@ function MemberRow({
             onClick={onSetOwner}
             className="hover:text-accent"
           >
-            <Crown size={15} />
+            <Crown size={14} />
           </IconButton>
         )}
         <IconButton
@@ -241,7 +241,7 @@ function MemberRow({
           onClick={onRemove}
           className="hover:text-danger"
         >
-          <UserMinus size={15} />
+          <UserMinus size={14} />
         </IconButton>
       </div>
     </li>
@@ -323,13 +323,13 @@ function TeamFormModal({
   // Shared field look; single-line inputs add a fixed height, the textarea
   // adds vertical padding instead.
   const fieldClass =
-    "w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
-  const inputClass = cn(fieldClass, "h-11");
+    "w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
+  const inputClass = cn(fieldClass, "h-9");
   const labelClass = "block text-xs font-medium text-muted-foreground";
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
-      <form onSubmit={submit} className="space-y-4" noValidate>
+      <form onSubmit={submit} className="space-y-3.5" noValidate>
         <div className="space-y-1.5">
           <label htmlFor="team-name" className={labelClass}>
             Name
@@ -356,7 +356,7 @@ function TeamFormModal({
             onChange={(e) => setDescription(e.target.value)}
             maxLength={500}
             rows={2}
-            className={cn(fieldClass, "resize-none py-2.5")}
+            className={cn(fieldClass, "resize-none py-2")}
             placeholder="What this team is for"
           />
         </div>
@@ -367,7 +367,7 @@ function TeamFormModal({
             <span className="font-normal">(USD, optional)</span>
           </label>
           <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
               $
             </span>
             <input
@@ -376,7 +376,7 @@ function TeamFormModal({
               onChange={(e) => setBudget(e.target.value)}
               inputMode="decimal"
               autoComplete="off"
-              className={cn(inputClass, "pl-7")}
+              className={cn(inputClass, "pl-6")}
               placeholder="500.00"
             />
           </div>
@@ -389,7 +389,7 @@ function TeamFormModal({
         {err && (
           <p
             role="alert"
-            className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger"
+            className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger"
           >
             {err}
           </p>
@@ -501,29 +501,29 @@ function TeamCard({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-surface shadow-soft">
+    <div className="rounded-xl border border-border bg-surface shadow-soft">
       {/* Header: name + description, member count, actions */}
-      <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+      <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold">{team.name}</h3>
+          <h3 className="truncate text-sm font-semibold">{team.name}</h3>
           {team.description ? (
-            <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+            <p className="mt-0.5 line-clamp-2 text-[13px] text-muted-foreground">
               {team.description}
             </p>
           ) : null}
-          <p className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <Users size={13} aria-hidden />
+          <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Users size={12} aria-hidden />
             {team.memberCount} {team.memberCount === 1 ? "member" : "members"}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="-mr-1 -mt-1 flex shrink-0 items-center gap-0.5">
           <IconButton
             aria-label={`Edit ${team.name}`}
             title="Edit team"
             size="sm"
             onClick={() => setEditOpen(true)}
           >
-            <Pencil size={15} />
+            <Pencil size={14} />
           </IconButton>
           <IconButton
             aria-label={`Delete ${team.name}`}
@@ -532,18 +532,18 @@ function TeamCard({
             onClick={() => setConfirmDelete(true)}
             className="hover:text-danger"
           >
-            <Trash2 size={15} />
+            <Trash2 size={14} />
           </IconButton>
         </div>
       </div>
 
       {/* Budget bar */}
-      <div className="px-5 py-4">
+      <div className="px-4 py-3">
         <BudgetBar spend={team.spendUsd} budget={team.monthlyBudgetUsd} />
       </div>
 
       {/* Roster */}
-      <div className="border-t border-border px-5 pb-5 pt-3">
+      <div className="border-t border-border px-4 pb-4 pt-1.5">
         {team.members.length > 0 ? (
           <ul className="divide-y divide-border">
             {team.members.map((m) => (
@@ -560,7 +560,7 @@ function TeamCard({
         )}
 
         {/* Add member by email */}
-        <form onSubmit={addMember} className="mt-3 flex items-center gap-2">
+        <form onSubmit={addMember} className="mt-2 flex items-center gap-2">
           <label htmlFor={`add-${team.id}`} className="sr-only">
             Add member by email to {team.name}
           </label>
@@ -571,12 +571,13 @@ function TeamCard({
             onChange={(e) => setNewEmail(e.target.value)}
             placeholder="member@practiscale.co"
             autoComplete="off"
-            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            className="h-8 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-[13px] outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           />
           <Button
             type="submit"
-            size="md"
+            size="sm"
             variant="secondary"
+            className="h-8 text-[13px]"
             disabled={addingMember || !newEmail.trim()}
           >
             {addingMember ? (
@@ -609,7 +610,7 @@ function TeamCard({
         onClose={() => setConfirmDelete(false)}
         title="Delete team"
       >
-        <p className="text-sm text-muted-foreground">
+        <p className="text-[13px] leading-5 text-muted-foreground">
           Delete <span className="font-medium text-foreground">{team.name}</span>?
           Its members are removed from the team and usage history is preserved
           (detached from the team). This can’t be undone.
@@ -686,12 +687,12 @@ export function TeamsClient() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="w-full">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Teams &amp; budgets</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight">Teams &amp; budgets</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Organize users into teams, set a monthly spend budget, and track
             usage{monthLabel ? ` for ${monthLabel}` : ""}.
           </p>
@@ -699,9 +700,11 @@ export function TeamsClient() {
         <Button
           type="button"
           variant="primary"
+          size="sm"
+          className="h-8 shrink-0 text-[13px]"
           onClick={() => setCreateOpen(true)}
         >
-          <Plus size={16} />
+          <Plus size={14} />
           New team
         </Button>
       </div>
@@ -710,7 +713,7 @@ export function TeamsClient() {
       {actionError && (
         <p
           role="alert"
-          className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+          className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger"
         >
           <span>{actionError}</span>
           <button
@@ -724,10 +727,10 @@ export function TeamsClient() {
       )}
 
       {/* Body */}
-      <div className="mt-6">
+      <div className="mt-5">
         {loadError ? (
-          <div className="rounded-2xl border border-border bg-surface p-8 text-center">
-            <p className="text-sm text-danger">{loadError}</p>
+          <div className="rounded-xl border border-border bg-surface p-5 text-center">
+            <p className="text-[13px] text-danger">{loadError}</p>
             <Button
               type="button"
               variant="secondary"
@@ -739,31 +742,32 @@ export function TeamsClient() {
             </Button>
           </div>
         ) : teams === null ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-surface p-12 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface p-5 text-[13px] text-muted-foreground">
             <Loader2 size={16} className="animate-spin" aria-hidden />
             Loading teams…
           </div>
         ) : teams.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
-              <Users size={20} aria-hidden />
+          <div className="rounded-xl border border-border bg-surface p-5 text-center">
+            <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent">
+              <Users size={16} aria-hidden />
             </div>
-            <h2 className="mt-3 text-sm font-medium">No teams yet</h2>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+            <h2 className="mt-3 text-sm font-semibold">No teams yet</h2>
+            <p className="mx-auto mt-1 max-w-sm text-[13px] text-muted-foreground">
               Create your first team to group users and set a monthly budget.
             </p>
             <Button
               type="button"
               variant="primary"
-              className="mt-4"
+              size="sm"
+              className="mt-4 h-8 text-[13px]"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus size={16} />
+              <Plus size={14} />
               New team
             </Button>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {teams.map((team) => (
               <TeamCard
                 key={team.id}

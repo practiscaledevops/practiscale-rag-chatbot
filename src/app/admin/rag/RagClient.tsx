@@ -6,7 +6,7 @@
 // /api/admin/retrieve which re-checks the admin gate.
 
 import { useCallback, useState } from "react";
-import { Bug, Loader2, Search, AlertTriangle, FileText } from "lucide-react";
+import { Loader2, Search, AlertTriangle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/Button";
 
@@ -84,24 +84,21 @@ export function RagClient() {
   return (
     <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Bug size={22} className="text-accent" />
-          RAG debugger
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-xl font-semibold tracking-tight">RAG debugger</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
           See exactly what the knowledge base retrieves for a query — the effective
           search, the confidence, and every chunk with its relevance score.
         </p>
       </div>
 
       <form
-        className="mt-6 flex items-center gap-2"
+        className="mt-5 flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void run();
         }}
       >
-        <div className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-surface px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
+        <div className="flex h-9 flex-1 items-center gap-2 rounded-xl border border-border bg-surface px-3 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
           <Search size={16} className="shrink-0 text-muted-foreground" aria-hidden />
           <input
             value={query}
@@ -113,34 +110,34 @@ export function RagClient() {
         <Button
           type="submit"
           disabled={loading || !query.trim()}
-          className="h-11"
+          className="shrink-0"
         >
-          {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
           Retrieve
         </Button>
       </form>
 
       {result && !result.ok && (
-        <div className="mt-5 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
           <span>{result.error || "Retrieval failed."}</span>
         </div>
       )}
 
       {result?.ok && (
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-3">
           {/* Summary bar */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-border bg-surface px-5 py-4 text-sm shadow-soft">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-[13px] shadow-soft">
             <div>
               <span className="text-muted-foreground">Chunks: </span>
               <span className="font-semibold">{result.results.length}</span>
             </div>
             {conf && (
-              <div>
-                <span className="text-muted-foreground">Confidence: </span>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground">Confidence:</span>
                 <span
                   className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums",
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums",
                     TONE_CLS[conf.tone]
                   )}
                 >
@@ -149,11 +146,11 @@ export function RagClient() {
               </div>
             )}
             {result.query && (
-              <div className="min-w-0">
-                <span className="text-muted-foreground">Searched: </span>
+              <div className="flex min-w-0 items-center gap-1">
+                <span className="text-muted-foreground">Searched:</span>
                 <span className="font-medium">{result.query}</span>
                 {result.rewritten && (
-                  <span className="ml-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
+                  <span className="ml-0.5 inline-flex shrink-0 items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-strong">
                     rewritten
                   </span>
                 )}
@@ -163,28 +160,28 @@ export function RagClient() {
 
           {/* Retrieved chunks */}
           {result.results.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
-                <Search size={20} aria-hidden />
+            <div className="flex flex-col items-center gap-2.5 rounded-xl border border-border bg-surface p-5 text-center">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent">
+                <Search size={16} aria-hidden />
               </span>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 Nothing retrieved. The knowledge base has no matching content in this key&apos;s scope.
               </p>
             </div>
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-2">
               {result.results.map((r, i) => (
-                <li key={r.id} className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
-                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <li key={r.id} className="rounded-xl border border-border bg-surface p-4 shadow-soft">
+                  <div className="mb-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <span className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
                       <FileText size={12} aria-hidden />#{i + 1}
                     </span>
-                    <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+                    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
                       {(r.source_type || "source").replace(/_/g, " ")}
                     </span>
                     <span className="ml-auto">{scoreBar(r.score)}</span>
                   </div>
-                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                  <p className="whitespace-pre-wrap text-[13px] leading-5 text-foreground/90">
                     {r.content.length > 600 ? r.content.slice(0, 600) + "…" : r.content}
                   </p>
                 </li>

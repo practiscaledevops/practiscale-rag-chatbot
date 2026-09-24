@@ -95,7 +95,7 @@ function spherePoints(n: number): Float32Array {
   return pts;
 }
 
-export function BrainOrb({ size = 128, active = false, className }: BrainOrbProps) {
+export function BrainOrb({ size = 112, active = false, className }: BrainOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef(active);
 

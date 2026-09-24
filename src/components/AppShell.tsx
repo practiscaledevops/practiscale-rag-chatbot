@@ -378,7 +378,7 @@ export function AppShell({
         {/* Mobile scrim */}
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] lg:hidden"
+            className="fixed inset-0 z-30 bg-[#111315]/30 backdrop-blur-[3px] lg:hidden"
             aria-hidden
             onClick={() => setMobileOpen(false)}
           />

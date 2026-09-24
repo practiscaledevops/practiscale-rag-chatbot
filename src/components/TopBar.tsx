@@ -35,46 +35,49 @@ export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand
   return (
     <header
       className={cn(
-        "flex h-[76px] shrink-0 items-center justify-between gap-3 bg-background px-4 sm:px-6 lg:px-10",
+        "flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background px-4 sm:px-6",
         className
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <IconButton aria-label="Open sidebar" className="-ml-1 lg:hidden" onClick={onOpenMobile}>
-          <Menu size={20} />
+        <IconButton aria-label="Open sidebar" className="lg:hidden" onClick={onOpenMobile}>
+          <Menu size={18} />
         </IconButton>
         {collapsed && (
-          <IconButton aria-label="Expand sidebar" className="-ml-1 hidden lg:inline-flex" onClick={onExpand}>
-            <PanelLeftOpen size={20} />
+          <IconButton aria-label="Expand sidebar" className="hidden lg:inline-flex" onClick={onExpand}>
+            <PanelLeftOpen size={16} />
           </IconButton>
         )}
-        <Link
-          href="/"
-          className="shrink-0 rounded-lg text-[26px] font-semibold leading-none tracking-[-0.03em] text-[#12202a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="PractiScale home"
-        >
-          Practi<span className="text-accent">Scale</span>
-        </Link>
-        {title && (
-          <span className="hidden min-w-0 items-center gap-2 md:flex">
-            <span className="text-lg font-light text-subtle-foreground" aria-hidden>
-              /
+        {/* Wordmark, separator and title share one baseline (mixed sizes). */}
+        <div className="flex min-w-0 items-baseline gap-2">
+          <Link
+            href="/"
+            className="shrink-0 rounded-md text-lg font-semibold leading-none tracking-[-0.025em] text-[#12202a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="PractiScale home"
+          >
+            Practi<span className="text-accent">Scale</span>
+          </Link>
+          {title && (
+            <span className="hidden min-w-0 items-baseline gap-2 md:flex">
+              <span className="text-sm font-light text-subtle-foreground" aria-hidden>
+                /
+              </span>
+              <span className="truncate text-[13px] font-medium text-muted-foreground">{title}</span>
             </span>
-            <span className="truncate text-sm font-medium text-muted-foreground">{title}</span>
-          </span>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         <UsagePill usage={usage} />
         <PwaInstall />
         <NotificationsBell />
         <Link
           href="/settings"
           aria-current={onSettings ? "page" : undefined}
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-[#262626] px-3 text-sm font-medium text-white transition-colors hover:bg-[#1a1a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+          className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full bg-[#262626] text-[13px] font-medium text-white transition-colors hover:bg-[#1a1a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-3"
         >
-          <Settings size={17} aria-hidden />
+          <Settings size={14} aria-hidden />
           <span className="hidden sm:inline">Settings</span>
         </Link>
       </div>
@@ -88,10 +91,10 @@ function UsagePill({ usage }: { usage: UsageState }) {
   const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(sessionTokens);
   return (
     <div
-      className="hidden h-10 items-center gap-2 rounded-full bg-tea px-4 text-sm font-medium text-tea-foreground sm:inline-flex"
+      className="hidden h-8 items-center gap-1.5 rounded-full bg-tea px-3 text-[13px] font-medium text-tea-foreground sm:inline-flex"
       title={`${sessionTokens.toLocaleString()} tokens this month · last turn ${lastTurnTokens.toLocaleString()}`}
     >
-      <Sparkles size={16} aria-hidden />
+      <Sparkles size={14} aria-hidden />
       <span className="tabular-nums">{compact}</span>
       <span className="hidden font-normal opacity-75 lg:inline">tokens this month</span>
     </div>

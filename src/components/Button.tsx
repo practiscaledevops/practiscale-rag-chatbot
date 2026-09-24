@@ -21,10 +21,11 @@ const variants: Record<Variant, string> = {
   dark: "bg-[#262626] text-white hover:bg-[#1c1c1c]",
 };
 
+// Standard density: 28 / 36 / 40px.
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-3.5 text-xs",
-  md: "h-10 px-4 text-sm",
-  lg: "h-12 px-5 text-sm",
+  sm: "h-7 gap-1.5 px-3 text-xs",
+  md: "h-9 px-3.5 text-sm",
+  lg: "h-10 px-4 text-sm",
 };
 
 /**

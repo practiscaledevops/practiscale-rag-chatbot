@@ -53,36 +53,33 @@ export function MyApprovalsClient() {
 
   return (
     <div className="h-full overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-        <header className="mb-6">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <ClipboardCheck size={22} className="text-accent" />
-            My approvals
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+        <header className="mb-5">
+          <h1 className="text-xl font-semibold tracking-tight">My approvals</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Content you submitted for review and where it stands.
-            {loading && <Loader2 size={13} className="ml-2 inline animate-spin text-muted-foreground" />}
+            {loading && <Loader2 size={12} className="ml-2 inline animate-spin text-muted-foreground" />}
           </p>
         </header>
 
         {items && !enabled ? (
-          <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+          <p className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground">
             Approvals aren&apos;t enabled yet — ask an admin to run migration 0010.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {(items ?? []).map((it) => (
               <Row key={it.id} item={it} />
             ))}
             {!loading && (items?.length ?? 0) === 0 && (
-              <li className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
+              <li className="flex flex-col items-center gap-2.5 rounded-xl border border-border bg-surface p-5 text-center">
                 <span
                   aria-hidden
-                  className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+                  className="grid h-10 w-10 place-items-center rounded-full bg-accent-soft text-accent"
                 >
-                  <ClipboardCheck size={20} />
+                  <ClipboardCheck size={16} />
                 </span>
-                <p className="max-w-sm text-sm text-muted-foreground">
+                <p className="max-w-sm text-[13px] text-muted-foreground">
                   You haven&apos;t submitted anything for approval yet. Use “Submit for
                   approval” under an assistant answer.
                 </p>
@@ -98,24 +95,24 @@ export function MyApprovalsClient() {
 function Row({ item }: { item: ApprovalItem }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <li className="rounded-2xl border border-border bg-surface shadow-soft">
+    <li className="rounded-xl border border-border bg-surface shadow-soft">
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
         className={cn(
-          "flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-surface-muted/60",
-          expanded ? "rounded-t-2xl" : "rounded-2xl"
+          "flex w-full items-start gap-2.5 px-4 py-3 text-left transition-colors hover:bg-surface-muted/60",
+          expanded ? "rounded-t-xl" : "rounded-xl"
         )}
       >
-        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground">
-          {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        <span className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground">
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium">{item.title}</span>
+            <span className="truncate text-sm font-medium leading-5">{item.title}</span>
             <span
               className={cn(
-                "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                "rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
                 STATUS_CLS[item.status]
               )}
             >
@@ -132,12 +129,12 @@ function Row({ item }: { item: ApprovalItem }) {
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-border px-4 py-4">
-          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-4 text-sm text-foreground/90">
+        <div className="border-t border-border px-4 py-3.5">
+          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-3.5 text-[13px] leading-relaxed text-foreground/90">
             {item.content}
           </div>
           {item.reviewNote && (
-            <p className="mt-3 rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
+            <p className="mt-2.5 rounded-xl border border-border bg-surface px-3.5 py-2.5 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Reviewer note:</span> {item.reviewNote}
             </p>
           )}

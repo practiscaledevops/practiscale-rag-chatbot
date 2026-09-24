@@ -65,13 +65,13 @@ function ToggleButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "bg-accent-soft text-accent-strong"
           : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
       )}
     >
-      <Icon size={13} aria-hidden />
+      <Icon size={14} className="shrink-0" aria-hidden />
       {label}
     </button>
   );

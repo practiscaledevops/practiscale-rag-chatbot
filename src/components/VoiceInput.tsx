@@ -216,6 +216,8 @@ export function VoiceInput({
 
   const recording = phase === "recording";
   const transcribing = phase === "transcribing";
+  // 16px on the 32px button, 14px on the compact 28px one.
+  const iconSize = size === "sm" ? 14 : 16;
 
   return (
     <div className={cn("relative flex items-center", className)}>
@@ -223,7 +225,7 @@ export function VoiceInput({
         <span
           role={error ? "alert" : "status"}
           className={cn(
-            "absolute bottom-full left-0 mb-1.5 max-w-[15rem] rounded-lg border px-2 py-1 text-xs shadow-soft",
+            "absolute bottom-full right-0 mb-1.5 w-max max-w-[15rem] rounded-lg border px-2 py-1 text-xs shadow-soft",
             error
               ? "border-danger/30 bg-danger/10 text-danger"
               : "border-border bg-surface text-muted-foreground"
@@ -256,11 +258,11 @@ export function VoiceInput({
         )}
       >
         {transcribing ? (
-          <Loader2 size={17} className="animate-spin" />
+          <Loader2 size={iconSize} className="animate-spin" />
         ) : recording ? (
-          <Square size={15} className="fill-current" />
+          <Square size={iconSize - 3} className="fill-current" />
         ) : (
-          <Mic size={17} />
+          <Mic size={iconSize} />
         )}
       </IconButton>
     </div>
