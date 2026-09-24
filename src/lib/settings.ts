@@ -15,6 +15,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatbotAdmin, ProfileRole } from "@/lib/admin";
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 import { fetchBrainModels, type BrainModel } from "@/lib/models";
+// Dependency-free core of the chat limits (the browser hook in lib/chat-limits
+// re-exports the same shape + defaults, so client and server never drift).
+import {
+  CHAT_LIMIT_BOUNDS,
+  DEFAULT_CHAT_LIMITS,
+  normalizeChatLimits,
+  type ChatLimits,
+} from "@/lib/attachments-shared";
+
+export { CHAT_LIMIT_BOUNDS, DEFAULT_CHAT_LIMITS, normalizeChatLimits };
+export type { ChatLimits };
 
 // ---------------------------------------------------------------------------
 // Settings shape (pure — safe to `import type` from a client component)
@@ -56,6 +67,12 @@ export interface WorkspaceSettings {
   ragDefaultOn: boolean;
   /** optional per-model price overrides, keyed by concrete model id */
   pricingOverrides: Record<string, PricingOverride>;
+  /**
+   * Chat & context limits: the conversation budget + compaction threshold the
+   * composer meters against, and the upload limits (served to every signed-in
+   * user via GET /api/chat-limits; bounds in CHAT_LIMIT_BOUNDS).
+   */
+  chat: ChatLimits;
 }
 
 /** Code-side defaults — the source of truth when a jsonb key is absent. */
@@ -65,6 +82,7 @@ export const DEFAULT_SETTINGS: WorkspaceSettings = {
   defaultModelKind: "tier",
   ragDefaultOn: true,
   pricingOverrides: {},
+  chat: { ...DEFAULT_CHAT_LIMITS },
 };
 
 // ---------------------------------------------------------------------------
@@ -181,6 +199,9 @@ export function mergeSettings(raw: unknown): WorkspaceSettings {
         ? r.ragDefaultOn
         : DEFAULT_SETTINGS.ragDefaultOn,
     pricingOverrides: normalizeOverrides(r.pricingOverrides),
+    // Missing/malformed fields fall back to defaults; numbers are clamped into
+    // CHAT_LIMIT_BOUNDS (e.g. maxFileMb never exceeds the 4 MB body cap).
+    chat: normalizeChatLimits(r.chat),
   };
 }
 
@@ -206,13 +227,14 @@ export async function loadWorkspaceSettings(
       .select("data, updated_at")
       .eq("id", 1)
       .maybeSingle();
-    if (error || !data) return { settings: { ...DEFAULT_SETTINGS }, updatedAt: null };
+    if (error || !data) return { settings: mergeSettings(null), updatedAt: null };
     return {
       settings: mergeSettings((data as { data?: unknown }).data),
       updatedAt: ((data as { updated_at?: string | null }).updated_at) ?? null,
     };
   } catch {
-    return { settings: { ...DEFAULT_SETTINGS }, updatedAt: null };
+    // mergeSettings(null) builds fresh defaults (no shared nested objects).
+    return { settings: mergeSettings(null), updatedAt: null };
   }
 }
 

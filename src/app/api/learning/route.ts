@@ -1,10 +1,12 @@
 // POST /api/learning — the user confirmed a "Save as Organizational Learning?"
 // card (or recorded a learning by hand). Forwards to the Brain's
 // /api/v1/learning with the scoped key (server-side only) and returns the ref.
+// Needs the "learning.write" capability.
 
 import { z } from "zod";
 import { brainSaveLearning, safeBrainError } from "@/lib/brain";
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, hasCapability } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
@@ -34,6 +36,9 @@ export async function POST(req: Request) {
   }
   const profile = await getSessionProfile();
   if (!profile) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasCapability(accessFromProfile(profile), "learning.write")) {
+    return Response.json({ error: "Saving learnings isn't enabled for your account." }, { status: 403 });
+  }
   const limited = rateLimit(`learning:${profile.userId}`, LEARNING_LIMIT.limit, LEARNING_LIMIT.windowMs);
   if (limited) return limited;
 

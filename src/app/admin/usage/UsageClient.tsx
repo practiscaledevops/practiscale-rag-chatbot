@@ -221,19 +221,20 @@ function KpiCard({
 }
 
 /**
- * Chart palette. The app is light-only, so the chart always uses the light
- * workspace palette: PractiScale green token bars on hairline grid lines.
+ * Chart palette, from theme tokens so it follows light/dark (same as
+ * ChartBlock): PractiScale green token bars on hairline grid lines. The cost
+ * line's amber reads on both themes.
  */
 const CHART_COLORS = {
-  grid: "#EAECEC", // --border
-  axis: "#6E7375", // --muted-foreground
-  input: "#10A388", // --accent
-  output: "#9FDACF", // --accent at ~40% on white
+  grid: "rgb(var(--table-grid))",
+  axis: "rgb(var(--muted-foreground))",
+  input: "rgb(var(--accent))",
+  output: "rgb(var(--accent) / 0.45)",
   cost: "#D97706",
-  cursor: "#F5F6F6", // --surface-muted
-  tooltipBg: "#FFFFFF",
-  tooltipBorder: "#EAECEC",
-  tooltipText: "#111315", // --foreground
+  cursor: "rgb(var(--muted-foreground) / 0.08)",
+  tooltipBg: "rgb(var(--surface))",
+  tooltipBorder: "rgb(var(--border))",
+  tooltipText: "rgb(var(--foreground))",
 };
 
 // ---------------------------------------------------------------------------
@@ -463,7 +464,7 @@ export function UsageClient() {
                     borderRadius: 12,
                     color: chartColors.tooltipText,
                     fontSize: 12,
-                    boxShadow: "0 2px 8px rgb(17 19 21 / 0.06), 0 16px 40px rgb(17 19 21 / 0.10)",
+                    boxShadow: "var(--shadow-soft-lg)",
                   }}
                   labelStyle={{ color: chartColors.tooltipText, fontWeight: 600, marginBottom: 4 }}
                   labelFormatter={(d: string) => formatDayLong(d)}

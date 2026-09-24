@@ -16,8 +16,8 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     display_override: ["window-controls-overlay", "standalone"],
     orientation: "any",
-    background_color: "#070F0D",
-    theme_color: "#0B1512",
+    background_color: "#161616",
+    theme_color: "#161616",
     lang: "en",
     categories: ["business", "productivity"],
     icons: [

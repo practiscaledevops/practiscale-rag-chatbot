@@ -11,6 +11,10 @@
 //   • You cannot change your own role or deactivate/delete yourself
 //     (prevents an admin from locking themselves out).
 //   • The last ACTIVE super_admin cannot be demoted, deactivated, or deleted.
+//   • Submitted capability ids must exist in the Brain's capability manifest
+//     (or be legacy feature keys / already stored), and a plain admin can only
+//     grant capabilities they hold themselves (checked on permission AND role
+//     changes, since a role change moves the defaults).
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -23,7 +27,14 @@ import {
   countOtherActiveSuperAdmins,
   permissionsSchema,
   roleSchema,
+  preparePermissionsForStorage,
+  loadStoredAccess,
+  capabilitiesOf,
+  capabilitiesBeyondActor,
+  beyondActorMessage,
+  type PermissionsShape,
 } from "@/lib/admin-users";
+import { fetchCapabilityManifest } from "@/lib/capabilities";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -46,17 +57,19 @@ const idSchema = z.string().uuid();
 async function loadTarget(
   service: ReturnType<typeof createSupabaseServiceClient>,
   id: string
-): Promise<{ role: ProfileRole; isActive: boolean; teamId: string | null } | null> {
+): Promise<{ role: ProfileRole; isActive: boolean; teamId: string | null; permissions: Record<string, unknown> } | null> {
   const { data } = await service
     .from("profiles")
-    .select("id, role, is_active, team_id")
+    .select("id, role, is_active, team_id, permissions")
     .eq("id", id)
     .maybeSingle();
   if (!data) return null;
+  const p = data.permissions;
   return {
     role: ((data.role as ProfileRole) ?? "user"),
     isActive: data.is_active !== false,
     teamId: (data.team_id as string | null) ?? null,
+    permissions: p && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : {},
   };
 }
 
@@ -135,13 +148,37 @@ export async function PATCH(
     }
   }
 
+  // --- Permissions: validate against the manifest; grant-what-you-have -------
+  let nextPermissions: PermissionsShape | undefined;
+  if (body.permissions !== undefined || (body.role !== undefined && body.role !== target.role)) {
+    const manifest = await fetchCapabilityManifest();
+    if (body.permissions !== undefined) {
+      const prepared = preparePermissionsForStorage(body.permissions, manifest, target.permissions);
+      if (!prepared.ok) {
+        return NextResponse.json({ error: prepared.error }, { status: prepared.status });
+      }
+      nextPermissions = prepared.permissions;
+    }
+    if (!admin.isSuperAdmin) {
+      const actor = isSelf ? { role: target.role, permissions: target.permissions } : await loadStoredAccess(service, admin.userId);
+      const beyond = capabilitiesBeyondActor(
+        { role: admin.role, capabilities: capabilitiesOf(admin.role, actor?.permissions, manifest) },
+        capabilitiesOf(target.role, target.permissions, manifest),
+        capabilitiesOf(body.role ?? target.role, nextPermissions ?? target.permissions, manifest)
+      );
+      if (beyond.length) {
+        return NextResponse.json({ error: beyondActorMessage(beyond, manifest) }, { status: 403 });
+      }
+    }
+  }
+
   // --- Build the patch -----------------------------------------------------
   const patch: Record<string, unknown> = {};
   if (body.displayName !== undefined) patch.display_name = body.displayName;
   if (body.role !== undefined) patch.role = body.role;
   if (body.isActive !== undefined) patch.is_active = body.isActive;
   if (body.teamId !== undefined) patch.team_id = body.teamId;
-  if (body.permissions !== undefined) patch.permissions = body.permissions;
+  if (nextPermissions !== undefined) patch.permissions = nextPermissions;
   if (body.canUseAllModels !== undefined) patch.can_use_all_models = body.canUseAllModels;
 
   const { error: upErr } = await service.from("profiles").update(patch).eq("id", id);

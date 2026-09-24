@@ -1,7 +1,10 @@
 // GET /api/jobs/[id] — a job's live progress (proxies to the Brain). Polled by
 // the on-chat progress card. Demo returns a synthetic run that advances.
+// A deep audit's result carries per-call findings from transcripts, so reading
+// one needs the "jobs.deep_audit" capability (sensitive; off for members).
 
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, hasCapability } from "@/lib/access";
 import { brainJobProgress, BrainRequestError } from "@/lib/brain";
 import { isDemo } from "@/lib/demo/mode";
 
@@ -34,6 +37,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const profile = await getSessionProfile();
   if (!profile) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasCapability(accessFromProfile(profile), "jobs.deep_audit")) {
+    return Response.json({ error: "Deep audits aren't enabled for your account." }, { status: 403 });
+  }
   try {
     return Response.json(await brainJobProgress(id));
   } catch (e) {

@@ -6,9 +6,10 @@
 // transcript is returned as { text } and the browser inserts it into the input.
 //
 // Nothing is stored: transcription is per-request and ephemeral. We never log
-// the audio or the transcript.
+// the audio or the transcript. Needs the "extract.audio" capability.
 
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, hasCapability } from "@/lib/access";
 import { brainExtract, BrainRequestError } from "@/lib/brain";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
@@ -34,6 +35,9 @@ export async function POST(req: Request) {
   const profile = await getSessionProfile();
   if (!profile) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!hasCapability(accessFromProfile(profile), "extract.audio")) {
+    return Response.json({ error: "Voice input isn't enabled for your account." }, { status: 403 });
   }
   const limited = rateLimit(`voice:${profile.userId}`, VOICE_LIMIT.limit, VOICE_LIMIT.windowMs);
   if (limited) return limited;

@@ -9,9 +9,20 @@
 // scoped key) to get plain text; the text is DATA, never instructions. Before
 // migration 0012 the table doesn't exist — reads degrade to available:false and
 // writes return a clear 503 telling the admin to run the migration.
+//
+// Capabilities: "app.projects" to add files at all, AND the file kind's own
+// "extract.*" capability (lib/access canAttachKind — the same gate as
+// /api/attachments), so a denied extract.pdf / extract.image / extract.audio
+// can't be bypassed by uploading the file as project knowledge. Unknown
+// extensions are rejected (the Brain would otherwise fall back to the MIME
+// type), and the leading bytes must match the extension.
 
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/auth";
+import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, canAttachKind, hasCapability, type Access } from "@/lib/access";
+import { ACCEPTED_LABEL, attachmentKind, fileExt } from "@/lib/attachments-shared";
+import { SNIFF_BYTES, contentMatchesExtension } from "@/lib/attachments-sniff";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { brainExtract, BrainRequestError } from "@/lib/brain";
 import { loadProjectFiles, isMissingProjectFilesTable } from "@/lib/project-files";
@@ -75,6 +86,17 @@ export async function POST(req: Request) {
   const limited = rateLimit(`project-files:${user.id}`, UPLOAD_LIMIT.limit, UPLOAD_LIMIT.windowMs);
   if (limited) return limited;
 
+  // Adding project knowledge is part of the "app.projects" capability. `access`
+  // stays null only in demo (no session to gate on).
+  let access: Access | null = null;
+  if (!isDemo()) {
+    const profile = await getSessionProfile(user);
+    access = profile ? accessFromProfile(profile) : null;
+    if (!access || !hasCapability(access, "app.projects")) {
+      return NextResponse.json({ error: "Projects aren't enabled for your account." }, { status: 403 });
+    }
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -93,6 +115,15 @@ export async function POST(req: Request) {
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file provided." }, { status: 400 });
+  }
+  // The file kind decides the capability (extract.pdf / .image / .audio / .text).
+  const name = (file.name || "file").slice(0, 200);
+  const kind = attachmentKind(name);
+  if (!kind) {
+    return NextResponse.json({ error: `Unsupported file type. Accepted: ${ACCEPTED_LABEL}.` }, { status: 415 });
+  }
+  if (access && !canAttachKind(access, kind)) {
+    return NextResponse.json({ error: "That file type isn't enabled for your account." }, { status: 403 });
   }
   if (file.size === 0) {
     return NextResponse.json({ error: "The file is empty." }, { status: 400 });
@@ -122,7 +153,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const name = (file.name || "file").slice(0, 200);
+  // Sniff the leading bytes before any extractor sees the file.
+  const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+  if (!contentMatchesExtension(fileExt(name), head)) {
+    return NextResponse.json({ error: "File content doesn't match its extension." }, { status: 415 });
+  }
 
   let text = "";
   if (isDemo()) {

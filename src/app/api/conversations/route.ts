@@ -9,8 +9,14 @@
 //              • the chat view, which on every settled turn re-sends the whole
 //                thread (create-on-first-message when conversationId is null).
 //            Always replies with { conversationId, conversation }.
-//   PATCH  — rename / pin / re-tier / re-parent a conversation
-//   DELETE — remove a conversation (its messages cascade)
+//   PATCH  — rename / pin / re-tier / re-parent a conversation, or bulk
+//            archive/unarchive: { ids: uuid[1..200], archived }
+//   DELETE — remove a conversation (its messages cascade), or bulk: { ids }
+//
+// Bulk bodies are told apart by the presence of `ids`; they are validated
+// strictly (no other fields) and every statement is scoped to
+// `user_id = <session user> AND id IN (ids)`, so ids the caller doesn't own are
+// simply not matched. Bulk replies carry counts of the rows actually affected.
 //
 // This lives in the chatbot's OWN Supabase project (auth + history + projects),
 // never the Brain. The Brain is only ever reached through /api/chat. Message
@@ -23,6 +29,7 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { loadConversations } from "@/lib/conversations-read";
+import { rowTimestamps } from "@/lib/message-times";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -72,7 +79,49 @@ const patchSchema = z
 
 const deleteSchema = z.object({ id: z.string().uuid() });
 
+/** Upper bound on ids per bulk request (matches the sidebar's history cap). */
+const MAX_BULK_IDS = 200;
+/**
+ * PostgREST encodes `id IN (…)` into the request URL; 200 uuids come close to
+ * common 8 KB proxy request-line limits, so bulk writes run in batches.
+ */
+const BULK_BATCH = 100;
+
+const bulkIds = z.array(z.string().uuid()).min(1).max(MAX_BULK_IDS);
+const bulkPatchSchema = z.object({ ids: bulkIds, archived: z.boolean() }).strict();
+const bulkDeleteSchema = z.object({ ids: bulkIds }).strict();
+
 type MessageInput = z.infer<typeof messageInput>;
+
+/** A bulk body is any JSON object carrying an `ids` key (validated separately). */
+function isBulkBody(body: unknown): body is { ids: unknown } {
+  return typeof body === "object" && body !== null && "ids" in body;
+}
+
+/** Before migration 0005 the `archived` column doesn't exist; say so clearly. */
+function archiveErrorMessage(message: string): string {
+  return /archived/i.test(message)
+    ? "Archiving isn't enabled yet (run migration 0005)."
+    : message;
+}
+
+/**
+ * Run a user-scoped bulk write over de-duplicated ids in URL-safe batches.
+ * `run` must return the affected rows' ids (`.select("id")`). Stops at the
+ * first failing batch and reports the ids already affected before it.
+ */
+async function inBatches(
+  ids: string[],
+  run: (batch: string[]) => PromiseLike<{ data: unknown; error: { message: string } | null }>
+): Promise<{ ids: string[]; error: { message: string } | null }> {
+  const affected: string[] = [];
+  for (let i = 0; i < ids.length; i += BULK_BATCH) {
+    const { data, error } = await run(ids.slice(i, i + BULK_BATCH));
+    if (error) return { ids: affected, error };
+    for (const row of (data ?? []) as { id: string }[]) affected.push(row.id);
+  }
+  return { ids: affected, error: null };
+}
 
 /** Resolve the authed user + an RLS-scoped Supabase client, or a 401 response. */
 async function requireUser() {
@@ -131,7 +180,7 @@ async function replaceMessages(
 
   if (messages.length === 0) return null;
 
-  const base = Date.now();
+  const times = rowTimestamps(messages as { createdAt?: unknown }[]);
   const rows = messages.map((m, i) => ({
     conversation_id: conversationId,
     user_id: userId,
@@ -142,7 +191,7 @@ async function replaceMessages(
     citations: m.role === "assistant" ? extractCitations(m.content) : [],
     input_tokens: m.role === "user" ? estimateTokens(m.content) : 0,
     output_tokens: m.role === "assistant" ? estimateTokens(m.content) : 0,
-    created_at: new Date(base + i).toISOString(),
+    created_at: times[i],
   }));
   const ins = await supabase.from("messages").insert(rows);
   return ins.error ?? null;
@@ -262,13 +311,52 @@ export async function POST(req: Request) {
   );
 }
 
-// PATCH /api/conversations — rename / pin / re-tier / re-parent.
+// PATCH /api/conversations — rename / pin / re-tier / re-parent, or bulk
+// archive/unarchive with { ids, archived }.
 export async function PATCH(req: Request) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
   const { user, supabase } = auth;
 
-  const parsed = patchSchema.safeParse(await req.json().catch(() => ({})));
+  const body: unknown = await req.json().catch(() => ({}));
+
+  // --- Bulk archive / unarchive -------------------------------------------
+  if (isBulkBody(body)) {
+    const bulk = bulkPatchSchema.safeParse(body);
+    if (!bulk.success) {
+      return NextResponse.json({ error: bulk.error.flatten() }, { status: 400 });
+    }
+    const ids = [...new Set(bulk.data.ids)];
+    const { archived } = bulk.data;
+    const result = await inBatches(ids, (batch) =>
+      supabase
+        .from("conversations")
+        .update({ archived })
+        .eq("user_id", user.id) // belt-and-braces alongside RLS
+        .in("id", batch)
+        .select("id")
+    );
+    if (result.error) {
+      return NextResponse.json(
+        {
+          error: archiveErrorMessage(result.error.message),
+          requested: ids.length,
+          updated: result.ids.length,
+          ids: result.ids,
+        },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({
+      archived,
+      requested: ids.length,
+      updated: result.ids.length,
+      ids: result.ids,
+    });
+  }
+
+  // --- Single conversation ------------------------------------------------
+  const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -293,10 +381,7 @@ export async function PATCH(req: Request) {
   if (error) {
     // Before migration 0005 the `archived` column doesn't exist; surface a
     // clear, non-fatal message so the optimistic UI can revert.
-    const msg = /archived/i.test(error.message)
-      ? "Archiving isn't enabled yet (run migration 0005)."
-      : error.message;
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: archiveErrorMessage(error.message) }, { status: 500 });
   }
   if (!data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -304,14 +389,52 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ conversation: data });
 }
 
-// DELETE /api/conversations — remove a conversation (messages cascade).
+// DELETE /api/conversations — remove a conversation, or several with { ids }.
+// Messages go with their conversation via the `on delete cascade` foreign key
+// (messages.conversation_id), for the single and the bulk path alike.
 export async function DELETE(req: Request) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
   const { user, supabase } = auth;
 
-  // Accept the id from the body or, as a convenience, the query string.
   const body = await req.json().catch(() => ({}));
+
+  // --- Bulk delete --------------------------------------------------------
+  if (isBulkBody(body)) {
+    const bulk = bulkDeleteSchema.safeParse(body);
+    if (!bulk.success) {
+      return NextResponse.json({ error: bulk.error.flatten() }, { status: 400 });
+    }
+    const ids = [...new Set(bulk.data.ids)];
+    const result = await inBatches(ids, (batch) =>
+      supabase
+        .from("conversations")
+        .delete()
+        .eq("user_id", user.id)
+        .in("id", batch)
+        .select("id")
+    );
+    if (result.error) {
+      return NextResponse.json(
+        {
+          error: result.error.message,
+          requested: ids.length,
+          deleted: result.ids.length,
+          ids: result.ids,
+        },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      requested: ids.length,
+      deleted: result.ids.length,
+      ids: result.ids,
+    });
+  }
+
+  // --- Single conversation ------------------------------------------------
+  // Accept the id from the body or, as a convenience, the query string.
   const id = body?.id ?? new URL(req.url).searchParams.get("id");
 
   const parsed = deleteSchema.safeParse({ id });

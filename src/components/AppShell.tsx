@@ -17,6 +17,7 @@ import { TopBar } from "@/components/TopBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { DEFAULT_OUTPUT_TYPE, isOutputType, type OutputType } from "@/lib/output-types";
 import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
+import { capabilitySet } from "@/lib/capabilities-client";
 
 // ---------------------------------------------------------------------------
 // Model selection
@@ -56,6 +57,9 @@ const TIER_LABELS: Record<ModelTier, { label: string; hint: string }> = {
 };
 
 const TIERS: ModelTier[] = ["fast", "recommended", "max"];
+
+/** Stable default for `features`, so the memoized capability lookups don't churn. */
+const NO_FEATURES: string[] = [];
 
 /**
  * "Routed" presets that resolve SERVER-SIDE, not to a fixed model:
@@ -193,6 +197,8 @@ interface AppShellContextValue {
   /** Display name + email (profile card, settings). */
   fullName: string;
   email: string;
+  /** Profile picture URL, or null for initials. */
+  avatarUrl: string | null;
   /** Whether the user may see the Admin link. */
   isAdmin: boolean;
   /** Active work mode (persona), forwarded to /api/chat. */
@@ -203,6 +209,14 @@ interface AppShellContextValue {
   /** Response format for the next message (Settings default, composer override). */
   outputType: OutputType;
   setOutputType: (o: OutputType) => void;
+  /**
+   * The signed-in user's RESOLVED capability ids (SessionProfile.capabilities,
+   * resolved server-side). Authoritative for the UI: an id that isn't listed is
+   * off. Used only to HIDE controls; every route re-checks server-side.
+   */
+  capabilities: readonly string[];
+  /** Whether the user holds capability `id` (e.g. "chat.source_scope"). */
+  hasCap: (id: string) => boolean;
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -217,6 +231,15 @@ export function useAppShell(): AppShellContextValue {
   const ctx = useContext(AppShellContext);
   if (!ctx) throw new Error("useAppShell must be used within <AppShell>");
   return ctx;
+}
+
+/**
+ * Whether the signed-in user holds capability `id` — for hiding a control the
+ * user can't use (hidden, not disabled). UI convenience only: the server
+ * enforces every capability on its own.
+ */
+export function useCapability(id: string): boolean {
+  return useAppShell().hasCap(id);
 }
 
 export interface AppShellProps
@@ -236,6 +259,8 @@ export interface AppShellProps
     | "onPinConversation"
     | "onArchiveConversation"
     | "onDeleteConversation"
+    | "onBulkArchive"
+    | "onBulkDelete"
   > {
   children: React.ReactNode;
   /** Permitted model catalog (from fetchBrainModels + permission filter). */
@@ -252,8 +277,14 @@ export interface AppShellProps
   /** Display name + email, for the sidebar profile card. */
   fullName?: string;
   email?: string;
+  /** Profile picture URL, or null for initials. */
+  avatarUrl?: string | null;
   isAdmin?: boolean;
-  /** Granted feature permissions, for gating which work modes appear. */
+  /**
+   * The user's resolved capability ids (SessionProfile.capabilities): gates the
+   * work modes offered, the sidebar links and the chat controls (see
+   * {@link useCapability}). Treated as authoritative — missing means off.
+   */
   features?: string[];
   /** Tokens already spent this month (persisted), used to seed the meter. */
   initialTokens?: number;
@@ -278,8 +309,9 @@ export function AppShell({
   firstName = "",
   fullName = "",
   email = "",
+  avatarUrl = null,
   isAdmin = false,
-  features = [],
+  features = NO_FEATURES,
   initialTokens = 0,
   onNewChat,
   onNewProject,
@@ -292,6 +324,8 @@ export function AppShell({
   onPinConversation,
   onArchiveConversation,
   onDeleteConversation,
+  onBulkArchive,
+  onBulkDelete,
 }: AppShellProps) {
   const router = useRouter();
 
@@ -367,18 +401,25 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Capability gating for the chrome and the chat controls. The resolved list
+  // is authoritative (a missing id is off) — this only hides UI; the routes
+  // enforce every capability server-side.
+  const capSet = useMemo(() => capabilitySet(features), [features]);
+  const capabilities = useMemo(() => Array.from(capSet), [capSet]);
+  const hasCap = useCallback((id: string) => capSet.has(id), [capSet]);
+
   const value = useMemo<AppShellContextValue>(
-    () => ({ selection, setSelection, options, usage, addUsage, firstName, fullName, email, isAdmin, mode, setMode, modeDefs, outputType, setOutputType }),
-    [selection, options, usage, addUsage, firstName, fullName, email, isAdmin, mode, modeDefs, outputType]
+    () => ({ selection, setSelection, options, usage, addUsage, firstName, fullName, email, avatarUrl, isAdmin, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap }),
+    [selection, options, usage, addUsage, firstName, fullName, email, avatarUrl, isAdmin, mode, modeDefs, outputType, capabilities, hasCap]
   );
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="flex h-screen overflow-hidden bg-sidebar">
+      <div className="flex h-app overflow-hidden bg-sidebar">
         {/* Mobile scrim */}
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-30 bg-[#111315]/30 backdrop-blur-[3px] lg:hidden"
+            className="fixed inset-x-0 bottom-0 top-[var(--titlebar-h)] z-30 bg-[#111315]/30 backdrop-blur-[3px] lg:hidden"
             aria-hidden
             onClick={() => setMobileOpen(false)}
           />
@@ -389,8 +430,10 @@ export function AppShell({
           conversations={conversations}
           activeConversationId={activeConversationId}
           isAdmin={isAdmin}
+          capabilities={capabilities}
           fullName={fullName}
           email={email}
+          avatarUrl={avatarUrl}
           mobileOpen={mobileOpen}
           collapsed={collapsed}
           onCloseMobile={() => setMobileOpen(false)}
@@ -406,6 +449,8 @@ export function AppShell({
           onPinConversation={onPinConversation}
           onArchiveConversation={onArchiveConversation}
           onDeleteConversation={onDeleteConversation}
+          onBulkArchive={onBulkArchive}
+          onBulkDelete={onBulkDelete}
         />
 
         <div className="flex min-w-0 flex-1 flex-col bg-background">

@@ -16,9 +16,11 @@ const variants: Record<Variant, string> = {
   primary: "bg-accent text-accent-foreground shadow-soft hover:bg-accent-hover",
   secondary: "border border-border bg-surface text-foreground hover:bg-surface-muted",
   ghost: "bg-transparent text-foreground hover:bg-surface-muted",
-  danger: "bg-danger text-white shadow-soft hover:bg-danger/90",
+  // A dedicated solid fill: the dark theme lifts --danger for text, which is
+  // too light under white text.
+  danger: "bg-danger-solid text-white shadow-soft hover:bg-danger-solid-hover",
   tea: "bg-tea text-tea-foreground hover:bg-tea-hover",
-  dark: "bg-[#262626] text-white hover:bg-[#1c1c1c]",
+  dark: "bg-ink text-ink-foreground hover:bg-ink-hover",
 };
 
 // Standard density: 28 / 36 / 40px.

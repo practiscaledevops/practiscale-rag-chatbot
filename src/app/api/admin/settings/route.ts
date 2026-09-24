@@ -11,6 +11,9 @@
 //   • ragDefaultOn      — whether RAG grounding is ON by default for new chats.
 //   • pricingOverrides  — optional per-model $/1M in+out overrides the cost calc
 //                          can read (fall back to lib/pricing.ts when absent).
+//   • chat              — chat & context limits: context-window budget, compaction
+//                          threshold / auto-compact, upload size + count limits
+//                          (served to every signed-in user by GET /api/chat-limits).
 //
 // SECURITY / HARD RULE: every request is gated by requireChatbotAdmin() — the
 // caller is resolved server-side and their role is read from profiles via the
@@ -83,6 +86,23 @@ export async function GET() {
 // object. Bounds mirror the normalize helpers in lib/settings.ts.
 const rateField = z.number().nonnegative().max(1_000_000).nullable();
 
+// Chat limits: any finite number is accepted and then rounded + clamped into
+// CHAT_LIMIT_BOUNDS by mergeSettings (the response echoes the normalized values,
+// which the editor adopts). The loose outer bound only rejects absurd input.
+const limitField = z.number().finite().min(0).max(100_000_000);
+
+const chatSchema = z
+  .object({
+    contextWindowTokens: limitField,
+    compactAtPct: limitField,
+    autoCompact: z.boolean(),
+    maxImageMb: limitField,
+    maxFileMb: limitField,
+    maxFiles: limitField,
+  })
+  .partial()
+  .strict();
+
 const putSchema = z
   .object({
     disabledModels: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
@@ -95,6 +115,7 @@ const putSchema = z
         z.object({ inputPerMTok: rateField, outputPerMTok: rateField })
       )
       .optional(),
+    chat: chatSchema.optional(),
   })
   .strict();
 
@@ -120,6 +141,8 @@ export async function PUT(req: Request) {
     // records/arrays: prefer the patch when present, else keep current.
     disabledModels: patch.disabledModels ?? current.disabledModels,
     pricingOverrides: patch.pricingOverrides ?? current.pricingOverrides,
+    // chat: field-level patch over the current limits (then clamped).
+    chat: { ...current.chat, ...(patch.chat ?? {}) },
   });
 
   const updatedAt = new Date().toISOString();

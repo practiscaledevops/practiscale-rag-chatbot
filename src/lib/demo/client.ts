@@ -6,7 +6,7 @@
 import { demoStore, DEMO_USER } from "./fixtures";
 
 type Row = Record<string, any>;
-type Filter = { col: string; op: "eq" | "in" | "is"; val: any };
+type Filter = { col: string; op: "eq" | "neq" | "in" | "is" | "gt" | "gte" | "lt" | "lte"; val: any };
 
 // UUID-shaped so PATCH/DELETE routes (which validate z.string().uuid()) accept
 // demo-created rows, matching production ids exactly.
@@ -33,6 +33,11 @@ class Query implements PromiseLike<{ data: any; error: any; count?: number }> {
   eq(col: string, val: any) { this.filters.push({ col, op: "eq", val }); return this; }
   in(col: string, val: any[]) { this.filters.push({ col, op: "in", val }); return this; }
   is(col: string, val: any) { this.filters.push({ col, op: "is", val }); return this; }
+  neq(col: string, val: any) { this.filters.push({ col, op: "neq", val }); return this; }
+  gt(col: string, val: any) { this.filters.push({ col, op: "gt", val }); return this; }
+  gte(col: string, val: any) { this.filters.push({ col, op: "gte", val }); return this; }
+  lt(col: string, val: any) { this.filters.push({ col, op: "lt", val }); return this; }
+  lte(col: string, val: any) { this.filters.push({ col, op: "lte", val }); return this; }
   match(obj: Row) { for (const k of Object.keys(obj)) this.filters.push({ col: k, op: "eq", val: obj[k] }); return this; }
   order(col: string, opts?: { ascending?: boolean }) { this._orders.push({ col, asc: opts?.ascending !== false }); return this; }
   limit(n: number) { this._limit = n; return this; }
@@ -43,6 +48,13 @@ class Query implements PromiseLike<{ data: any; error: any; count?: number }> {
       if (f.op === "eq") return v === f.val;
       if (f.op === "in") return Array.isArray(f.val) && f.val.includes(v);
       if (f.op === "is") return v === f.val || (f.val === null && (v === null || v === undefined));
+      if (f.op === "neq") return v !== f.val;
+      // Range filters compare like Postgres would for numbers / ISO timestamps.
+      if (v === null || v === undefined) return false;
+      if (f.op === "gt") return v > f.val;
+      if (f.op === "gte") return v >= f.val;
+      if (f.op === "lt") return v < f.val;
+      if (f.op === "lte") return v <= f.val;
       return true;
     });
   }

@@ -3,7 +3,8 @@
 // Assistant settings (reference "Qubi" prompt-settings screen):
 //   header card with Save changes · a connection card · "Your saved prompts" ·
 //   "Your output" (response-format chips) · a right panel with the default
-//   model, work mode, response format and knowledge scope.
+//   model, work mode, response format and "Search in" knowledge scope (+ an
+//   optional collection narrowing).
 // Defaults are stored per browser (lib/prefs) and applied to new chats; the
 // composer can still override any of them per message.
 
@@ -12,26 +13,31 @@ import { useRouter } from "next/navigation";
 import {
   Brain,
   Check,
+  ChevronRight,
   ChevronsUpDown,
   Loader2,
+  Monitor,
+  Moon,
+  Palette,
   PenLine,
   Plus,
+  ShieldCheck,
   Sparkles,
+  Sun,
   Wand2,
 } from "lucide-react";
 import { useAppShell } from "@/components/AppShell";
 import { OrbAvatar } from "@/components/OrbAvatar";
+import { onRadioGroupKeyDown, radioTabIndex } from "@/lib/a11y";
 import { Button } from "@/components/Button";
 import { PromptLibrary, type UserPrompt } from "../_components/PromptLibrary";
+import { knowledgeScopeIcon, useSearchOptions } from "../_components/ComposerControls";
 import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
 import { readPrefs, writePrefs, type ChatPrefs } from "@/lib/prefs";
+import { DEFAULT_KNOWLEDGE_SCOPE, isKnowledgeScopeId, type KnowledgeScope } from "@/lib/knowledge-scopes";
+import { useTheme, type ThemePref } from "@/lib/theme";
 import type { WorkMode } from "@/lib/work-modes";
 import { cn } from "@/lib/utils";
-
-interface Collection {
-  id: string;
-  name: string;
-}
 
 const PANEL = "rounded-2xl border border-border bg-surface-muted/60";
 
@@ -44,8 +50,12 @@ export function SettingsClient() {
     model: selection.value,
     mode,
     outputType,
+    knowledgeScope: DEFAULT_KNOWLEDGE_SCOPE,
     collectionIds: [],
+    responseFont: "serif",
   }));
+  // The "Narrow to collections" list starts open only when some are chosen.
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [saved, setSaved] = useState<Required<ChatPrefs> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
 
@@ -55,10 +65,13 @@ export function SettingsClient() {
       model: p.model && options.some((o) => o.value === p.model && o.available) ? p.model : selection.value,
       mode: p.mode && modeDefs.some((m) => m.id === p.mode) ? p.mode : mode,
       outputType: (p.outputType as OutputType) ?? outputType,
+      knowledgeScope: isKnowledgeScopeId(p.knowledgeScope) ? p.knowledgeScope : DEFAULT_KNOWLEDGE_SCOPE,
       collectionIds: Array.isArray(p.collectionIds) ? p.collectionIds : [],
+      responseFont: p.responseFont === "sans" ? "sans" : "serif",
     };
     setDraft(next);
     setSaved(next);
+    setCollectionsOpen(next.collectionIds.length > 0);
     // Seed once on mount; later shell changes shouldn't clobber the draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -75,6 +88,14 @@ export function SettingsClient() {
     },
     [draft, router]
   );
+
+  // --- Appearance (applies instantly, no Save needed) -----------------------
+  const [theme, setTheme] = useTheme();
+  const setResponseFont = useCallback((font: "serif" | "sans") => {
+    setDraft((d) => ({ ...d, responseFont: font }));
+    setSaved((sv) => (sv ? { ...sv, responseFont: font } : sv));
+    writePrefs({ ...readPrefs(), responseFont: font });
+  }, []);
 
   // --- Saved prompts -----------------------------------------------------
   const [prompts, setPrompts] = useState<UserPrompt[] | null>(null);
@@ -96,18 +117,13 @@ export function SettingsClient() {
     void loadPrompts();
   }, [loadPrompts]);
 
-  // --- Knowledge collections ----------------------------------------------
-  const [collections, setCollections] = useState<Collection[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/collections", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { collections: [] }))
-      .then((d: { collections?: Collection[] }) => !cancelled && setCollections(d.collections ?? []))
-      .catch(() => !cancelled && setCollections([]));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // --- Knowledge: "Search in" scopes + collections --------------------------
+  const searchOptions = useSearchOptions();
+  const scopes = searchOptions?.scopes ?? null;
+  const collections = searchOptions?.collections ?? [];
+  // A saved scope this user can no longer pick shows (and sends) as Auto.
+  const effectiveScope =
+    scopes && !scopes.some((s) => s.id === draft.knowledgeScope) ? DEFAULT_KNOWLEDGE_SCOPE : draft.knowledgeScope;
 
   const usableModels = options.filter((o) => o.available);
   const quickTiers = options.filter((o) => o.kind === "tier" && ["fast", "recommended", "max"].includes(o.value));
@@ -174,6 +190,42 @@ export function SettingsClient() {
               </span>
             </div>
 
+            {/* Appearance */}
+            <section className={cn(PANEL, "px-4 py-3.5")} aria-labelledby="set-appearance">
+              <h2 id="set-appearance" className="flex items-center gap-2 text-sm font-semibold">
+                <Palette size={16} className="shrink-0" aria-hidden /> Appearance
+              </h2>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-[13px] font-medium leading-5">Theme</p>
+                  <p className="text-xs text-muted-foreground">Applies right away on this device.</p>
+                  <Segmented<ThemePref>
+                    label="Theme"
+                    value={theme}
+                    onChange={setTheme}
+                    options={[
+                      { value: "light", label: "Light", icon: <Sun size={14} aria-hidden /> },
+                      { value: "dark", label: "Dark", icon: <Moon size={14} aria-hidden /> },
+                      { value: "system", label: "System", icon: <Monitor size={14} aria-hidden /> },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium leading-5">Answer font</p>
+                  <p className="text-xs text-muted-foreground">The typeface assistant answers are set in.</p>
+                  <Segmented<"serif" | "sans">
+                    label="Answer font"
+                    value={draft.responseFont}
+                    onChange={setResponseFont}
+                    options={[
+                      { value: "serif", label: "Serif", icon: <span className="font-serif text-[15px] leading-none" aria-hidden>Aa</span> },
+                      { value: "sans", label: "Sans", icon: <span className="font-sans text-[14px] leading-none" aria-hidden>Aa</span> },
+                    ]}
+                  />
+                </div>
+              </div>
+            </section>
+
             <div className="grid gap-4 md:grid-cols-2">
               {/* Saved prompts */}
               <section className={cn(PANEL, "flex min-h-[340px] min-w-0 flex-col")} aria-labelledby="set-prompts">
@@ -232,8 +284,13 @@ export function SettingsClient() {
                   </h2>
                   <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">Response format</span>
                 </header>
-                <div className="flex flex-wrap gap-2 px-4" role="radiogroup" aria-labelledby="set-output">
-                  {OUTPUT_TYPES.map((o) => {
+                <div
+                  className="flex flex-wrap gap-2 px-4"
+                  role="radiogroup"
+                  aria-labelledby="set-output"
+                  onKeyDown={onRadioGroupKeyDown}
+                >
+                  {OUTPUT_TYPES.map((o, i) => {
                     const on = draft.outputType === o.id;
                     return (
                       <button
@@ -241,6 +298,7 @@ export function SettingsClient() {
                         type="button"
                         role="radio"
                         aria-checked={on}
+                        tabIndex={radioTabIndex(on, i, OUTPUT_TYPES.some((x) => x.id === draft.outputType))}
                         title={o.hint}
                         onClick={() => setDraft((d) => ({ ...d, outputType: o.id }))}
                         className={cn(
@@ -320,35 +378,70 @@ export function SettingsClient() {
             </div>
 
             <div className="mt-4">
-              <p className="text-[13px] font-medium leading-5">Knowledge</p>
+              <p id="set-knowledge" className="text-[13px] font-medium leading-5">
+                Search in
+              </p>
               <p className="text-xs text-muted-foreground">Which knowledge new chats search.</p>
-              <div className="mt-2 space-y-0.5">
-                <ScopeRow
-                  label="All company knowledge"
-                  checked={draft.collectionIds.length === 0}
-                  onClick={() => setDraft((d) => ({ ...d, collectionIds: [] }))}
-                />
-                {collections === null ? (
-                  <p className="flex h-8 items-center px-3 text-xs text-muted-foreground">Loading collections…</p>
+              <div
+                className="mt-2 space-y-0.5"
+                role="radiogroup"
+                aria-labelledby="set-knowledge"
+                onKeyDown={onRadioGroupKeyDown}
+              >
+                {scopes === null ? (
+                  <p className="flex h-8 items-center px-3 text-xs text-muted-foreground">Loading…</p>
                 ) : (
-                  collections.map((c) => {
-                    const on = draft.collectionIds.includes(c.id);
-                    return (
-                      <ScopeRow
-                        key={c.id}
-                        label={c.name}
-                        checked={on}
-                        onClick={() =>
-                          setDraft((d) => ({
-                            ...d,
-                            collectionIds: on ? d.collectionIds.filter((x) => x !== c.id) : [...d.collectionIds, c.id],
-                          }))
-                        }
-                      />
-                    );
-                  })
+                  scopes.map((s, i) => (
+                    <ScopeOption
+                      key={s.id}
+                      scope={s}
+                      checked={effectiveScope === s.id}
+                      tabIndex={radioTabIndex(effectiveScope === s.id, i, scopes.some((x) => x.id === effectiveScope))}
+                      onClick={() => setDraft((d) => ({ ...d, knowledgeScope: s.id }))}
+                    />
+                  ))
                 )}
               </div>
+              {collections.length > 0 && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    aria-expanded={collectionsOpen}
+                    onClick={() => setCollectionsOpen((o) => !o)}
+                    className="flex h-8 w-full items-center gap-2 rounded-lg px-3 text-left text-[13px] font-medium transition-colors hover:bg-surface/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <ChevronRight
+                      size={14}
+                      className={cn("shrink-0 text-muted-foreground transition-transform", collectionsOpen && "rotate-90")}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate">Narrow to collections (optional)</span>
+                    {draft.collectionIds.length > 0 && (
+                      <span className="shrink-0 text-xs font-normal text-muted-foreground">{draft.collectionIds.length} selected</span>
+                    )}
+                  </button>
+                  {collectionsOpen && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {collections.map((c) => {
+                        const on = draft.collectionIds.includes(c.id);
+                        return (
+                          <ScopeRow
+                            key={c.id}
+                            label={c.name}
+                            checked={on}
+                            onClick={() =>
+                              setDraft((d) => ({
+                                ...d,
+                                collectionIds: on ? d.collectionIds.filter((x) => x !== c.id) : [...d.collectionIds, c.id],
+                              }))
+                            }
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {quickTiers.length > 0 && (
@@ -365,7 +458,7 @@ export function SettingsClient() {
                         onClick={() => setDraft((d) => ({ ...d, model: o.value }))}
                         className={cn(
                           "inline-flex h-8 items-center rounded-full px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          on ? "bg-[#262626] text-white" : "bg-surface text-foreground shadow-soft hover:bg-surface-sunken"
+                          on ? "bg-ink text-ink-foreground" : "bg-surface text-foreground shadow-soft hover:bg-surface-sunken"
                         )}
                       >
                         {o.label}
@@ -385,6 +478,49 @@ export function SettingsClient() {
           </aside>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A compact segmented control (radio group) for small, exclusive choices. */
+function Segmented<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string; icon?: React.ReactNode }[];
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={onRadioGroupKeyDown}
+      className="mt-2 inline-flex rounded-xl bg-surface p-0.5 shadow-soft"
+    >
+      {options.map((o, i) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={radioTabIndex(on, i, options.some((x) => x.value === value))}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              on ? "bg-accent-soft text-accent-strong" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {o.icon}
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -433,6 +569,45 @@ function Select({
         aria-hidden
       />
     </span>
+  );
+}
+
+/** One "Search in" knowledge scope: icon, label, one-line description, a check when chosen. */
+function ScopeOption({
+  scope,
+  checked,
+  tabIndex,
+  onClick,
+}: {
+  scope: KnowledgeScope;
+  checked: boolean;
+  /** Roving tabindex within the radiogroup (lib/a11y radioTabIndex). */
+  tabIndex: 0 | -1;
+  onClick: () => void;
+}) {
+  const Icon = knowledgeScopeIcon(scope.id);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      tabIndex={tabIndex}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-start gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        checked ? "bg-surface shadow-soft" : "hover:bg-surface/70"
+      )}
+    >
+      <Icon size={14} className={cn("mt-[3px] shrink-0", checked ? "text-accent" : "text-muted-foreground")} aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-[13px] font-medium leading-5">
+          {scope.label}
+          {scope.sensitive && <ShieldCheck size={12} className="shrink-0 text-accent" aria-label="Sensitive data" />}
+        </span>
+        {scope.description && <span className="block text-xs leading-4 text-muted-foreground">{scope.description}</span>}
+      </span>
+      {checked && <Check size={14} className="mt-[3px] shrink-0 text-accent" aria-hidden />}
+    </button>
   );
 }
 

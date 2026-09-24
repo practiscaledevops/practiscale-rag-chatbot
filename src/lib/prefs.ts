@@ -12,7 +12,12 @@ export interface ChatPrefs {
   model?: string;
   mode?: WorkMode;
   outputType?: OutputType;
+  /** "Search in" knowledge scope id (lib/knowledge-scopes); absent = "auto". */
+  knowledgeScope?: string;
+  /** Collections new chats narrow to (an additional filter on the scope). */
   collectionIds?: string[];
+  /** Answer typeface: a Claude-style serif (default) or the UI sans. */
+  responseFont?: "serif" | "sans";
 }
 
 const KEY = "practiscale:prefs";

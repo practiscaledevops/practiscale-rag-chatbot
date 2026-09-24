@@ -82,7 +82,7 @@ export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand
           aria-label="Settings"
           title="Settings"
           aria-current={onSettings ? "page" : undefined}
-          className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full bg-[#262626] text-[13px] font-medium text-white transition-colors hover:bg-[#1a1a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-3"
+          className="inline-flex h-8 w-8 items-center justify-center gap-1.5 rounded-full bg-ink text-[13px] font-medium text-ink-foreground transition-colors hover:bg-ink-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-auto sm:px-3"
         >
           <Settings size={14} aria-hidden />
           <span className="hidden sm:inline">Settings</span>

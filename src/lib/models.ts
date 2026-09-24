@@ -45,16 +45,28 @@ export interface BrainModel {
 /**
  * Per-user model/feature access, mirroring the profiles.permissions jsonb shape
  * documented in supabase/setup/admin.sql. All keys are optional; an empty
- * object means "no explicit restriction".
+ * object means "no explicit restriction" for models/tiers and "the role's
+ * defaults" for capabilities (see lib/capabilities-shared).
  */
 export interface UserPermissions {
   /** allowlist of model-id globs ("*" wildcard) or exact ids, e.g. ["claude-*","gpt-4o-mini"] */
   models?: string[];
-  /** feature flags, e.g. ["rag","projects","attachments","connectors"] */
+  /** LEGACY feature keys (rag, projects, attachments, connectors, sensitive, decisions, executive) */
   features?: string[];
-  /** subset of the tiers the user may select */
+  /** subset of the tiers the user may select (mirror of the models.<tier> capabilities) */
   allowed_tiers?: Array<"fast" | "recommended" | "max">;
+  /** granted capability ids from the Brain's manifest (explicit grants) */
+  capabilities?: string[];
+  /** capability ids an admin switched off */
+  capabilities_denied?: string[];
 }
+
+/** Routed presets that are capabilities of their own (see the Brain's manifest). */
+const ROUTED_CAPABILITY: Record<string, string> = {
+  smart: "models.smart_route",
+  auto: "models.smart_route",
+  deep: "models.deep_analysis",
+};
 
 // ---------------------------------------------------------------------------
 // Static fallback catalog — Claude + GPT families. Used when the Brain's
@@ -293,6 +305,12 @@ export function isSelectionAllowed(
   // Workspace denylist first: broader than any per-user grant.
   const disabled = new Set(disabledModels.map((id) => id.trim().toLowerCase()));
   if (disabled.has(sel)) return false;
+
+  // Smart Route / Deep analysis an admin explicitly switched off for this user.
+  const routedCap = ROUTED_CAPABILITY[sel];
+  if (routedCap && Array.isArray(perms?.capabilities_denied) && perms!.capabilities_denied!.includes(routedCap)) {
+    return false;
+  }
 
   if (canUseAllModels) return true;
 

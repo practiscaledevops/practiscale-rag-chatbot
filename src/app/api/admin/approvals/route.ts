@@ -4,6 +4,10 @@
 // Admin-gated. Reads + writes via the SERVICE-ROLE client (a user can never
 // approve their own content). Reviewing notifies the submitter through the
 // notifications center. Degrades gracefully before migration 0010.
+//
+// Intentionally NOT narrowed by the admin's own data.* capabilities: reviewing a
+// submission means reading it. The queue holds user-submitted answers, never raw
+// knowledge chunks (unlike /api/admin/retrieve, which is narrowed).
 
 import { NextResponse } from "next/server";
 import { z } from "zod";

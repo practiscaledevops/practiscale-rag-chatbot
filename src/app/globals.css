@@ -11,8 +11,9 @@
  * Vivid Violet — and every violet/blue tint — replaced by PractiScale green.
  *
  * Colors are space-separated RGB channels so Tailwind's
- * `rgb(var(--x) / <alpha-value>)` opacity modifiers work. The app is light by
- * design; dark mode is opt-in only (tailwind darkMode: "class").
+ * `rgb(var(--x) / <alpha-value>)` opacity modifiers work. Light is the
+ * default; the `.dark` class on <html> (Settings → Appearance, the rail's
+ * More menu, or "System") swaps every token below for the dark palette.
  */
 :root {
   color-scheme: light;
@@ -49,6 +50,9 @@
   --success: 21 128 61;             /* green-700 — AA as text on its tint */
   --warning: 161 98 7;              /* amber-700 — AA as text on its tint */
   --danger: 220 38 38;
+  /* Solid danger FILL under white text (danger buttons): AA in both themes. */
+  --danger-solid: 220 38 38;        /* #DC2626 — 4.83:1 with white */
+  --danger-solid-hover: 185 28 28;  /* #B91C1C — darkens, never lightens */
   --info: 37 99 235;
   --private: 4 120 87;              /* CEO / private — deep emerald */
 
@@ -73,14 +77,145 @@
   --folder-4: 221 253 197;          /* tea */
   --folder-5: 23 195 165;           /* PractiScale green */
 
+  /* ---- Answer tables ---- */
+  --table-grid: 220 232 227;        /* #DCE8E3 — light green-gray cell grid */
+  --table-stripe: 250 252 251;      /* #FAFCFB — zebra rows (very light) */
+
+  /* ---- Answer-chart series (ChartBlock): greens first, then kit accents ---- */
+  --chart-1: 16 163 136;            /* #10A388 — PractiScale green */
+  --chart-2: 12 104 112;            /* #0C6870 — deep teal */
+  --chart-3: 125 217 176;           /* #7DD9B0 — mint */
+  --chart-4: 245 158 11;            /* #F59E0B — amber */
+  --chart-5: 92 207 230;            /* #5CCFE6 — cyan */
+  --chart-6: 232 121 185;           /* #E879B9 — pink */
+  --chart-7: 163 201 79;            /* #A3C94F — lime */
+  --chart-8: 239 68 68;             /* #EF4444 — red */
+
   /* ---- Brand gradient (logo: teal-blue -> emerald) ---- */
   --brand-1: 23 195 165;            /* #17C3A5 */
   --brand-2: 14 158 139;            /* #0E9E8B */
   --brand-3: 12 104 112;            /* #0C6870 */
+
+  /* ---- Ink: the near-black chips/buttons (inverts in dark) ---- */
+  --ink: 38 38 38;                  /* #262626 */
+  --ink-hover: 26 26 26;
+  --ink-foreground: 255 255 255;
+
+  /* Height of the installed app's title strip (0 in a browser tab). */
+  --titlebar-h: env(titlebar-area-height, 0px);
+}
+
+/*
+ * Dark theme — a neutral, Claude-like charcoal (#1A1A19 workspace) with the
+ * same PractiScale greens lifted for contrast on dark. Text accents use
+ * accent-strong (AA on the dark surfaces); fills/icons use accent.
+ */
+.dark {
+  color-scheme: dark;
+
+  --background: 26 26 25;           /* #1A1A19 — the main panel */
+  --foreground: 236 236 232;        /* #ECECE8 */
+  --surface: 34 34 33;              /* #222221 — cards / menus / composer */
+  --surface-muted: 42 42 40;        /* #2A2A28 — subtle fills, hover */
+  --surface-sunken: 22 22 21;       /* #161615 — pressed / tracks */
+  --border: 56 56 53;               /* #383835 */
+  --muted: 42 42 40;
+  --muted-foreground: 168 168 163;  /* #A8A8A3 */
+  --subtle-foreground: 122 122 117; /* #7A7A75 */
+
+  --accent: 28 184 154;             /* #1CB89A */
+  --accent-strong: 94 219 190;      /* #5EDBBE — accent TEXT on dark (AA) */
+  --accent-deep: 110 224 196;       /* #6EE0C4 — wordmark on dark */
+  --accent-hover: 38 202 170;
+  --accent-foreground: 5 28 23;     /* dark ink on the bright green */
+  --accent-soft: 24 52 45;          /* #18342D — user bubble, selected rows */
+  --accent-softer: 28 37 34;        /* #1C2522 */
+  --ring: 45 212 180;
+
+  --tea: 200 240 170;               /* #C8F0AA — slightly softened on dark */
+  --tea-hover: 216 248 190;
+  --tea-foreground: 22 40 14;
+
+  --success: 74 222 128;
+  --warning: 251 191 36;
+  --danger: 248 113 113;
+  /* The lifted --danger is for text/tints; white-on-fill keeps a deep red. */
+  --danger-solid: 185 28 28;        /* #B91C1C — 6.47:1 with white */
+  --danger-solid-hover: 153 27 27;  /* #991B1B */
+  --info: 96 165 250;
+  --private: 52 211 153;
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 16px rgb(0 0 0 / 0.25);
+  --shadow-soft-lg: 0 2px 8px rgb(0 0 0 / 0.4), 0 16px 40px rgb(0 0 0 / 0.45);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 34px -6px rgb(0 0 0 / 0.5);
+
+  /* The rail sits a step darker than the workspace. */
+  --sidebar: 20 20 19;              /* #141413 */
+  --sidebar-panel: 30 30 29;
+  --sidebar-item: 40 40 38;
+  --sidebar-item-hover: 50 50 48;
+  --sidebar-foreground: 236 236 232;
+  --sidebar-muted: 150 150 146;
+  --sidebar-border: 44 44 42;
+
+  --table-grid: 58 66 62;           /* #3A423E */
+
+  /* Answer-chart series: the deep ones lifted to stay ≥ 3:1 on the dark card. */
+  --chart-1: 28 184 154;            /* #1CB89A — the dark accent */
+  --chart-2: 47 163 173;            /* #2FA3AD — ~5.3:1 on #222221 */
+  --table-stripe: 31 31 30;
+
+  --ink: 236 236 232;
+  --ink-hover: 255 255 255;
+  --ink-foreground: 26 26 25;
 }
 
 * {
   border-color: rgb(var(--border));
+}
+
+/*
+ * Installed desktop app (PWA "window controls overlay"): the OS draws its
+ * window buttons over the top of the page, so the app keeps that strip as its
+ * own full-width, draggable title bar (<TitleBar/>) and every page starts
+ * below it. In a normal browser tab --titlebar-h is 0 and nothing changes.
+ */
+body {
+  padding-top: var(--titlebar-h);
+}
+.h-app {
+  height: calc(100dvh - var(--titlebar-h));
+}
+.min-h-app {
+  min-height: calc(100dvh - var(--titlebar-h));
+}
+.app-titlebar {
+  display: none;
+}
+@media (display-mode: window-controls-overlay) {
+  .app-titlebar {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: var(--titlebar-h);
+    z-index: 60;
+    background: rgb(var(--sidebar));
+    border-bottom: 1px solid rgb(var(--sidebar-border));
+    -webkit-app-region: drag;
+    app-region: drag;
+    user-select: none;
+  }
+  .app-titlebar-inner {
+    position: absolute;
+    top: 0;
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+  }
 }
 
 html,
@@ -107,6 +242,46 @@ body {
   :focus-visible {
     outline: 2px solid rgb(var(--ring));
     outline-offset: 2px;
+  }
+}
+
+/* ---- Assistant answers (Markdown) ---------------------------------------- */
+
+@layer components {
+  /* Block rhythm for rendered Markdown. Font family, size and line-height are
+     inherited from the answer container (font-serif / font-sans, text-[15px]
+     leading-[1.7]); every gap is in em so it scales with that size. In the
+     components layer, so a utility on a block can still override it. */
+  .md-flow {
+    overflow-wrap: break-word;
+  }
+  .md-flow > * + * {
+    margin-top: 0.75em;
+  }
+  /* Headings: comfortable space above, tight below (in the heading's own em). */
+  .md-flow > * + :is(h1, h2, h3, h4, h5, h6) {
+    margin-top: 1.35em;
+  }
+  .md-flow > :is(h1, h2, h3, h4, h5, h6) + * {
+    margin-top: 0.4em;
+  }
+  .md-flow > :is(h1, h2, h3, h4, h5, h6) + :is(h1, h2, h3, h4, h5, h6) {
+    margin-top: 0.55em;
+  }
+  .md-flow > * + hr,
+  .md-flow > hr + * {
+    margin-top: 1.25em;
+  }
+}
+
+@layer utilities {
+  /* Inter's cv11 / ss01 tags (set on body) would pick unrelated alternates in
+     the serif; tables and chrome inside a serif answer switch back via font-sans. */
+  .font-serif {
+    font-feature-settings: normal;
+  }
+  .font-sans {
+    font-feature-settings: "cv11", "ss01";
   }
 }
 

@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Source_Serif_4 } from "next/font/google";
 import { PwaRegister } from "@/components/PwaRegister";
+import { ThemeSync } from "@/components/ThemeSync";
+import { TitleBar } from "@/components/TitleBar";
+import { THEME_INIT_SCRIPT } from "@/lib/theme-shared";
 import "./globals.css";
 
 // Inter across the whole product (Light → Bold), self-hosted by next/font and
@@ -9,6 +12,16 @@ const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-inter",
+  display: "swap",
+});
+
+// Source Serif 4 for the serif ("Claude-style") answer font, exposed as
+// --font-serif for Tailwind's font-serif (see tailwind.config.ts).
+const sourceSerif = Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
   display: "swap",
 });
 
@@ -42,9 +55,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      {/* Theme surfaces come from the shared design tokens (see globals.css). */}
-      <body className="min-h-screen bg-background text-foreground antialiased">
+    // The init script sets the theme class before hydration, hence
+    // suppressHydrationWarning on <html> (its class/style differ by design).
+    <html lang="en" className={`${inter.variable} ${sourceSerif.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      {/* Theme surfaces come from the shared design tokens (see globals.css).
+          min-h-app (100dvh), not min-h-screen (100vh = the LARGE mobile viewport),
+          so the page is never taller than the shells and doesn't scroll/jump. */}
+      <body className="min-h-app bg-background text-foreground antialiased">
+        <TitleBar />
+        <ThemeSync />
         <PwaRegister />
         {children}
       </body>

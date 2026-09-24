@@ -12,6 +12,12 @@ const SECURITY_HEADERS = [
 
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // The chat's save action (saveConversationTurn) sends the whole thread; the
+    // 1 MB default silently stopped long chats persisting. Stays under the
+    // hosting platform's ~4.5 MB request-body limit.
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   async headers() {
     return [
       { source: "/(.*)", headers: SECURITY_HEADERS },

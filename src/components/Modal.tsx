@@ -11,15 +11,25 @@ export interface ModalProps {
   title: string;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Where focus goes on close when the element that opened the dialog is gone
+   * by then (e.g. the row or selection bar a delete removed). Without it focus
+   * would fall to <body>.
+   */
+  returnFocus?: () => HTMLElement | null | undefined;
 }
+
+/** Focusable, ENABLED controls (a disabled field can't take focus). */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Small accessible modal dialog: a labelled `role="dialog"` panel over a
  * dimmed backdrop. Closes on Escape or backdrop click, moves focus into the
  * panel on open, keeps Tab focus inside it, and restores focus to the trigger
- * on close.
+ * (or `returnFocus` when the trigger is gone) on close.
  */
-export function Modal({ open, onClose, title, children, className }: ModalProps) {
+export function Modal({ open, onClose, title, children, className, returnFocus }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
@@ -33,6 +43,10 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+  const returnFocusRef = useRef(returnFocus);
+  useEffect(() => {
+    returnFocusRef.current = returnFocus;
+  }, [returnFocus]);
 
   useEffect(() => {
     if (!open) return;
@@ -41,12 +55,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
     // Move focus to the first focusable element inside the panel.
-    const focusables = () =>
-      Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      );
+    const focusables = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
     // Prefer the first real field so typing can start immediately; the close
     // button would otherwise be the first focusable.
     const initialItems = focusables();
@@ -79,7 +88,9 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
-      previouslyFocused?.focus?.();
+      // The opener may have been removed while the dialog was open (a delete).
+      const target = previouslyFocused?.isConnected ? previouslyFocused : returnFocusRef.current?.();
+      target?.focus?.({ preventScroll: true });
     };
   }, [open]);
 

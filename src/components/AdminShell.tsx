@@ -96,7 +96,7 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-sidebar text-foreground">
+    <div className="flex h-app overflow-hidden bg-sidebar text-foreground">
       {/* --- Desktop rail (static) -------------------------------------- */}
       <aside className="hidden w-64 shrink-0 bg-sidebar lg:block">
         <SidebarContent pathname={pathname} roleLabel={roleLabel} />
@@ -104,7 +104,8 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
 
       {/* --- Mobile drawer ---------------------------------------------- */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
+        // Below the installed app's draggable title strip (--titlebar-h is 0 in a tab).
+        <div className="fixed inset-x-0 bottom-0 top-[var(--titlebar-h)] z-40 lg:hidden" role="dialog" aria-modal="true">
           <button
             type="button"
             aria-label="Close menu"

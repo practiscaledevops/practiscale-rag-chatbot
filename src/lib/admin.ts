@@ -16,6 +16,7 @@ import {
   createSupabaseServiceClient,
 } from "@/lib/supabase-server";
 import type { UserPermissions } from "@/lib/models";
+import { effectiveCapabilities, peekCapabilityManifest } from "@/lib/capabilities";
 
 /** App-wide privilege level (profiles.role). */
 export type ProfileRole = "user" | "admin" | "super_admin";
@@ -82,8 +83,14 @@ export interface SessionProfile {
   displayName: string | null;
   role: ProfileRole;
   isActive: boolean;
-  /** per-user model/feature access (profiles.permissions jsonb) */
+  /** per-user model/feature access (profiles.permissions jsonb, as stored) */
   permissions: UserPermissions;
+  /**
+   * The capability ids this user holds RIGHT NOW (Brain manifest + this app's
+   * own), resolved from role + stored grants — the set to gate on. Pass it via
+   * accessFromProfile(profile) (lib/access) to the gating helpers.
+   */
+  capabilities: string[];
   /** overrides permissions.models when true */
   canUseAllModels: boolean;
   /** the user's primary team, if any */
@@ -136,13 +143,18 @@ export async function getSessionProfile(
     if (t) team = { id: t.id as string, name: (t.name as string) ?? "" };
   }
 
+  const role = (profile?.role as ProfileRole) ?? "user";
+  const permissions = (profile?.permissions as UserPermissions) ?? {};
   return {
     userId: user.id,
     email: (profile?.email as string | null) ?? user.email ?? null,
     displayName: (profile?.display_name as string | null) ?? null,
-    role: (profile?.role as ProfileRole) ?? "user",
+    role,
     isActive: profile?.is_active !== false,
-    permissions: (profile?.permissions as UserPermissions) ?? {},
+    permissions,
+    // Resolved against the cached manifest (never waits on the Brain; a cold
+    // cache uses the built-in list and refreshes in the background).
+    capabilities: effectiveCapabilities({ role, permissions }, peekCapabilityManifest()),
     canUseAllModels: Boolean(profile?.can_use_all_models),
     team,
   };

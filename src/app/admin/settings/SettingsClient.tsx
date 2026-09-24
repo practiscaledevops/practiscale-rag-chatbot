@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Boxes,
@@ -8,12 +8,14 @@ import {
   CircleDollarSign,
   Gauge,
   Loader2,
+  MessagesSquare,
   RotateCcw,
   Save,
   Sparkles,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { onRadioGroupKeyDown, radioTabIndex } from "@/lib/a11y";
 import { Button } from "@/components/Button";
 import type {
   PricingOverride,
@@ -22,6 +24,8 @@ import type {
   Tier,
   WorkspaceSettings,
 } from "@/lib/settings";
+// Client-safe bounds (lib/settings itself is server-only beyond its types).
+import { CHAT_LIMIT_BOUNDS, type ChatLimits } from "@/lib/attachments-shared";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,11 +64,28 @@ function groupModels(models: SettingsModelOption[]) {
 function canonical(s: WorkspaceSettings): string {
   const overrides: Record<string, PricingOverride> = {};
   for (const k of Object.keys(s.pricingOverrides).sort()) overrides[k] = s.pricingOverrides[k];
+  const chat = s.chat
+    ? {
+        contextWindowTokens: s.chat.contextWindowTokens,
+        compactAtPct: s.chat.compactAtPct,
+        autoCompact: s.chat.autoCompact,
+        maxImageMb: s.chat.maxImageMb,
+        maxFileMb: s.chat.maxFileMb,
+        maxFiles: s.chat.maxFiles,
+      }
+    : null;
   return JSON.stringify({
     ...s,
     disabledModels: [...s.disabledModels].sort(),
     pricingOverrides: overrides,
+    chat,
   });
+}
+
+/** "20,000–1,000,000" style range for helper text. */
+function rangeLabel(b: { min: number; max: number }): string {
+  const f = (n: number) => n.toLocaleString("en-US");
+  return `${f(b.min)}–${f(b.max)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +237,11 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
     });
   }
 
+  function patchChat(next: Partial<ChatLimits>) {
+    setJustSaved(false);
+    setSettings((s) => ({ ...s, chat: { ...s.chat, ...next } }));
+  }
+
   function chooseTier(tier: Tier) {
     patch({ defaultModel: tier, defaultModelKind: "tier" });
   }
@@ -299,7 +325,8 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
         </h1>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
           Control which models the workspace can use, the defaults for new chats,
-          and the cost rates behind the usage meter. Changes apply to everyone.
+          chat and upload limits, and the cost rates behind the usage meter.
+          Changes apply to everyone.
         </p>
       </header>
 
@@ -328,16 +355,24 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
             <legend className="mb-2 text-xs font-medium text-muted-foreground">
               Default model
             </legend>
-            <div role="radiogroup" aria-label="Default model" className="grid gap-2 sm:grid-cols-3">
-              {tiers.map((t) => {
+            <div
+              role="radiogroup"
+              aria-label="Default model"
+              onKeyDown={onRadioGroupKeyDown}
+              className="grid gap-2 sm:grid-cols-3"
+            >
+              {tiers.map((t, i) => {
                 const active =
                   settings.defaultModelKind === "tier" && settings.defaultModel === t.value;
+                const anyActive =
+                  settings.defaultModelKind === "tier" && tiers.some((x) => x.value === settings.defaultModel);
                 return (
                   <button
                     key={t.value}
                     type="button"
                     role="radio"
                     aria-checked={active}
+                    tabIndex={radioTabIndex(active, i, anyActive)}
                     onClick={() => chooseTier(t.value)}
                     className={cn(
                       "flex flex-col items-start gap-0.5 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -430,6 +465,93 @@ export function SettingsClient({ initial }: { initial: SettingsPayload }) {
               label="RAG grounding on by default"
             />
           </div>
+        </Section>
+
+        {/* --- Chat & context ---------------------------------------------- */}
+        <Section
+          icon={<MessagesSquare size={16} />}
+          title="Chat & context"
+          description="How much conversation the assistant keeps in view, when long chats are compacted into a summary, and what members can attach to a message."
+        >
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            <LimitRow
+              htmlFor="chat-context-window"
+              label="Context window budget (tokens)"
+              help={`The conversation size the chat meter and compaction measure against. The Brain keeps at most ~30k tokens (and the last 40 turns) per message, so the budget can't go above that; a lower one compacts sooner. ${rangeLabel(CHAT_LIMIT_BOUNDS.contextWindowTokens)}.`}
+            >
+              <NumberField
+                id="chat-context-window"
+                value={settings.chat.contextWindowTokens}
+                bounds={CHAT_LIMIT_BOUNDS.contextWindowTokens}
+                step={1000}
+                suffix="tokens"
+                wide
+                onChange={(v) => patchChat({ contextWindowTokens: v })}
+              />
+            </LimitRow>
+            <LimitRow
+              htmlFor="chat-compact-at"
+              label="Suggest compacting at (%)"
+              help={`When a chat reaches this share of the budget, members are prompted to summarize older turns. ${rangeLabel(CHAT_LIMIT_BOUNDS.compactAtPct)}%.`}
+            >
+              <NumberField
+                id="chat-compact-at"
+                value={settings.chat.compactAtPct}
+                bounds={CHAT_LIMIT_BOUNDS.compactAtPct}
+                suffix="%"
+                onChange={(v) => patchChat({ compactAtPct: v })}
+              />
+            </LimitRow>
+            <LimitRow
+              label="Auto-compact long chats"
+              help="Summarize older turns automatically once a chat passes the threshold, instead of only suggesting it. Recent messages are always kept in full."
+            >
+              <Switch
+                checked={settings.chat.autoCompact}
+                onChange={(v) => patchChat({ autoCompact: v })}
+                label="Auto-compact long chats"
+              />
+            </LimitRow>
+            <LimitRow
+              htmlFor="chat-max-image"
+              label="Max image size before optimizing (MB)"
+              help={`Images up to this size are resized and compressed in the browser before upload; larger ones are refused. ${rangeLabel(CHAT_LIMIT_BOUNDS.maxImageMb)} MB.`}
+            >
+              <NumberField
+                id="chat-max-image"
+                value={settings.chat.maxImageMb}
+                bounds={CHAT_LIMIT_BOUNDS.maxImageMb}
+                suffix="MB"
+                onChange={(v) => patchChat({ maxImageMb: v })}
+              />
+            </LimitRow>
+            <LimitRow
+              htmlFor="chat-max-file"
+              label="Max file size (MB)"
+              help={`Per-file limit for documents, spreadsheets and voice notes. ${rangeLabel(CHAT_LIMIT_BOUNDS.maxFileMb)} MB — the hosting upload limit caps it at ${CHAT_LIMIT_BOUNDS.maxFileMb.max} MB.`}
+            >
+              <NumberField
+                id="chat-max-file"
+                value={settings.chat.maxFileMb}
+                bounds={CHAT_LIMIT_BOUNDS.maxFileMb}
+                suffix="MB"
+                onChange={(v) => patchChat({ maxFileMb: v })}
+              />
+            </LimitRow>
+            <LimitRow
+              htmlFor="chat-max-files"
+              label="Max attachments per message"
+              help={`How many files a member can attach to a single message. ${rangeLabel(CHAT_LIMIT_BOUNDS.maxFiles)}.`}
+            >
+              <NumberField
+                id="chat-max-files"
+                value={settings.chat.maxFiles}
+                bounds={CHAT_LIMIT_BOUNDS.maxFiles}
+                suffix="files"
+                onChange={(v) => patchChat({ maxFiles: v })}
+              />
+            </LimitRow>
+          </ul>
         </Section>
 
         {/* --- Enabled models --------------------------------------------- */}
@@ -656,6 +778,124 @@ function RateInput({
         onChange={(e) => onChange(e.target.value)}
         className="w-20 bg-transparent text-right text-[13px] tabular-nums text-foreground outline-none placeholder:text-subtle-foreground focus-visible:outline-none"
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat & context rows — a label + helper text on the left, a control on the right.
+// ---------------------------------------------------------------------------
+
+function LimitRow({
+  htmlFor,
+  label,
+  help,
+  children,
+}: {
+  /** the control's id — omit for controls that label themselves (the switch) */
+  htmlFor?: string;
+  label: string;
+  help: string;
+  children: React.ReactNode;
+}) {
+  return (
+    // Stacks (control under the text) below sm, so the help isn't squeezed
+    // into a narrow column beside a wide field on a phone.
+    <li className="flex flex-col gap-2 bg-surface px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="min-w-0">
+        {htmlFor ? (
+          <label htmlFor={htmlFor} className="text-[13px] font-medium text-foreground">
+            {label}
+          </label>
+        ) : (
+          <div className="text-[13px] font-medium text-foreground">{label}</div>
+        )}
+        <p id={htmlFor ? `${htmlFor}-help` : undefined} className="mt-0.5 text-xs text-muted-foreground">
+          {help}
+        </p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </li>
+  );
+}
+
+/**
+ * A bounded whole-number field. Keeps a local draft so the admin can type
+ * freely (clear the box, pass through out-of-range values mid-typing); only an
+ * in-range value is reported while typing, and blur snaps the draft into range.
+ * The server clamps again on save.
+ */
+function NumberField({
+  id,
+  value,
+  bounds,
+  step = 1,
+  suffix,
+  wide,
+  onChange,
+}: {
+  id: string;
+  value: number;
+  bounds: { min: number; max: number };
+  step?: number;
+  suffix?: string;
+  wide?: boolean;
+  onChange: (next: number) => void;
+}) {
+  const { min, max } = bounds;
+  const [draft, setDraft] = useState(String(value));
+
+  // Follow outside changes (Discard, the server-normalized value after Save)
+  // without clobbering a draft that already means the same number.
+  useEffect(() => {
+    setDraft((d) => (d.trim() !== "" && Number(d) === value ? d : String(value)));
+  }, [value]);
+
+  function inRange(n: number): boolean {
+    return Number.isFinite(n) && n >= min && n <= max;
+  }
+
+  function commit(raw: string) {
+    const n = Number(raw);
+    const next =
+      raw.trim() === "" || !Number.isFinite(n)
+        ? value
+        : Math.min(max, Math.max(min, Math.round(n)));
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  }
+
+  return (
+    <div className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border bg-surface px-2.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        step={step}
+        aria-describedby={`${id}-help`}
+        value={draft}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          const n = Number(raw);
+          if (raw.trim() !== "" && inRange(n)) {
+            const rounded = Math.round(n);
+            if (rounded !== value) onChange(rounded);
+          }
+        }}
+        onBlur={(e) => commit(e.target.value)}
+        className={cn(
+          "bg-transparent text-right text-[13px] tabular-nums text-foreground outline-none focus-visible:outline-none",
+          wide ? "w-20" : "w-12"
+        )}
+      />
+      {suffix ? (
+        <span className="text-xs text-muted-foreground" aria-hidden>
+          {suffix}
+        </span>
+      ) : null}
     </div>
   );
 }

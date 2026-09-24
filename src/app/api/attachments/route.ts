@@ -11,20 +11,37 @@
 // which is why this route may run long — transcription is the slow case.
 //
 // Nothing is stored: extraction is per-message and ephemeral.
+//
+// Capabilities: each kind needs its "extract.*" capability (lib/access
+// canAttachKind: pdf → extract.pdf, image → extract.image, audio →
+// extract.audio, text/spreadsheet → extract.text); a kind the user may not
+// attach is a 403 before the file is read further.
+//
+// Size limits: every file faces the hard 4 MB cap (the hosting body limit).
+// Non-image files are further held to the workspace's "Max file size" (admin
+// settings → chat.maxFileMb). Images arrive already optimized by the composer
+// (lib/image-compress → prepareUpload), so they only face the hard cap here.
 
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, canAttachKind, type Access } from "@/lib/access";
 import { extractAttachment } from "@/lib/attachments";
 import { BrainRequestError } from "@/lib/brain";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
 import { demoExtract } from "@/lib/demo/brain";
+import { loadWorkspaceSettings } from "@/lib/settings";
+import { SNIFF_BYTES, contentMatchesExtension } from "@/lib/attachments-sniff";
 import {
   ACCEPTED_LABEL,
+  DEFAULT_CHAT_LIMITS,
+  MB,
   attachmentKind,
   fileExt,
   isBrainExtractedKind,
   maxBytesFor,
   maxMbFor,
+  workspaceMaxBytesFor,
+  type ChatLimits,
   type ExtractedAttachment,
 } from "@/lib/attachments-shared";
 
@@ -36,52 +53,18 @@ export const maxDuration = 120;
 /** Per-user ceiling on uploads (per instance — see lib/ratelimit). */
 const UPLOAD_LIMIT = { limit: 20, windowMs: 60_000 };
 
-/** Bytes to read for the signature check (the longest signature is 12 bytes). */
-const SNIFF_BYTES = 16;
-
-/** Whether `head` carries `sig` at `offset`. */
-function hasBytes(head: Uint8Array, sig: number[], offset = 0): boolean {
-  if (head.length < offset + sig.length) return false;
-  return sig.every((b, i) => head[offset + i] === b);
-}
-
-/**
- * Magic-byte check: does the file CONTENT match what its extension promises?
- * A renamed file (an executable called report.pdf, a zip bomb called
- * data.xlsx) is rejected before it reaches SheetJS or the Brain's extractor.
- * Only types with a fixed signature are checked; text (any bytes are "text"),
- * legacy .xls (several container formats) and audio (many containers) pass.
- */
-function contentMatchesExtension(ext: string, head: Uint8Array): boolean {
-  switch (ext) {
-    case ".pdf":
-      return hasBytes(head, [0x25, 0x50, 0x44, 0x46]); // %PDF
-    case ".xlsx":
-      return hasBytes(head, [0x50, 0x4b, 0x03, 0x04]); // PK\x03\x04 (OOXML zip)
-    case ".png":
-      return hasBytes(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    case ".jpg":
-    case ".jpeg":
-      return hasBytes(head, [0xff, 0xd8, 0xff]);
-    case ".gif":
-      return hasBytes(head, [0x47, 0x49, 0x46, 0x38]); // GIF8(7a|9a)
-    case ".webp":
-      // RIFF <size> WEBP
-      return hasBytes(head, [0x52, 0x49, 0x46, 0x46]) && hasBytes(head, [0x57, 0x45, 0x42, 0x50], 8);
-    default:
-      return true;
-  }
-}
-
 export async function POST(req: Request) {
   // DEMO MODE runs with no Supabase, so there's no session to resolve — extract
   // directly (the chat route ignores the Brain in demo anyway). Outside demo, the
   // signed-in user must be resolved server-side before we read the upload.
+  // `access` stays null only in demo (no session to gate on).
+  let access: Access | null = null;
   if (!isDemo()) {
     const profile = await getSessionProfile();
     if (!profile) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
+    access = accessFromProfile(profile);
     const limited = rateLimit(
       `attachments:${profile.userId}`,
       UPLOAD_LIMIT.limit,
@@ -89,6 +72,15 @@ export async function POST(req: Request) {
     );
     if (limited) return limited;
   }
+
+  // Workspace limits, read alongside the upload (never throws — defaults on any
+  // failure; demo has no settings row).
+  const limitsPromise: Promise<ChatLimits> = isDemo()
+    ? Promise.resolve(DEFAULT_CHAT_LIMITS)
+    : loadWorkspaceSettings().then(
+        (s) => s.settings.chat,
+        () => DEFAULT_CHAT_LIMITS
+      );
 
   let form: FormData;
   try {
@@ -110,9 +102,22 @@ export async function POST(req: Request) {
       { status: 415 }
     );
   }
+  // The user's capability for this kind of file (extract.pdf / .image / …).
+  if (access && !canAttachKind(access, kind)) {
+    return Response.json({ error: "That file type isn't enabled for your account." }, { status: 403 });
+  }
   if (file.size > maxBytesFor(name)) {
     return Response.json(
       { error: `File is too large (max ${maxMbFor(name)} MB for this type).` },
+      { status: 413 }
+    );
+  }
+  // The workspace's own (possibly tighter) per-file limit for non-images.
+  const limits = await limitsPromise;
+  const workspaceMax = workspaceMaxBytesFor(name, limits);
+  if (file.size > workspaceMax) {
+    return Response.json(
+      { error: `File is too large (max ${Math.round(workspaceMax / MB)} MB in this workspace).` },
       { status: 413 }
     );
   }

@@ -4,6 +4,11 @@
 // their OWN rows, so admins review via the service client after the role check).
 // Returns recent feedback (optionally filtered by rating) with the rater's name
 // and up/down counts. Degrades to empty + enabled:false before migration 0006.
+//
+// Intentionally NOT narrowed by the admin's own data.* capabilities: this is the
+// QA review of what users were shown (their prompts + answers), not a retrieval
+// surface — it never returns raw knowledge chunks (unlike /api/admin/retrieve,
+// which is narrowed).
 
 import { NextResponse } from "next/server";
 import { requireChatbotAdmin, AdminError } from "@/lib/admin";

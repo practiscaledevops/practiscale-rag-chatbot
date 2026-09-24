@@ -204,13 +204,16 @@ export const LEARNING_TYPE_LABEL: Record<string, string> = {
 /** Chip colour per lifecycle stage (Tailwind classes must appear literally). */
 export const LEARNING_TYPE_TONE: Record<string, string> = {
   // Kit colors (cyan / tea / pink / dark) + PractiScale greens + semantic tints.
-  decision: "border-folder-1/70 bg-folder-1/25 text-[#0b5563]",
+  // Dark ink on the pastel tint in light; the folder colour itself on a
+  // quieter tint in dark (the hex inks are ~1:1 on the dark surfaces).
+  decision: "border-folder-1/70 bg-folder-1/25 text-[#0b5563] dark:border-folder-1/40 dark:bg-folder-1/15 dark:text-folder-1",
   implementation: "border-accent/30 bg-accent-soft text-accent-strong",
   experiment: "border-warning/30 bg-warning/10 text-warning",
   result: "border-success/30 bg-success/10 text-success",
   learning: "border-tea-foreground/15 bg-tea text-tea-foreground",
-  adaptation: "border-folder-3/70 bg-folder-3/20 text-[#8a2c66]",
-  standard: "border-transparent bg-[#262626] text-white",
+  adaptation: "border-folder-3/70 bg-folder-3/20 text-[#8a2c66] dark:border-folder-3/40 dark:bg-folder-3/15 dark:text-folder-3",
+  // ink inverts in the dark theme, so the chip keeps a visible edge there.
+  standard: "border-transparent bg-ink text-ink-foreground",
   postmortem: "border-danger/30 bg-danger/10 text-danger",
 };
 

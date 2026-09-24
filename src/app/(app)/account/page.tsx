@@ -3,7 +3,10 @@ import type { Metadata } from "next";
 import { Coins, Gauge, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { getUser } from "@/lib/auth";
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, effectiveCapabilities } from "@/lib/access";
+import { peekCapabilityManifest, type CapabilityManifest } from "@/lib/capabilities";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { loadAvatarUrl } from "@/lib/avatar";
 import { AccountClient } from "./AccountClient";
 import { MfaSection } from "./MfaSection";
 
@@ -25,18 +28,40 @@ const ROLE_LABEL: Record<string, string> = {
   user: "Member",
 };
 
-const TIER_LABEL: Record<string, string> = {
-  fast: "Fast",
-  recommended: "Recommended",
-  max: "Max",
-};
+/** One manifest group of the capabilities a user holds, as the access card lists it. */
+interface CapabilityGroupView {
+  id: string;
+  label: string;
+  items: string[];
+}
 
-const FEATURE_LABEL: Record<string, string> = {
-  rag: "Knowledge (RAG)",
-  projects: "Projects",
-  attachments: "Attachments",
-  connectors: "Connectors",
-};
+/** A readable fallback label for a capability id the manifest doesn't describe. */
+function labelFromId(id: string): string {
+  const s = id.split(".").slice(1).join(" ").replace(/[_-]+/g, " ").trim() || id;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * The held capability ids grouped by the manifest's groups (manifest order,
+ * manifest labels). Ids the manifest doesn't carry, or whose group it doesn't
+ * list, go under "Other". Empty groups are dropped.
+ */
+function groupCapabilities(ids: readonly string[], manifest: CapabilityManifest): CapabilityGroupView[] {
+  const held = new Set(ids);
+  const known = new Set(manifest.capabilities.map((c) => c.id));
+  const groupIds = new Set(manifest.groups.map((g) => g.id));
+  const groups: CapabilityGroupView[] = manifest.groups.map((g) => ({
+    id: g.id,
+    label: g.label,
+    items: manifest.capabilities.filter((c) => c.group === g.id && held.has(c.id)).map((c) => c.label),
+  }));
+  const other = [
+    ...manifest.capabilities.filter((c) => held.has(c.id) && !groupIds.has(c.group)).map((c) => c.label),
+    ...ids.filter((id) => !known.has(id)).map(labelFromId),
+  ];
+  if (other.length > 0) groups.push({ id: "__other", label: "Other", items: other });
+  return groups.filter((g) => g.items.length > 0);
+}
 
 /** First instant of the current month, UTC, as an ISO string. */
 function monthStartISO(now = new Date()): string {
@@ -54,14 +79,16 @@ export default async function AccountPage() {
 
   // Profile, auth user, and this-month usage are independent reads — run them
   // together. RLS scopes usage_events to the signed-in user, so no user_id
-  // filter is needed (and none would widen the result).
-  const [profile, user, usageRes] = await Promise.all([
+  // filter is needed (and none would widen the result). The avatar read chains
+  // off getUser (request-cached, so no extra verification) and never throws.
+  const [profile, user, usageRes, avatarUrl] = await Promise.all([
     getSessionProfile(),
     getUser(),
     supabase
       .from("usage_events")
       .select("input_tokens, output_tokens, cost_usd")
       .gte("created_at", monthStartISO()),
+    getUser().then((u) => (u ? loadAvatarUrl(supabase, u.id) : null)),
   ]);
   if (!profile) redirect("/login");
 
@@ -91,15 +118,14 @@ export default async function AccountPage() {
       ? profile.permissions.models
       : null;
 
-  const allowedTiers =
-    Array.isArray(profile.permissions.allowed_tiers) &&
-    profile.permissions.allowed_tiers.length > 0
-      ? profile.permissions.allowed_tiers
-      : (["fast", "recommended", "max"] as const);
-
-  const enabledFeatures = Array.isArray(profile.permissions.features)
-    ? profile.permissions.features
-    : [];
+  // What this user may use: their resolved capability set (the same set every
+  // route gates on), labelled + grouped by the capability manifest it was
+  // resolved against. Model tiers are capabilities too ("Models" group).
+  const manifest = peekCapabilityManifest();
+  const capabilityGroups = groupCapabilities(
+    effectiveCapabilities(accessFromProfile(profile), manifest),
+    manifest
+  );
 
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString("en-US", {
@@ -125,6 +151,7 @@ export default async function AccountPage() {
             displayName={displayName}
             email={profile.email}
             roleLabel={roleLabel}
+            avatarUrl={avatarUrl}
           />
 
           {/* This-month usage */}
@@ -173,27 +200,11 @@ export default async function AccountPage() {
             </p>
 
             <dl className="mt-3.5 space-y-2.5">
-              <Row label="Models">
+              <Row label="Allowed models">
                 {modelAllowlist ? (
                   <ChipList items={modelAllowlist} />
                 ) : (
                   <span className="text-[13px] leading-6 text-foreground">All available models</span>
-                )}
-              </Row>
-
-              <Row label="Tiers">
-                <ChipList items={allowedTiers.map((t) => TIER_LABEL[t] ?? t)} />
-              </Row>
-
-              <Row label="Features">
-                {enabledFeatures.length > 0 ? (
-                  <ChipList
-                    items={enabledFeatures.map((f) => FEATURE_LABEL[f] ?? f)}
-                  />
-                ) : (
-                  <span className="text-[13px] leading-6 text-muted-foreground">
-                    Standard access
-                  </span>
                 )}
               </Row>
 
@@ -212,6 +223,24 @@ export default async function AccountPage() {
                 </Row>
               )}
             </dl>
+
+            {/* Capabilities: what this account may use, grouped as the admin editor groups them. */}
+            <div className="mt-4 border-t border-border pt-3.5">
+              <h3 className="text-[13px] font-semibold">What you can use</h3>
+              {capabilityGroups.length > 0 ? (
+                <dl className="mt-2.5 space-y-2.5">
+                  {capabilityGroups.map((g) => (
+                    <Row key={g.id} label={g.label}>
+                      <ChipList items={g.items} />
+                    </Row>
+                  ))}
+                </dl>
+              ) : (
+                <p className="mt-1 text-[13px] leading-6 text-muted-foreground">
+                  Nothing is enabled for your account yet. Ask your administrator for access.
+                </p>
+              )}
+            </div>
           </section>
 
           {/* Security: two-factor authentication (self-managed). */}
@@ -287,9 +316,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function ChipList({ items }: { items: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.map((item) => (
+      {items.map((item, i) => (
         <span
-          key={item}
+          key={`${i}:${item}`}
           className="inline-flex h-6 items-center rounded-full bg-surface-muted px-2.5 text-xs font-medium text-foreground"
         >
           {item}

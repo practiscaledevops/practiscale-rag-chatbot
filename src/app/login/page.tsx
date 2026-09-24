@@ -183,10 +183,11 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 py-10">
+    <main className="flex min-h-app flex-col items-center justify-center bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 py-10">
       <div className="w-full max-w-[380px] rounded-2xl border border-border bg-surface p-5 shadow-float">
-        {/* Dark wordmark on the white card. */}
-        <Logo className="mx-auto block h-5" />
+        {/* Theme-matched wordmark: dark ink on the light card, white on the dark card. */}
+        <Logo className="mx-auto block h-5 dark:hidden" />
+        <Logo variant="dark" className="mx-auto hidden h-5 dark:block" />
 
         <div className="mt-5 flex flex-col items-center text-center">
           <BrainOrb size={100} active={pending} />

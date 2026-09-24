@@ -1,11 +1,12 @@
 // GET /api/brain/learning — the org's learning records (My learnings page).
 //
-// Proxies the Brain's /api/v1/learning with the scoped key server-side. Any
-// signed-in user may read the records (they are the org's shared memory; the
-// sensitive partition doesn't apply to this endpoint).
+// Proxies the Brain's /api/v1/learning with the scoped key server-side. Needs
+// the "learning.read" capability (on for everyone by default — the records are
+// the org's shared memory; the sensitive partition doesn't apply here).
 
 import { z } from "zod";
 import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, hasCapability } from "@/lib/access";
 import { brainListLearning, BrainRequestError, safeBrainError } from "@/lib/brain";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
@@ -43,6 +44,9 @@ export async function GET(req: Request) {
 
   const profile = await getSessionProfile();
   if (!profile) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasCapability(accessFromProfile(profile), "learning.read")) {
+    return Response.json({ error: "Learnings aren't enabled for your account." }, { status: 403 });
+  }
   const limited = rateLimit(`brain:${profile.userId}`, BRAIN_PROXY_LIMIT.limit, BRAIN_PROXY_LIMIT.windowMs);
   if (limited) return limited;
 

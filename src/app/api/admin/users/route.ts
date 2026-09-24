@@ -6,12 +6,14 @@
 //
 //   GET  — list all users (profiles + auth email/timestamps + a best-effort
 //          usage roll-up) plus the reference data the editor needs (teams,
-//          model catalog, feature keys, tiers).
+//          model catalog, the Brain's capability manifest, tiers).
 //   POST — create a user: provision a Supabase Auth user (service-role
 //          auth.admin) with an initial password OR an email invite, then upsert
 //          the profile row (role / permissions / team / activation).
 //
-// Escalation rule: only a super_admin may grant the super_admin role.
+// Escalation rules: only a super_admin may grant the super_admin role, and a
+// plain admin may only grant capabilities they hold themselves. Submitted
+// capability ids are validated against the Brain's capability manifest.
 //
 // Shared building blocks (schemas, types, the payload builder, the admin
 // resolver, team-membership sync) live in lib/admin-users.ts so the sibling
@@ -29,7 +31,14 @@ import {
   buildAdminUsersPayload,
   permissionsSchema,
   roleSchema,
+  preparePermissionsForStorage,
+  loadStoredAccess,
+  capabilitiesOf,
+  capabilitiesBeyondActor,
+  beyondActorMessage,
+  type PermissionsShape,
 } from "@/lib/admin-users";
+import { fetchCapabilityManifest } from "@/lib/capabilities";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -98,6 +107,30 @@ export async function POST(req: Request) {
   }
 
   const service = createSupabaseServiceClient();
+
+  // --- Permissions: validate against the manifest + the grant-what-you-have
+  // rule, BEFORE provisioning (a refusal must not leave an orphan auth user).
+  const manifest = await fetchCapabilityManifest();
+  let permissions: PermissionsShape = {};
+  if (body.permissions) {
+    const prepared = preparePermissionsForStorage(body.permissions, manifest);
+    if (!prepared.ok) {
+      return NextResponse.json({ error: prepared.error }, { status: prepared.status });
+    }
+    permissions = prepared.permissions;
+  }
+  if (!admin.isSuperAdmin) {
+    const actor = await loadStoredAccess(service, admin.userId);
+    const beyond = capabilitiesBeyondActor(
+      { role: admin.role, capabilities: capabilitiesOf(admin.role, actor?.permissions, manifest) },
+      [],
+      capabilitiesOf(role, permissions, manifest)
+    );
+    if (beyond.length) {
+      return NextResponse.json({ error: beyondActorMessage(beyond, manifest) }, { status: 403 });
+    }
+  }
+
   const authAdmin = getAuthAdmin(service);
   if (!authAdmin) {
     return NextResponse.json(
@@ -153,7 +186,7 @@ export async function POST(req: Request) {
     role,
     is_active: body.isActive ?? true,
     team_id: body.teamId ?? null,
-    permissions: body.permissions ?? {},
+    permissions,
     can_use_all_models: body.canUseAllModels ?? false,
   };
   if (body.displayName) profilePatch.display_name = body.displayName;

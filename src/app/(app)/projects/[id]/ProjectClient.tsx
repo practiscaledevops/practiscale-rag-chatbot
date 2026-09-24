@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
+import { ACCEPTED_ACCEPT } from "@/lib/attachments-shared";
 
 interface ChatItem {
   id: string;
@@ -301,6 +302,7 @@ export function ProjectClient({
                 <input
                   ref={fileInputRef}
                   type="file"
+                  accept={ACCEPTED_ACCEPT}
                   className="hidden"
                   onChange={(e) => onPickFile(e.target.files)}
                 />

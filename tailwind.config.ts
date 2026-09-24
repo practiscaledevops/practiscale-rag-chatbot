@@ -5,8 +5,8 @@ import type { Config } from "tailwindcss";
  * PractiScale green (see globals.css for the token values and rationale).
  *
  * Colors are driven by CSS variables so opacity modifiers work (bg-accent/10).
- * The app is light by design: dark mode is opt-in via a `.dark` class only, so
- * an OS dark preference never flips the white workspace.
+ * Light by default; the `.dark` class on <html> swaps every token (the user's
+ * Light / Dark / System choice), so components never need dark: variants.
  */
 const config: Config = {
   darkMode: "class",
@@ -37,6 +37,9 @@ const config: Config = {
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
+        // Solid danger fill under white text (danger buttons) — AA in both themes.
+        "danger-solid": "rgb(var(--danger-solid) / <alpha-value>)",
+        "danger-solid-hover": "rgb(var(--danger-solid-hover) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
         private: "rgb(var(--private) / <alpha-value>)",
         // Dark navigation rail (constant).
@@ -53,9 +56,21 @@ const config: Config = {
         "folder-3": "rgb(var(--folder-3) / <alpha-value>)",
         "folder-4": "rgb(var(--folder-4) / <alpha-value>)",
         "folder-5": "rgb(var(--folder-5) / <alpha-value>)",
+        // Answer tables: cell grid + zebra rows.
+        "table-grid": "rgb(var(--table-grid) / <alpha-value>)",
+        "table-stripe": "rgb(var(--table-stripe) / <alpha-value>)",
+        // Near-black chips/buttons that invert in the dark theme.
+        ink: "rgb(var(--ink) / <alpha-value>)",
+        "ink-hover": "rgb(var(--ink-hover) / <alpha-value>)",
+        "ink-foreground": "rgb(var(--ink-foreground) / <alpha-value>)",
       },
       borderColor: {
         DEFAULT: "rgb(var(--border) / <alpha-value>)",
+      },
+      // A bare `ring-offset-*` follows the theme (Tailwind's default offset
+      // colour is #fff — a white halo around focus rings in dark mode).
+      ringOffsetColor: {
+        DEFAULT: "rgb(var(--background))",
       },
       // Standard-density radii (8 / 12 / 16 / 20).
       borderRadius: {
@@ -71,7 +86,9 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        // Source Serif 4 (next/font, see layout.tsx) for serif answers.
+        serif: ["var(--font-serif)", "Georgia", "Cambria", "serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "monospace"],
       },
       keyframes: {
         // Popover/menu open: gentle rise + fade (use with motion-safe:).

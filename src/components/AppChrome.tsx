@@ -43,9 +43,15 @@ export interface AppChromeProps {
   /** Display name + email, for the sidebar profile card. */
   fullName?: string;
   email?: string;
+  /** The user's profile picture ("/api/account/avatar?v=…"), or null for initials. */
+  avatarUrl?: string | null;
   /** Whether to surface the Admin link (role resolved server-side). */
   isAdmin?: boolean;
-  /** Granted feature permissions (profiles.permissions.features), for mode gating. */
+  /**
+   * The user's resolved capability ids (SessionProfile.capabilities). AppShell
+   * exposes them to the chrome and the chat (useCapability) to hide what the
+   * user can't use; the routes enforce the same capabilities server-side.
+   */
   features?: string[];
   /** Tokens the user has already spent this month, for the persisted meter. */
   initialTokens?: number;
@@ -59,6 +65,59 @@ function sortConversations(list: Conversation[]): Conversation[] {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return b.updated_at.localeCompare(a.updated_at);
   });
+}
+
+/** Max ids per bulk request (the /api/conversations bulk limit). */
+const BULK_LIMIT = 200;
+
+/** Stable default for `features` (a fresh [] each render would re-run AppShell's capability memos). */
+const NO_FEATURES: string[] = [];
+
+/**
+ * Optimistic bulk archive/unarchive: flip `archived` on every listed id,
+ * unpinning when archiving (as the single Archive action does).
+ */
+export function applyBulkArchive(
+  list: Conversation[],
+  ids: ReadonlySet<string>,
+  archived: boolean
+): Conversation[] {
+  return sortConversations(
+    list.map((c) =>
+      ids.has(c.id) ? { ...c, archived, pinned: archived ? false : c.pinned } : c
+    )
+  );
+}
+
+/** Optimistic bulk delete: drop every listed id. */
+export function removeConversations(
+  list: Conversation[],
+  ids: ReadonlySet<string>
+): Conversation[] {
+  return list.filter((c) => !ids.has(c.id));
+}
+
+/**
+ * Undo an optimistic bulk change: put each original record back — replacing
+ * its optimistic copy, or re-inserting it if it was removed — while keeping
+ * any other change made to the list since.
+ */
+export function restoreConversations(
+  list: Conversation[],
+  originals: Conversation[]
+): Conversation[] {
+  const byId = new Map(originals.map((c) => [c.id, c]));
+  const next = list.map((c) => byId.get(c.id) ?? c);
+  const present = new Set(list.map((c) => c.id));
+  for (const c of originals) if (!present.has(c.id)) next.push(c);
+  return sortConversations(next);
+}
+
+/** Split ids into request-sized batches. */
+function batches(ids: string[], size = BULK_LIMIT): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
 }
 
 /** POST/PATCH/DELETE helper that returns parsed JSON or throws on failure. */
@@ -92,8 +151,9 @@ export function AppChrome({
   firstName = "",
   fullName = "",
   email = "",
+  avatarUrl = null,
   isAdmin = false,
-  features = [],
+  features = NO_FEATURES,
   initialTokens = 0,
   children,
 }: AppChromeProps) {
@@ -167,6 +227,8 @@ export function AppChrome({
 
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  /** Ids awaiting bulk-delete confirmation (null = dialog closed). */
+  const [bulkDeleteIds, setBulkDeleteIds] = useState<string[] | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
   const [renameProjectTarget, setRenameProjectTarget] = useState<Project | null>(null);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState<Project | null>(null);
@@ -228,6 +290,63 @@ export function AppChrome({
     [conversations, activeConversationId, router]
   );
 
+  // Bulk archive/unarchive from the sidebar's selection mode. Optimistic like
+  // handleArchive; on failure only the targeted rows revert, then we resync
+  // from the server (an earlier batch may already have been applied).
+  const handleBulkArchive = useCallback(
+    async (ids: string[], archived: boolean) => {
+      const idSet = new Set(ids);
+      const originals = conversations.filter((c) => idSet.has(c.id));
+      if (originals.length === 0) return;
+      setConversations((prev) => applyBulkArchive(prev, idSet, archived));
+      // If the open thread is being archived, leave it.
+      if (archived && activeConversationId && idSet.has(activeConversationId)) {
+        router.push("/");
+      }
+      try {
+        for (const batch of batches(originals.map((c) => c.id))) {
+          await mutate("/api/conversations", "PATCH", { ids: batch, archived });
+        }
+      } catch {
+        setConversations((prev) => restoreConversations(prev, originals));
+        router.refresh();
+      }
+    },
+    [conversations, activeConversationId, router]
+  );
+
+  // Bulk delete asks first; the dialog calls confirmBulkDelete.
+  const handleBulkDelete = useCallback(
+    (ids: string[]) => {
+      const known = new Set(conversations.map((c) => c.id));
+      const targets = ids.filter((id) => known.has(id));
+      if (targets.length > 0) setBulkDeleteIds(targets);
+    },
+    [conversations]
+  );
+
+  // Confirmed: remove optimistically, restore the rows (and resync) on
+  // failure — the error is rethrown for the dialog to show. Leaves the open
+  // thread once its deletion has succeeded, as the single delete does.
+  const confirmBulkDelete = useCallback(
+    async (ids: string[]) => {
+      const idSet = new Set(ids);
+      const originals = conversations.filter((c) => idSet.has(c.id));
+      setConversations((prev) => removeConversations(prev, idSet));
+      try {
+        for (const batch of batches(ids)) {
+          await mutate("/api/conversations", "DELETE", { ids: batch });
+        }
+      } catch (err) {
+        setConversations((prev) => restoreConversations(prev, originals));
+        router.refresh();
+        throw err;
+      }
+      if (activeConversationId && idSet.has(activeConversationId)) router.push("/");
+    },
+    [conversations, activeConversationId, router]
+  );
+
   // --- project handlers ---------------------------------------------------
   const handleSelectProject = useCallback(
     (id: string) => {
@@ -277,6 +396,7 @@ export function AppChrome({
         firstName={firstName}
         fullName={fullName}
         email={email}
+        avatarUrl={avatarUrl}
         isAdmin={isAdmin}
         features={features}
         initialTokens={initialTokens}
@@ -300,6 +420,8 @@ export function AppChrome({
         onDeleteConversation={(id) =>
           setDeleteTarget(conversations.find((c) => c.id === id) ?? null)
         }
+        onBulkArchive={handleBulkArchive}
+        onBulkDelete={handleBulkDelete}
       >
         {children}
       </AppShell>
@@ -321,6 +443,12 @@ export function AppChrome({
           setConversations((prev) => prev.filter((c) => c.id !== id));
           if (activeConversationId === id) router.push("/");
         }}
+      />
+
+      <BulkDeleteDialog
+        ids={bulkDeleteIds}
+        onClose={() => setBulkDeleteIds(null)}
+        onConfirm={confirmBulkDelete}
       />
 
       <NewProjectDialog
@@ -435,6 +563,15 @@ function RenameDialog({
   );
 }
 
+/**
+ * Where focus lands after a chat delete removed the dialog's opener (a row, or
+ * the selection bar that unmounts when selection mode ends): the rail's
+ * "Chats" section toggle (the button around its #rail-chats label).
+ */
+function railChatsToggle(): HTMLElement | null {
+  return document.getElementById("rail-chats")?.closest("button") ?? null;
+}
+
 function DeleteDialog({
   conversation,
   onClose,
@@ -463,7 +600,12 @@ function DeleteDialog({
   }
 
   return (
-    <Modal open={conversation !== null} onClose={onClose} title="Delete conversation">
+    <Modal
+      open={conversation !== null}
+      onClose={onClose}
+      title="Delete conversation"
+      returnFocus={railChatsToggle}
+    >
       <p className="text-sm text-muted-foreground">
         Delete{" "}
         <span className="font-medium text-foreground">
@@ -485,6 +627,74 @@ function DeleteDialog({
           variant="danger"
           size="sm"
           onClick={onConfirm}
+          disabled={pending}
+        >
+          {pending ? "Deleting…" : "Delete"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkDeleteDialog({
+  ids,
+  onClose,
+  onConfirm,
+}: {
+  ids: string[] | null;
+  onClose: () => void;
+  /** Performs the delete; rejects with the error to show. */
+  onConfirm: (ids: string[]) => Promise<void>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const count = ids?.length ?? 0;
+  const label = `${count} chat${count === 1 ? "" : "s"}`;
+
+  // Fresh state each time the dialog opens for a new selection.
+  useEffect(() => {
+    if (ids) setError(null);
+  }, [ids]);
+
+  async function onDelete() {
+    if (!ids || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onConfirm(ids);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={ids !== null}
+      onClose={onClose}
+      title={count === 1 ? "Delete chat" : `Delete ${count} chats`}
+      returnFocus={railChatsToggle}
+    >
+      <p className="text-sm text-muted-foreground">
+        Delete <span className="font-medium text-foreground">{label}</span>? This
+        can&apos;t be undone.
+      </p>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          onClick={onDelete}
           disabled={pending}
         >
           {pending ? "Deleting…" : "Delete"}

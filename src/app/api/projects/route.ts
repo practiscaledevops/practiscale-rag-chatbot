@@ -11,11 +11,17 @@
 //
 // Every request is scoped to the signed-in user via the server session, with
 // row-level security (user_id = auth.uid()) enforcing ownership underneath.
+// Creating a project needs the "app.projects" capability (on by default);
+// existing projects stay listable/editable so nothing a user owns disappears.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { User } from "@supabase/supabase-js";
 import { getUser } from "@/lib/auth";
+import { getSessionProfile } from "@/lib/admin";
+import { accessFromProfile, hasCapability } from "@/lib/access";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { isDemo } from "@/lib/demo/mode";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -52,6 +58,13 @@ async function requireUser() {
   return { user, supabase };
 }
 
+/** Whether the signed-in user may create projects ("app.projects"). */
+async function canUseProjects(user: User): Promise<boolean> {
+  if (isDemo()) return true;
+  const profile = await getSessionProfile(user);
+  return !!profile && hasCapability(accessFromProfile(profile), "app.projects");
+}
+
 // GET /api/projects — list the user's projects (newest first).
 export async function GET() {
   const auth = await requireUser();
@@ -75,6 +88,9 @@ export async function POST(req: Request) {
   const auth = await requireUser();
   if ("error" in auth) return auth.error;
   const { user, supabase } = auth;
+  if (!(await canUseProjects(user))) {
+    return NextResponse.json({ error: "Projects aren't enabled for your account." }, { status: 403 });
+  }
 
   const parsed = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

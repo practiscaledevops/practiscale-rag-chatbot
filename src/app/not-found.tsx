@@ -5,7 +5,7 @@ import { OrbAvatar } from "@/components/OrbAvatar";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 text-center">
+    <div className="flex min-h-app flex-col items-center justify-center gap-4 bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 text-center">
       <OrbAvatar size={48} />
       <p className="text-2xl font-semibold tracking-tight text-brand-gradient">404</p>
       <div className="space-y-1">

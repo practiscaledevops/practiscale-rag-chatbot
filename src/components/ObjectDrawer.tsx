@@ -224,7 +224,9 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
   const o = data?.object ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    // Starts below the installed app's draggable title strip (--titlebar-h is 0
+    // in a browser tab), so the header and Close stay clickable.
+    <div className="fixed inset-x-0 bottom-0 top-[var(--titlebar-h)] z-50 flex justify-end">
       <button
         type="button"
         aria-label="Close"

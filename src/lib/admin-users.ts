@@ -19,19 +19,42 @@ import {
 } from "@/lib/admin";
 import { createSupabaseServiceClient } from "@/lib/supabase-server";
 import { fetchBrainModels } from "@/lib/models";
+import {
+  fetchCapabilityManifest,
+  effectiveCapabilities,
+  readStoredGrants,
+  closeGrantSet,
+  expandLegacyFeature,
+  isCapabilityId,
+  isLegacyFeatureKey,
+  unknownCapabilityIds,
+  buildStoredCapabilities,
+  legacyFeaturesFor,
+  allowedTiersFor,
+  TIER_CAPABILITY,
+  type CapabilityManifest,
+  type ResolvedCapabilityManifest,
+} from "@/lib/capabilities";
 
 // ---------------------------------------------------------------------------
 // Types (shared with the route handlers and page.tsx)
 // ---------------------------------------------------------------------------
 
-/** Per-user access map — mirrors the profiles.permissions jsonb shape. */
+/**
+ * Per-user access map — mirrors the profiles.permissions jsonb shape (see
+ * lib/capabilities-shared for the full storage contract).
+ */
 export interface PermissionsShape {
   /** allowlist of model-id globs/exact ids (empty/absent = no restriction) */
   models?: string[];
-  /** enabled feature keys, e.g. ["rag","projects","attachments","connectors"] */
+  /** LEGACY feature keys (old editor) — for explicit users a conservative mirror */
   features?: string[];
-  /** subset of the tiers the user may select (empty/absent = all tiers) */
+  /** subset of the tiers the user may select (empty/absent = all tiers); mirror of models.<tier> */
   allowed_tiers?: Array<"fast" | "recommended" | "max">;
+  /** granted capability ids (explicit grants from the Brain's manifest) */
+  capabilities?: string[];
+  /** capability ids an admin switched off */
+  capabilities_denied?: string[];
 }
 
 /** Best-effort usage roll-up for a single user. */
@@ -51,7 +74,10 @@ export interface AdminUser {
   role: ProfileRole;
   isActive: boolean;
   team: { id: string; name: string } | null;
+  /** stored permissions, normalized (legacy feature keys mapped to capability ids) */
   permissions: PermissionsShape;
+  /** the capability ids this user holds right now (role defaults + grants, prerequisites closed) */
+  capabilities: string[];
   canUseAllModels: boolean;
   usage: AdminUserUsage | null;
   createdAt: string | null;
@@ -66,23 +92,19 @@ export interface AdminModelOption {
   tier?: string;
 }
 
-/** A togglable product feature the editor exposes. */
-export interface AdminFeature {
-  key: string;
-  label: string;
-  description: string;
-}
-
 /** Everything the admin users page needs in one payload. */
 export interface AdminUsersPayload {
   users: AdminUser[];
   teams: { id: string; name: string }[];
   models: AdminModelOption[];
-  features: AdminFeature[];
+  /** The capability manifest the permission editor renders (the Brain's, or the built-in list). */
+  manifest: ResolvedCapabilityManifest;
   tiers: Array<"fast" | "recommended" | "max">;
   /** the signed-in admin — used to gate super_admin controls and self-guards */
   currentUserId: string;
   currentUserRole: ProfileRole;
+  /** the signed-in admin's own capabilities — a non-super-admin can't grant beyond them */
+  actorCapabilities: string[];
   /** true when the usage roll-up hit its scan cap (totals are a lower bound) */
   usagePartial: boolean;
 }
@@ -98,18 +120,11 @@ export const TIERS: Array<"fast" | "recommended" | "max"> = [
   "max",
 ];
 
-/** Product features that can be granted per-user via profiles.permissions. */
-export const KNOWN_FEATURES: AdminFeature[] = [
-  { key: "rag", label: "Knowledge (RAG)", description: "Grounded answers with citations from the Brain." },
-  { key: "projects", label: "Projects", description: "Group chats and scope them with project context." },
-  { key: "attachments", label: "Attachments", description: "Upload files to include in a conversation." },
-  { key: "connectors", label: "Connectors", description: "Use MCP and third-party integrations the Brain exposes." },
-  // Access grants — let a normal user use capabilities otherwise reserved for
-  // admins. The gating reads these from profiles.permissions.features.
-  { key: "sensitive", label: "Sensitive data", description: "Retrieve the sensitive AI call-scoring / QA data (normally admins only)." },
-  { key: "decisions", label: "Decision memos", description: "Use the Decision-memo work mode." },
-  { key: "executive", label: "Executive mode", description: "Use the private Executive (CEO) mode with personal executive memory." },
-];
+// Per-user permissions are no longer a fixed feature list: the editor renders
+// the Brain's capability manifest (lib/capabilities), so a capability the Brain
+// gains appears here without a code change. The old keys (rag, projects,
+// attachments, connectors, sensitive, decisions, executive) are still read and
+// mapped to capability ids — see expandLegacyFeature in lib/capabilities-shared.
 
 // A high, defensive cap on the usage scan — this is an admin summary, not
 // billing. If the fleet has more events than this we surface totals as a lower
@@ -120,14 +135,31 @@ const USAGE_EVENT_CAP = 50_000;
 // Validation
 // ---------------------------------------------------------------------------
 
-/** Per-user permissions object accepted on create/update. */
+const capabilityIdSchema = z.string().trim().refine(isCapabilityId, { message: "Not a capability id" });
+
+/**
+ * Per-user permissions object accepted on create/update. The editor sends
+ * `capabilities` (the granted ids — everything else the manifest offers is
+ * stored as switched off) plus the model allowlist; `features` /
+ * `allowed_tiers` are still accepted from older clients (legacy semantics).
+ * Ids are shape-checked here and checked against the manifest by
+ * preparePermissionsForStorage.
+ */
 export const permissionsSchema = z
   .object({
     models: z.array(z.string().trim().min(1).max(120)).max(200).optional(),
-    features: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
+    features: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
     allowed_tiers: z.array(z.enum(["fast", "recommended", "max"])).max(3).optional(),
+    capabilities: z.array(capabilityIdSchema).max(500).optional(),
+    // Accepted for symmetry with the stored shape; the server recomputes it.
+    capabilities_denied: z.array(capabilityIdSchema).max(500).optional(),
+    // The capability ids the editor RENDERED (never stored): only these are
+    // decided by this save — see buildStoredCapabilities.
+    offered: z.array(capabilityIdSchema).max(500).optional(),
   })
   .strict();
+
+export type SubmittedPermissions = z.infer<typeof permissionsSchema>;
 
 /** App-wide role. */
 export const roleSchema = z.enum(["user", "admin", "super_admin"]);
@@ -162,8 +194,16 @@ export function getAuthAdmin(service: SupabaseClient) {
   return admin;
 }
 
-/** Coerce the profiles.permissions jsonb into a clean, typed shape. */
-export function normalizePermissions(raw: unknown): PermissionsShape {
+/**
+ * Coerce the profiles.permissions jsonb into a clean, typed shape, with the
+ * capability grants in canonical form: legacy feature keys are MAPPED to
+ * capability ids (rag → chat.knowledge, attachments → extract.*, sensitive →
+ * the sensitive data sources + call reviews / metrics / deep audits, decisions
+ * → modes.decision_memo, executive → modes.ceo_* + app.executive_memory …) and
+ * a legacy allowed_tiers becomes models.<tier> grants/denials. Resolving the
+ * result with effectiveCapabilities gives the same access as the raw value.
+ */
+export function normalizePermissions(raw: unknown, manifest?: CapabilityManifest): PermissionsShape {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
   const out: PermissionsShape = {};
@@ -171,7 +211,7 @@ export function normalizePermissions(raw: unknown): PermissionsShape {
     out.models = r.models.filter((x): x is string => typeof x === "string");
   }
   if (Array.isArray(r.features)) {
-    out.features = r.features.filter((x): x is string => typeof x === "string");
+    out.features = r.features.filter((x): x is string => typeof x === "string" && isLegacyFeatureKey(x));
   }
   if (Array.isArray(r.allowed_tiers)) {
     out.allowed_tiers = r.allowed_tiers.filter(
@@ -179,7 +219,119 @@ export function normalizePermissions(raw: unknown): PermissionsShape {
         x === "fast" || x === "recommended" || x === "max"
     );
   }
+  const grants = readStoredGrants(r, manifest);
+  if (grants.explicit || grants.granted.size > 0 || grants.denied.size > 0) {
+    out.capabilities = [...grants.granted];
+    out.capabilities_denied = [...grants.denied];
+  }
   return out;
+}
+
+/** The capability ids a stored profile resolves to (role defaults + grants). */
+export function capabilitiesOf(
+  role: ProfileRole | string | null | undefined,
+  rawPermissions: unknown,
+  manifest: CapabilityManifest
+): string[] {
+  return effectiveCapabilities({ role: role ?? "user", permissions: rawPermissions ?? {} }, manifest);
+}
+
+/** Role + stored permissions of one profile (service role); null if absent. */
+export async function loadStoredAccess(
+  service: SupabaseClient,
+  userId: string
+): Promise<{ role: ProfileRole; permissions: Record<string, unknown> } | null> {
+  const { data } = await service.from("profiles").select("role, permissions").eq("id", userId).maybeSingle();
+  if (!data) return null;
+  const p = data.permissions;
+  return {
+    role: ((data.role as ProfileRole) ?? "user"),
+    permissions: p && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, unknown>) : {},
+  };
+}
+
+/** The result of validating a submitted permissions object for storage. */
+export type PreparedPermissions =
+  | { ok: true; permissions: PermissionsShape }
+  | { ok: false; status: 400; error: string };
+
+/**
+ * Validate a submitted permissions object against the manifest and build what
+ * gets stored. Explicit submissions (with `capabilities`): the ids must exist
+ * in the manifest (or be legacy keys, or already be stored on the user); every
+ * capability the manifest offers is stored as granted or switched off; the
+ * legacy `features` and `allowed_tiers` mirrors are derived from the grants so
+ * older readers stay consistent. Legacy submissions (no `capabilities`) keep
+ * the old semantics and may only carry legacy feature keys.
+ */
+export function preparePermissionsForStorage(
+  submitted: SubmittedPermissions,
+  manifest: CapabilityManifest,
+  previousRaw?: unknown
+): PreparedPermissions {
+  const models = (submitted.models ?? []).filter(Boolean);
+
+  if (submitted.capabilities === undefined) {
+    const features = submitted.features ?? [];
+    const bad = features.filter((f) => !isLegacyFeatureKey(f));
+    if (bad.length) {
+      return { ok: false, status: 400, error: `Unknown feature key: ${bad.slice(0, 5).join(", ")}. Send capability ids in "capabilities".` };
+    }
+    const out: PermissionsShape = {};
+    if (models.length) out.models = models;
+    if (features.length) out.features = features;
+    if (submitted.allowed_tiers?.length) out.allowed_tiers = submitted.allowed_tiers;
+    return { ok: true, permissions: out };
+  }
+
+  const submittedIds = [...submitted.capabilities, ...(submitted.features ?? [])];
+  const unknown = unknownCapabilityIds(submittedIds, manifest, previousRaw);
+  if (unknown.length) {
+    return { ok: false, status: 400, error: `Unknown capability: ${unknown.slice(0, 5).join(", ")}.` };
+  }
+
+  const granted = closeGrantSet(
+    submittedIds.flatMap((id) => expandLegacyFeature(id, manifest)),
+    manifest
+  );
+  const tierIds = Object.values(TIER_CAPABILITY).filter((id) => manifest.capabilities.some((c) => c.id === id));
+  if (tierIds.length > 0 && !tierIds.some((id) => granted.includes(id))) {
+    return { ok: false, status: 400, error: "Grant at least one model tier." };
+  }
+
+  const stored = buildStoredCapabilities(granted, manifest, previousRaw, submitted.offered);
+  const out: PermissionsShape = {
+    capabilities: stored.capabilities,
+    capabilities_denied: stored.capabilities_denied,
+    features: legacyFeaturesFor(granted, manifest),
+  };
+  const tiers = allowedTiersFor(granted, manifest);
+  if (tiers) out.allowed_tiers = tiers;
+  if (models.length) out.models = models;
+  return { ok: true, permissions: out };
+}
+
+/**
+ * The capabilities a non-super-admin would be granting beyond their own:
+ * everything the target gains (after − before) that the actor doesn't hold.
+ * A super admin may grant anything (empty result).
+ */
+export function capabilitiesBeyondActor(
+  actor: { role: ProfileRole; capabilities: readonly string[] },
+  before: readonly string[],
+  after: readonly string[]
+): string[] {
+  if (actor.role === "super_admin") return [];
+  const had = new Set(before);
+  const mine = new Set(actor.capabilities);
+  return after.filter((id) => !had.has(id) && !mine.has(id));
+}
+
+/** Human-readable "You can't grant …" message for capabilitiesBeyondActor. */
+export function beyondActorMessage(ids: readonly string[], manifest: CapabilityManifest): string {
+  const label = (id: string) => manifest.capabilities.find((c) => c.id === id)?.label ?? id;
+  const names = ids.slice(0, 4).map(label).join(", ");
+  return `You can only grant permissions you have yourself. Not allowed: ${names}${ids.length > 4 ? ` and ${ids.length - 4} more` : ""}.`;
 }
 
 /**
@@ -323,11 +475,12 @@ export async function buildAdminUsersPayload(
   if (pErr) throw new Error(pErr.message);
 
   // Reference data + enrichment, in parallel.
-  const [teamRes, authInfo, usage, catalog] = await Promise.all([
+  const [teamRes, authInfo, usage, catalog, manifest] = await Promise.all([
     service.from("teams").select("id, name").order("name", { ascending: true }),
     loadAuthInfo(service),
     loadUsageSummary(service),
     fetchBrainModels(),
+    fetchCapabilityManifest(),
   ]);
 
   const teams = ((teamRes.data ?? []) as Array<{ id: string; name: string }>).map((t) => ({
@@ -348,14 +501,16 @@ export async function buildAdminUsersPayload(
     const id = String(p.id);
     const info = authInfo.get(id);
     const teamId = (p.team_id as string | null) ?? null;
+    const role = (p.role as ProfileRole) ?? "user";
     return {
       id,
       email: info?.email ?? ((p.email as string | null) ?? null),
       displayName: (p.display_name as string | null) ?? null,
-      role: ((p.role as ProfileRole) ?? "user"),
+      role,
       isActive: p.is_active !== false,
       team: teamId ? teamById.get(teamId) ?? null : null,
-      permissions: normalizePermissions(p.permissions),
+      permissions: normalizePermissions(p.permissions, manifest),
+      capabilities: capabilitiesOf(role, p.permissions, manifest),
       canUseAllModels: Boolean(p.can_use_all_models),
       usage: usage.summary.get(id) ?? null,
       createdAt: info?.createdAt ?? ((p.created_at as string | null) ?? null),
@@ -369,14 +524,16 @@ export async function buildAdminUsersPayload(
     return (a.email ?? "").localeCompare(b.email ?? "");
   });
 
+  const me = users.find((u) => u.id === admin.userId);
   return {
     users,
     teams,
     models,
-    features: KNOWN_FEATURES,
+    manifest,
     tiers: TIERS,
     currentUserId: admin.userId,
     currentUserRole: admin.role,
+    actorCapabilities: me?.capabilities ?? capabilitiesOf(admin.role, {}, manifest),
     usagePartial: usage.partial,
   };
 }

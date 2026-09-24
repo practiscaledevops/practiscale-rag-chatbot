@@ -1,6 +1,7 @@
 // GET/PUT /api/ceo/memory — the executive's private memory (see migration 0007).
 //
-// Gated to super_admins only (the executive). Read/written through the
+// Gated to users holding the "app.executive_memory" capability (admins by
+// default, members only when granted). Read/written through the
 // service-role client so the row is never exposed to a normal user. All access
 // is audited.
 
@@ -8,6 +9,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionProfile, AdminError } from "@/lib/admin";
 import { canUseExecutive } from "@/lib/work-modes";
+import { accessFromProfile } from "@/lib/access";
 import { getCeoMemory, setCeoMemory } from "@/lib/ceo-memory";
 import { audit } from "@/lib/audit";
 
@@ -15,11 +17,11 @@ export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
 export const dynamic = "force-dynamic";
 
-/** The signed-in user, if they may use Executive mode (super_admin or the grant). */
+/** The signed-in user, if they hold "app.executive_memory" (+ a CEO mode). */
 async function requireExecutive() {
   const profile = await getSessionProfile();
   if (!profile) throw new AdminError(401, "Unauthorized");
-  if (!canUseExecutive({ role: profile.role, features: profile.permissions?.features })) {
+  if (!canUseExecutive(accessFromProfile(profile))) {
     throw new AdminError(403, "Executive workspace is restricted");
   }
   return profile;

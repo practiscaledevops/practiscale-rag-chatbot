@@ -12,6 +12,7 @@ import {
   TIER_ALIASES,
 } from "@/lib/models";
 import { loadWorkspaceSettings } from "@/lib/settings";
+import { loadAvatarUrl } from "@/lib/avatar";
 import { AppChrome, type Project } from "@/components/AppChrome";
 // Pin this route group to Singapore (co-located with Supabase + the Brain).
 export const preferredRegion = ["sin1"];
@@ -45,7 +46,7 @@ export default async function AppLayout({
   // fetches. RLS scopes history + projects to the signed-in user (empty for a
   // signed-out caller), and the catalog needs no session — so all can race, and
   // we gate on the profile right after. Ordering mirrors /api/conversations.
-  const [profile, conversations, projectsRes, catalog, monthTokens, { settings }] =
+  const [profile, conversations, projectsRes, catalog, monthTokens, { settings }, avatarUrl] =
     await Promise.all([
       getSessionProfile(user),
       loadConversations(supabase, user.id),
@@ -56,6 +57,7 @@ export default async function AppLayout({
       fetchBrainModels(),
       getMonthlyUsageTokens(user.id),
       loadWorkspaceSettings(),
+      loadAvatarUrl(supabase, user.id),
     ]);
 
   // Auth gate (defense in depth alongside middleware): no profile → /login.
@@ -119,8 +121,12 @@ export default async function AppLayout({
       firstName={firstName}
       fullName={profile.displayName?.trim() || firstName}
       email={profile.email ?? ""}
+      avatarUrl={avatarUrl}
       isAdmin={isAdmin}
-      features={profile.permissions?.features ?? []}
+      // The user's RESOLVED capability ids (not the legacy feature keys): the
+      // mode picker (allowedModeDefs) treats a capability list as authoritative,
+      // so it shows exactly the experts this user was granted.
+      features={profile.capabilities}
       initialTokens={monthTokens}
     >
       {children}

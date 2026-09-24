@@ -18,6 +18,8 @@ import {
   Crown,
   GitBranch,
   Database,
+  Gauge,
+  Layers,
   Download,
   FileText,
   Gavel,
@@ -59,12 +61,34 @@ import {
   DeepResearchToggle,
   FloatingMenu,
   useMenu,
+  type SearchScopeValue,
 } from "./ComposerControls";
+import { DEFAULT_KNOWLEDGE_SCOPE, isKnowledgeScopeId } from "@/lib/knowledge-scopes";
 import { PromptLibrary } from "./PromptLibrary";
 import { BrainOrb } from "@/components/BrainOrb";
 import { OrbAvatar } from "@/components/OrbAvatar";
 import { PopoverMenu } from "@/components/PopoverMenu";
-import { readPrefs } from "@/lib/prefs";
+import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
+import { UserAvatar } from "@/components/UserAvatar";
+import { copyMarkdown } from "@/lib/copy-format";
+import { cleanClipboard, type CopyNode } from "@/lib/clean-copy";
+import { isoOrUndefined } from "@/lib/message-times";
+import { useChatLimits } from "@/lib/chat-limits";
+import { prepareUpload } from "@/lib/image-compress";
+import {
+  BRAIN_MODEL_TURNS,
+  contextUsagePct,
+  effectiveMessages,
+  estimateTokens,
+  isSummaryMessage,
+  makeSummaryContent,
+  planCompaction,
+  recentHistory,
+  shouldAutoCompact,
+  summaryBody,
+  turnCount,
+  windowBudget,
+} from "@/lib/compaction";
 import { CompareDrafts, type ComparePane } from "./CompareDrafts";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import {
@@ -80,16 +104,21 @@ import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
 import { JobProgress } from "./JobProgress";
 import {
-  MAX_FILES,
-  ACCEPTED_ACCEPT,
-  ACCEPTED_LABEL,
+  MB,
   attachmentKind,
   isSupportedName,
   maxBytesFor,
-  maxMbFor,
   statusLabelFor,
   type ChatAttachment,
 } from "@/lib/attachments-shared";
+import {
+  UI_CAPABILITY,
+  acceptForKinds,
+  acceptedLabelForKinds,
+  capabilitySet,
+  grantedAttachmentKinds,
+  isAllowedAttachmentName,
+} from "@/lib/capabilities-client";
 import { ObjectDrawer } from "@/components/ObjectDrawer";
 import {
   conflictSentence,
@@ -202,6 +231,9 @@ const MODE_SUGGESTIONS: Partial<Record<WorkMode, Suggestion[]>> = {
 };
 
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
+
+/** The column the thread, its toolbar and the docked composer share. */
+const THREAD_COL = "mx-auto w-full max-w-[58rem] px-4 sm:px-6";
 
 // Executive (CEO mode) quick actions — prefill high-leverage prompts.
 const CEO_ACTIONS: { label: string; prompt: string }[] = [
@@ -345,9 +377,43 @@ export function ChatView({
   initialMessages,
   initialInput,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs, outputType, setOutputType } =
+  const { selection, setSelection, options, addUsage, firstName, avatarUrl, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap } =
     useAppShell();
   const router = useRouter();
+
+  // What this user's capabilities allow. A control for a capability they don't
+  // hold is HIDDEN (not disabled); every route enforces the same checks.
+  const canScope = hasCap(UI_CAPABILITY.sourceScope);
+  const canCompact = hasCap(UI_CAPABILITY.compaction);
+  const canDeepAudit = hasCap(UI_CAPABILITY.deepAudit);
+  const canSaveLearning = hasCap(UI_CAPABILITY.learningWrite);
+  const canSeeConflicts = hasCap(UI_CAPABILITY.conflicts);
+  const canSeePerformance = hasCap(UI_CAPABILITY.performance);
+  const canDictate = hasCap(UI_CAPABILITY.dictation);
+  // File kinds this user may attach (extract.*): the picker only offers these,
+  // and the attach control is hidden when there are none.
+  const attachKinds = useMemo(() => grantedAttachmentKinds(capabilitySet(capabilities)), [capabilities]);
+  const attachAccept = useMemo(() => acceptForKinds(attachKinds), [attachKinds]);
+  const attachLabel = useMemo(() => acceptedLabelForKinds(attachKinds), [attachKinds]);
+  const canAttach = attachKinds.length > 0;
+
+  // Workspace chat limits (admin Settings → Chat & context): context budget,
+  // compaction threshold, upload sizes.
+  const limits = useChatLimits();
+  const limitsRef = useRef(limits);
+  useEffect(() => {
+    limitsRef.current = limits;
+  }, [limits]);
+
+  // Answer typeface (Settings → Appearance): a Claude-style serif by default.
+  const [responseFont, setResponseFont] = useState<"serif" | "sans">("serif");
+  useEffect(() => {
+    const apply = (p: ChatPrefs) => setResponseFont(p.responseFont === "sans" ? "sans" : "serif");
+    apply(readPrefs());
+    const onPrefs = (e: Event) => apply((e as CustomEvent<ChatPrefs>).detail ?? readPrefs());
+    window.addEventListener(PREFS_EVENT, onPrefs);
+    return () => window.removeEventListener(PREFS_EVENT, onPrefs);
+  }, []);
   const [branching, setBranching] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
 
@@ -362,6 +428,30 @@ export function ChatView({
     const ids = readPrefs().collectionIds;
     return Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : [];
   });
+  // "Search in" knowledge scope (Auto / All Brain / Reality / Playbooks / …),
+  // forwarded as `knowledgeScope`; access-checked server-side in /api/chat.
+  const [knowledgeScope, setKnowledgeScope] = useState<string>(() => {
+    const s = readPrefs().knowledgeScope;
+    return isKnowledgeScopeId(s) ? s : DEFAULT_KNOWLEDGE_SCOPE;
+  });
+  const searchScope = useMemo<SearchScopeValue>(
+    () => ({ scope: knowledgeScope, collectionIds: scopeCollectionIds }),
+    [knowledgeScope, scopeCollectionIds]
+  );
+  const setSearchScope = useCallback((v: SearchScopeValue) => {
+    setKnowledgeScope(v.scope);
+    setScopeCollectionIds(v.collectionIds);
+  }, []);
+  // The scope fields every /api/chat call carries. Without "chat.source_scope"
+  // the picker is hidden and nothing narrows the search: a scope saved in the
+  // user's preferences earlier doesn't ride along (the route ignores it anyway).
+  const scopeBody = useMemo(
+    () =>
+      canScope
+        ? { knowledgeScope, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) }
+        : { knowledgeScope: DEFAULT_KNOWLEDGE_SCOPE },
+    [canScope, knowledgeScope, scopeCollectionIds]
+  );
 
   // Attachments for the NEXT message: files the user attached, uploaded to
   // /api/attachments for text extraction, then forwarded with the send. Cleared
@@ -377,8 +467,16 @@ export function ChatView({
   // Upload one file for extraction; flip its chip to ready (with text) or error.
   const uploadAttachment = useCallback(async (id: string, file: File) => {
     try {
+      // Photos and screenshots are downscaled + re-encoded in the browser first,
+      // so a large image still fits the upload limit (and uploads faster).
+      const prepared = await prepareUpload(file, limitsRef.current);
+      if ("error" in prepared) throw new Error(prepared.error);
+      const upload = prepared.file;
+      if (upload !== file) {
+        setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, size: upload.size } : a)));
+      }
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", upload);
       const res = await fetch("/api/attachments", { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
@@ -412,19 +510,31 @@ export function ChatView({
   const addFiles = useCallback(
     (files: FileList | File[]) => {
       const list = Array.from(files);
-      if (list.length === 0) return;
-      let room = MAX_FILES - attachmentsRef.current.length;
+      // No file kind granted: the attach control is hidden, and a drop is ignored.
+      if (list.length === 0 || attachKinds.length === 0) return;
+      const lim = limitsRef.current;
+      let room = lim.maxFiles - attachmentsRef.current.length;
       const additions: PendingAttachment[] = [];
       for (const file of list) {
         if (room <= 0) break;
         const id = `att-${attachIdRef.current++}`;
         if (!isSupportedName(file.name)) {
-          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Unsupported type · accepts ${ACCEPTED_LABEL}` });
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Unsupported type · accepts ${attachLabel}` });
           continue;
         }
-        // Size limit depends on the kind (voice notes get more room than text).
-        if (file.size > maxBytesFor(file.name)) {
-          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Too large · max ${maxMbFor(file.name)} MB` });
+        // A supported type this user's capabilities don't cover (/api/attachments re-checks).
+        if (!isAllowedAttachmentName(file.name, attachKinds)) {
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `That file type isn't enabled for your account · accepts ${attachLabel}` });
+          continue;
+        }
+        // Images may be larger: they're optimised before upload. Everything
+        // else must fit the workspace file limit (and the kind's own cap).
+        const maxBytes =
+          attachmentKind(file.name) === "image"
+            ? lim.maxImageMb * MB
+            : Math.min(maxBytesFor(file.name), lim.maxFileMb * MB);
+        if (file.size > maxBytes) {
+          additions.push({ id, name: file.name, size: file.size, status: "error", error: `Too large · max ${Math.round(maxBytes / MB)} MB` });
           continue;
         }
         additions.push({ id, name: file.name, size: file.size, status: "uploading", file });
@@ -439,7 +549,7 @@ export function ChatView({
         }
       }
     },
-    [uploadAttachment]
+    [uploadAttachment, attachKinds, attachLabel]
   );
 
   const removeAttachment = useCallback((id: string) => {
@@ -491,9 +601,9 @@ export function ChatView({
       mode,
       conversationId: activeConversationId,
       outputType,
-      ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}),
+      ...scopeBody,
     }),
-    [selection.value, mode, activeConversationId, scopeCollectionIds, outputType]
+    [selection.value, mode, activeConversationId, scopeBody, outputType]
   );
 
   // useChat throttles message-state updates (experimental_throttle below) but
@@ -547,9 +657,25 @@ export function ChatView({
   });
 
   const busy = status === "submitted" || status === "streaming";
+  // `busy` for callbacks that must not go stale: compaction must never splice a
+  // summary into a list while an answer streams (useChat's next chunk would
+  // drop it). Declared before the status effect below so it's current there.
+  const busyRef = useRef(busy);
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  // The latest messages, for callbacks that must not go stale (saves, compaction).
+  const messagesRef = useRef<Message[]>(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Live activity from the Brain's status/sources data events (see /api/v1/chat).
   // `data` is reset at the start of each send, so it only reflects the current turn.
+  // Events for a capability the user doesn't hold (source disagreements,
+  // performance numbers, learning candidates) are dropped here, so they never
+  // render (hiding only; withholding them is the server's job).
   const activity = useMemo(() => {
     const items = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>;
     let label: string | null = null;
@@ -565,9 +691,9 @@ export function ChatView({
     let performance: PerformanceMetric[] = [];
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
-      const pairs = parseConflictsEvent(it);
+      const pairs = canSeeConflicts ? parseConflictsEvent(it) : null;
       if (pairs) conflicts = pairs;
-      const metrics = parsePerformanceEvent(it);
+      const metrics = canSeePerformance ? parsePerformanceEvent(it) : null;
       if (metrics) performance = metrics;
       if (it?.type === "sources" && Array.isArray(it.sources)) {
         sources = (it.sources as SourceItem[]).filter((s) => s && typeof s.id === "string");
@@ -585,7 +711,7 @@ export function ChatView({
           intent: typeof it.intent === "string" ? (it.intent as string) : "",
         };
       }
-      if (it?.type === "learning_candidate" && typeof it.title === "string") {
+      if (canSaveLearning && it?.type === "learning_candidate" && typeof it.title === "string") {
         const kinds = ["decision", "implementation", "experiment", "result", "learning"] as const;
         const kind = kinds.includes(it.kind as (typeof kinds)[number]) ? (it.kind as LearningCandidate["kind"]) : "learning";
         learning = {
@@ -604,7 +730,7 @@ export function ChatView({
       }
     }
     return { label, sourcesCount, sources, confidence, routedTier, modeInfo, learning, conflicts, performance };
-  }, [data]);
+  }, [data, canSeeConflicts, canSeePerformance, canSaveLearning]);
 
   // "Save as Organizational Learning?" — per-turn state keyed by the candidate title.
   const [learningState, setLearningState] = useState<{ key: string; status: "idle" | "saving" | "saved" | "ignored" | "error"; ref?: string; error?: string }>({ key: "", status: "idle" });
@@ -668,7 +794,6 @@ export function ChatView({
   // Track the persisted id in a ref so the first save of a new chat can flip it
   // without re-rendering mid-stream.
   const conversationIdRef = useRef<string | null>(conversationId);
-  const savingRef = useRef(false);
   // Guards the new-chat pre-create in submit(): a double-Enter during the create
   // round-trip must not spawn two threads or send the turn twice.
   const preCreatingRef = useRef(false);
@@ -700,12 +825,26 @@ export function ChatView({
   }, []);
 
   // --- Persist a turn once streaming settles -----------------------------
-  const persistTurn = useCallback(async () => {
-    if (savingRef.current) return;
-    const toSave = messages.filter((m) => ROLES_TO_PERSIST.has(m.role));
+  // Saves are chained, so a compaction save can't race (or be dropped by) the
+  // end-of-turn save; each writes the full list it was handed. A failed save is
+  // shown (never swallowed); the next save retries with the full list.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const persistMessages = useCallback(
+    (list: Message[]) => {
+      const run = () => saveList(list);
+      const next = saveChainRef.current.then(run, run);
+      saveChainRef.current = next;
+      return next;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selection.tier, fullContent]
+  );
+
+  async function saveList(list: Message[]) {
+    const toSave = list.filter((m) => ROLES_TO_PERSIST.has(m.role));
     if (toSave.length === 0) return;
 
-    savingRef.current = true;
     const wasNew = conversationIdRef.current === null;
     try {
       const result = await saveConversationTurn({
@@ -715,9 +854,14 @@ export function ChatView({
         messages: toSave.map((m) => ({
           role: m.role as "user" | "assistant" | "system",
           content: fullContent(m),
+          createdAt: isoOrUndefined(m.createdAt),
         })),
       });
-      if (!result.ok) return;
+      if (!result.ok) {
+        setSaveError("This conversation couldn't be saved. Your latest messages may be missing if you reload.");
+        return;
+      }
+      setSaveError(null);
       conversationIdRef.current = result.conversationId;
       setActiveConversationId(result.conversationId);
       // Tell the shell to add (or re-title) this thread in the sidebar now,
@@ -740,11 +884,96 @@ export function ChatView({
         window.history.replaceState(null, "", `/c/${result.conversationId}`);
       }
     } catch {
-      // Best-effort save; the conversation still works if persistence fails.
-    } finally {
-      savingRef.current = false;
+      // The conversation still works if persistence fails, but say so (e.g. a
+      // body over the Server Action limit) instead of losing turns silently.
+      setSaveError("This conversation couldn't be saved. Your latest messages may be missing if you reload.");
     }
-  }, [messages, selection.tier, fullContent]);
+  }
+
+  const persistTurn = useCallback(() => persistMessages(messagesRef.current), [persistMessages]);
+
+  // --- Context window: compaction ------------------------------------------
+  // Folds the earlier turns into one summary message placed where the chat was
+  // compacted. The thread still shows everything; /api/chat only forwards the
+  // latest summary + the turns after it (lib/compaction).
+  const [compacting, setCompacting] = useState(false);
+  const compactingRef = useRef(false);
+  const [compactNote, setCompactNote] = useState<{ tone: "info" | "error"; text: string } | null>(null);
+  const [compactDismissedAt, setCompactDismissedAt] = useState<number | null>(null);
+
+  const compact = useCallback(
+    async (trigger: "manual" | "auto") => {
+      // Every trigger is hidden without "chat.compaction" (/api/compact re-checks).
+      // Never while an answer streams: the splice would be lost (see busyRef).
+      if (compactingRef.current || busyRef.current || !canCompact) return;
+      const list = messagesRef.current;
+      const plan = planCompaction(list);
+      if (!plan) {
+        if (trigger === "manual") {
+          setCompactNote({ tone: "info", text: "Nothing to compact yet. The conversation is still short." });
+        }
+        return;
+      }
+      compactingRef.current = true;
+      setCompacting(true);
+      setCompactNote(null);
+      try {
+        const res = await fetch("/api/compact", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          // Bounded well under the ~4.5 MB request limit: at most 200 turns
+          // (an earlier summary always kept), each clipped head + tail.
+          body: JSON.stringify({
+            messages: boundForCompaction(plan.summarize).map((m) => ({
+              role: m.role,
+              content: clipMiddle(fullContent(m), 12_000),
+            })),
+          }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { summary?: string; error?: string };
+        const summary = typeof json.summary === "string" ? json.summary.trim() : "";
+        if (!res.ok || !summary) throw new Error(json.error || "The summary came back empty.");
+        // Sending is blocked while compacting, so the list should be unchanged;
+        // if it moved anyway (e.g. a regenerate), or an answer is streaming (its
+        // next chunk would drop the summary), don't splice into a stale copy.
+        const cur = messagesRef.current;
+        if (
+          busyRef.current ||
+          cur.length !== list.length ||
+          cur[plan.insertAt - 1]?.id !== list[plan.insertAt - 1]?.id
+        ) {
+          return;
+        }
+        const summaryMsg: Message = {
+          id: `summary-${Date.now().toString(36)}`,
+          role: "system",
+          content: makeSummaryContent(summary),
+          createdAt: new Date(),
+        };
+        const next = [...cur.slice(0, plan.insertAt), summaryMsg, ...cur.slice(plan.insertAt)];
+        messagesRef.current = next;
+        setMessages(next);
+        setCompactDismissedAt(null);
+        void persistMessages(next);
+      } catch (e) {
+        setCompactNote({
+          tone: "error",
+          text: `Couldn't compact the conversation. ${e instanceof Error ? e.message : ""}`.trim(),
+        });
+      } finally {
+        compactingRef.current = false;
+        setCompacting(false);
+      }
+    },
+    [fullContent, persistMessages, setMessages, canCompact]
+  );
+
+  // Clear an informational note after a moment.
+  useEffect(() => {
+    if (compactNote?.tone !== "info") return;
+    const t = window.setTimeout(() => setCompactNote(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [compactNote]);
 
   // Fire persistence on the streaming -> ready transition (covers Stop too).
   const prevStatus = useRef(status);
@@ -758,7 +987,21 @@ export function ChatView({
     // Only persist a real answer. An empty assistant turn (upstream 200 that
     // errored mid-stream and yielded no tokens) must NOT be saved, or the thread
     // would reload blank forever.
-    if (last?.role === "assistant" && fullContent(last).trim()) void persistTurn();
+    if (last?.role === "assistant" && fullContent(last).trim()) {
+      void persistTurn();
+      // Auto-compact once the chat crosses the workspace threshold of the
+      // window the Brain actually keeps (tokens or turns), and only when folding
+      // frees a meaningful share of it — never a summary of a summary per
+      // answer (only for users with "chat.compaction").
+      const lim = limitsRef.current;
+      if (
+        canCompact &&
+        lim.autoCompact &&
+        shouldAutoCompact(messagesRef.current, lim.contextWindowTokens, lim.compactAtPct)
+      ) {
+        void compact("auto");
+      }
+    }
     // Keyed on status only: re-running on every `messages` update would fire
     // mid-stream. persistTurn reads the latest messages via closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -809,10 +1052,13 @@ export function ChatView({
     const hasText = input.trim().length > 0;
     const ready = attachmentsRef.current.filter((a) => a.status === "ready" && a.text);
     const uploading = attachmentsRef.current.some((a) => a.status === "uploading");
-    if (busy || uploading) return;
+    if (busy || uploading || compactingRef.current) return;
     if (!hasText && ready.length === 0) return;
     const t = input.trim().toLowerCase();
+    // An audit phrase starts a background job only for users with
+    // "jobs.deep_audit"; anyone else's message is sent as a normal chat turn.
     const isDeepAudit =
+      canDeepAudit &&
       hasText &&
       (t.includes("deep audit") ||
         t.includes("full audit") ||
@@ -830,7 +1076,9 @@ export function ChatView({
           const res = await fetch("/api/jobs", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ query }),
+            // Recent turns (and any compaction summary) so "audit them" inherits
+            // the filters discussed earlier, e.g. "yesterday's calls".
+            body: JSON.stringify({ query, history: recentHistory(messagesRef.current) }),
           });
           const json = (await res.json().catch(() => ({}))) as { job?: { id: string; title: string }; error?: string };
           const jb = json.job;
@@ -905,9 +1153,12 @@ export function ChatView({
     }
     setAttachments([]);
     attachStartedRef.current.clear();
-  }, [input, busy, handleSubmit, append, chatBody, setData, setInput, selection.tier]);
+  }, [input, busy, handleSubmit, append, chatBody, setData, setInput, selection.tier, canDeepAudit]);
 
+  // The reload/resend paths below wait for a running compaction: a new stream
+  // started now would race its splice (and drop the summary).
   const regenerate = useCallback(() => {
+    if (compactingRef.current) return;
     stickRef.current = true;
     setData(undefined);
     reload({ body: chatBody });
@@ -917,13 +1168,14 @@ export function ChatView({
   // selection going forward, like the top-bar switcher).
   const regenerateWith = useCallback(
     (value: string, tier: ModelTier) => {
+      if (compactingRef.current) return;
       const opt = options.find((o) => o.value === value) ?? tierPreset(tier);
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value, mode, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) } });
+      reload({ body: { model: value, tier: value, mode, ...scopeBody } });
     },
-    [options, setSelection, reload, setData, mode, scopeCollectionIds]
+    [options, setSelection, reload, setData, mode, scopeBody]
   );
 
   // Branch: fork a NEW conversation containing everything up to and including a
@@ -941,6 +1193,9 @@ export function ChatView({
       try {
         const res = await saveConversationTurn({ conversationId: null, messages: upto, tier: selection.tier });
         if (res.ok && res.conversationId) router.push(`/c/${res.conversationId}`);
+        else setSaveError("Couldn't create the branch. Try again.");
+      } catch {
+        setSaveError("Couldn't create the branch. Try again.");
       } finally {
         setBranching(false);
       }
@@ -970,27 +1225,29 @@ export function ChatView({
       }
     }
     if (lastUser < 0) return [];
-    return messages
-      .slice(0, lastUser + 1)
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    // Exactly what the main thread sent for that question: the latest summary
+    // (a compacted chat's earlier context) plus every turn after it.
+    return effectiveMessages(messages.slice(0, lastUser + 1))
+      .filter((m) => m.role === "user" || m.role === "assistant" || isSummaryMessage(m))
+      .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
   }, [messages]);
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
   // resolved) and retry. Useful when a specific model failed for this turn.
   const retryWithRecommended = useCallback(() => {
+    if (compactingRef.current) return;
     const rec = tierPreset("recommended");
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value, mode, ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}) } });
-  }, [setSelection, reload, setData, mode, scopeCollectionIds]);
+    reload({ body: { model: rec.value, tier: rec.value, mode, ...scopeBody } });
+  }, [setSelection, reload, setData, mode, scopeBody]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
     (text: string) => {
       const content = text.trim();
-      if (!content || busy) return;
+      if (!content || busy || compactingRef.current) return;
       stickRef.current = true;
       setData(undefined);
       void append({ role: "user", content }, { body: chatBody });
@@ -1007,7 +1264,8 @@ export function ChatView({
       const text = newContent.trim();
       const idx = messages.findIndex((m) => m.id === id);
       setEditingId(null);
-      if (idx === -1 || !text) return;
+      // Don't truncate under a running compaction (it splices into this list).
+      if (idx === -1 || !text || compactingRef.current) return;
       // Drop the edited message and everything after it, then resend the edit
       // once the truncation has committed (so `append` builds on the trimmed
       // history, not the stale one).
@@ -1020,11 +1278,12 @@ export function ChatView({
   );
 
   useEffect(() => {
-    if (pendingSend == null || status !== "ready") return;
+    // Waits for a running compaction to finish (re-runs when `compacting` flips).
+    if (pendingSend == null || status !== "ready" || compacting) return;
     const content = pendingSend;
     setPendingSend(null);
     void append({ role: "user", content }, { body: chatBody });
-  }, [pendingSend, status, append, chatBody]);
+  }, [pendingSend, status, compacting, append, chatBody]);
 
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1093,16 +1352,63 @@ export function ChatView({
     [messages.length, prefill, router]
   );
 
+  // --- Clean copy for selected text ------------------------------------------
+  // A selection copied with Ctrl+C would otherwise carry the page theme
+  // (light text on a dark block in dark mode). Rebuild the clipboard from the
+  // selected structure instead: clean HTML + plain text with tables as TSV.
+  const onThreadCopy = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest?.('textarea, input, [contenteditable="true"]')) return;
+    try {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < sel.rangeCount; i++) frag.appendChild(sel.getRangeAt(i).cloneContents());
+      const anchor = sel.getRangeAt(0).commonAncestorContainer;
+      const el = anchor.nodeType === Node.ELEMENT_NODE ? (anchor as Element) : anchor.parentElement;
+      // Inside a code block or a user's multi-line prompt: copy verbatim.
+      const context = el?.closest("pre")
+        ? "pre"
+        : el?.closest('[class*="whitespace-pre"]')
+          ? "pre-wrap"
+          : el?.closest("tr")
+            ? "table-row"
+            : el?.closest("table")
+              ? "table"
+              : el?.closest("ol")
+                ? "ol"
+                : el?.closest("ul")
+                  ? "ul"
+                  : null;
+      const { html, text } = cleanClipboard(frag as unknown as CopyNode, context);
+      if (!text.trim()) return;
+      e.clipboardData.setData("text/html", html);
+      e.clipboardData.setData("text/plain", text);
+      e.preventDefault();
+    } catch {
+      // Fall back to the browser's own copy.
+    }
+  }, []);
+
   // --- Copy-to-clipboard for assistant messages --------------------------
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const copy = useCallback(async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
-    } catch {
-      // Clipboard may be unavailable (e.g. insecure context) — ignore.
+  // Answers copy as clean text + real tables (HTML for Docs/Word/Gmail, TSV for
+  // Sheets/Excel), never raw markdown; the user's own messages copy verbatim.
+  const copy = useCallback(async (id: string, text: string, rich = false) => {
+    let ok = false;
+    if (rich) {
+      ok = await copyMarkdown(text);
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {
+        // Clipboard may be unavailable (e.g. insecure context) — ignore.
+      }
     }
+    if (!ok) return;
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
   }, []);
 
   // Evidence side panel (sources for the latest answer).
@@ -1117,7 +1423,7 @@ export function ChatView({
   const exportAs = useCallback(
     async (fmt: ExportFormat) => {
       if (messages.length === 0 || exporting) return;
-      const turns = messages as unknown as ExportMessage[];
+      const turns = messages.filter((m) => !isSummaryMessage(m)) as unknown as ExportMessage[];
       setExporting(fmt);
       try {
         if (fmt === "md") exportMarkdown(title, turns);
@@ -1225,9 +1531,29 @@ export function ChatView({
     lastMsg.role === "assistant" &&
     !lastMsg.content.trim();
 
+  // Context window usage: what the model will see (latest summary onward),
+  // measured against the window the Brain actually keeps — tokens (capped at
+  // its ~30k) or its 40-turn cap, whichever is fuller (lib/compaction).
+  const { contextTokens, contextTurns } = useMemo(() => {
+    const eff = effectiveMessages(messages);
+    return { contextTokens: estimateTokens(eff), contextTurns: turnCount(eff) };
+  }, [messages]);
+  const contextBudget = windowBudget(limits.contextWindowTokens);
+  const contextPct = useMemo(
+    () => contextUsagePct(messages, limits.contextWindowTokens),
+    [messages, limits.contextWindowTokens]
+  );
+  const showCompactBanner =
+    canCompact &&
+    !empty &&
+    !compacting &&
+    contextPct >= limits.compactAtPct &&
+    (!limits.autoCompact || compactNote?.tone === "error") &&
+    (compactDismissedAt === null || contextPct >= compactDismissedAt + 10);
+
   const attachUploading = attachments.some((a) => a.status === "uploading");
   const attachReadyCount = attachments.filter((a) => a.status === "ready").length;
-  const canSend = (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading;
+  const canSend = (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading && !compacting;
 
   // --- Deep research (toggles the "Deep analysis" preset) -----------------
   const deepOption = useMemo(() => options.find((o) => o.value === "deep" && o.available) ?? null, [options]);
@@ -1291,8 +1617,12 @@ export function ChatView({
     onAttachFiles: addFiles,
     onRemoveAttachment: removeAttachment,
     onRetryAttachment: retryAttachment,
-    onDictate: insertDictation,
+    // null hides the attach control (no extract.* file kind granted).
+    attachAccept: canAttach ? attachAccept : null,
+    attachLabel,
+    onDictate: canDictate ? insertDictation : null,
     canSend,
+    maxFiles: limits.maxFiles,
     onOpenLibrary: () => setLibraryOpen(true),
   };
 
@@ -1312,7 +1642,7 @@ export function ChatView({
       rightTools={
         <>
           <ModelQualityPicker options={options} value={selection} onChange={setSelection} iconOnly align="right" />
-          <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} iconOnly align="right" />
+          {canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} iconOnly align="right" />}
         </>
       }
     />
@@ -1327,7 +1657,7 @@ export function ChatView({
         <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
         <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
         <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" iconOnly />
-        <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} size="sm" iconOnly />
+        {canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} size="sm" iconOnly />}
         {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
         {selection.value === "smart" && activity.routedTier && (
           <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full bg-surface-muted px-2.5 text-xs text-muted-foreground">
@@ -1354,6 +1684,18 @@ export function ChatView({
             {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
           </button>
         ) : null}
+        <ContextMeter
+          used={contextTokens}
+          budget={contextBudget}
+          pct={contextPct}
+          turns={contextTurns}
+          maxTurns={BRAIN_MODEL_TURNS}
+          threshold={limits.compactAtPct}
+          autoCompact={limits.autoCompact}
+          compacting={compacting}
+          disabled={busy}
+          onCompact={canCompact ? () => void compact("manual") : null}
+        />
         <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
       </div>
     </div>
@@ -1390,10 +1732,10 @@ export function ChatView({
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6">
             <div className="flex flex-col items-center text-center">
               <BrainOrb size={140} active={input.trim().length > 0} className="-mb-3" />
-              <h2 className="text-[26px] font-medium leading-[1.2] tracking-[-0.02em] sm:text-[30px]">
+              <h2 className="font-serif text-[28px] font-normal leading-[1.2] tracking-[-0.01em] sm:text-[34px]">
                 <span className="text-greeting-gradient">Hello, {titleCase(firstName)}</span>
               </h2>
-              <p className="text-[26px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground sm:text-[30px]">
+              <p className="font-serif text-[28px] font-medium leading-[1.2] tracking-[-0.015em] text-foreground sm:text-[34px]">
                 {isCeoMode ? "What needs your attention?" : "How can I assist you today?"}
               </p>
             </div>
@@ -1451,9 +1793,10 @@ export function ChatView({
         // -------- Active thread (reference "Qubi") + evidence rail -------------
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
-            <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-4 sm:px-6">
-                {audits.length > 0 && (
+            <div ref={scrollRef} onScroll={onScroll} onCopy={onThreadCopy} className="flex-1 overflow-y-auto">
+              <div className={cn(THREAD_COL, "pb-6 pt-5")}>
+                {/* Remembered audit cards poll /api/jobs/[id], which needs the same capability. */}
+                {canDeepAudit && audits.length > 0 && (
                   <div className="mb-5 space-y-3">
                     {audits.map((a) => (
                       <JobProgress
@@ -1465,10 +1808,22 @@ export function ChatView({
                     ))}
                   </div>
                 )}
-                <ul className="space-y-5">
+                <ul className="space-y-6">
                   {messages.map((m, idx) => {
                     const time = hydrated ? messageTime(m) : null;
                     const streamingThis = idx === lastIndex && busy;
+
+                    if (isSummaryMessage(m)) {
+                      let folded = 0;
+                      for (let j = idx - 1; j >= 0 && !isSummaryMessage(messages[j]); j--) {
+                        if (messages[j].role === "user" || messages[j].role === "assistant") folded++;
+                      }
+                      return (
+                        <li key={m.id}>
+                          <CompactionDivider summary={summaryBody(m)} count={folded} />
+                        </li>
+                      );
+                    }
 
                     if (m.role === "user") {
                       return (
@@ -1480,12 +1835,12 @@ export function ChatView({
                                 onCancel={() => setEditingId(null)}
                                 onSave={(text) => submitEdit(m.id, text)}
                               />
-                              <UserAvatar name={firstName} />
+                              <UserAvatar name={firstName} avatarUrl={avatarUrl} size={28} className="mt-0.5" />
                             </div>
                           ) : (
                             <div className="group flex items-start justify-end gap-2.5">
                               <div className="flex min-w-0 max-w-[80%] flex-col items-end">
-                                <div className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-accent-soft px-3.5 py-2 text-sm leading-6 text-foreground">
+                                <div className="whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-accent-soft px-4 py-2.5 text-[15px] leading-[1.6] text-foreground">
                                   {m.content}
                                   {time && <MessageTime label={time} className="float-right ml-3 mt-[7px]" />}
                                 </div>
@@ -1504,7 +1859,7 @@ export function ChatView({
                                   </div>
                                 )}
                               </div>
-                              <UserAvatar name={firstName} />
+                              <UserAvatar name={firstName} avatarUrl={avatarUrl} size={28} className="mt-0.5" />
                             </div>
                           )}
                         </li>
@@ -1512,26 +1867,23 @@ export function ChatView({
                     }
 
                     const { text, options: choices } = parseOptions(m.content);
-                    const wide = text.length > 160 || text.includes("```") || text.includes("\n|");
                     const approved = approvedIds.has(m.id);
+                    // Answers read as plain, full-width text (no bubble), in the
+                    // chosen answer typeface; tables/code bring their own sans/mono.
                     return (
                       <li key={m.id}>
-                        <div className="group flex items-start gap-2.5">
-                          <OrbAvatar size={28} active={streamingThis} className="mt-0.5 shrink-0" />
-                          <div className="min-w-0 flex-1">
+                        <div className="group">
+                          <div className="min-w-0">
                             <div
                               className={cn(
-                                "max-w-full rounded-2xl rounded-tl-md border border-border bg-surface px-4 py-2.5 text-sm leading-6 text-foreground shadow-[0_1px_2px_rgb(17_19_21/0.03)]",
-                                wide ? "w-full" : "w-fit"
+                                "min-w-0 text-[15px] leading-[1.7] text-foreground",
+                                responseFont === "sans" ? "font-sans" : "font-serif"
                               )}
                             >
                               <StreamingMarkdown content={text} animate={streamingThis} />
                               {idx === lastIndex && !busy && choices.length > 0 && (
-                                <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
-                              )}
-                              {time && !streamingThis && m.content.trim() && (
-                                <div className="mt-1 flex justify-end">
-                                  <MessageTime label={time} />
+                                <div className="font-sans text-sm leading-6">
+                                  <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
                                 </div>
                               )}
                             </div>
@@ -1564,7 +1916,7 @@ export function ChatView({
                                 onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
                               />
                             ) : null}
-                            {manualLearning?.messageId === m.id ? (
+                            {canSaveLearning && manualLearning?.messageId === m.id ? (
                               <LearningCard
                                 candidate={manualLearning.candidate}
                                 state={
@@ -1581,7 +1933,7 @@ export function ChatView({
                             {!streamingThis && m.content.trim() && (
                               <div
                                 className={cn(
-                                  "mt-1 flex items-center gap-0.5 transition-opacity",
+                                  "-ml-1.5 mt-1.5 flex items-center gap-0.5 transition-opacity",
                                   idx === lastIndex
                                     ? "opacity-100"
                                     : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
@@ -1609,7 +1961,7 @@ export function ChatView({
                                   aria-label={copiedId === m.id ? "Copied" : "Copy message"}
                                   title="Copy"
                                   size="sm"
-                                  onClick={() => copy(m.id, m.content)}
+                                  onClick={() => copy(m.id, fullContent(m), true)}
                                 >
                                   {copiedId === m.id ? <Check size={14} className="text-success" /> : <Copy size={14} />}
                                 </IconButton>
@@ -1643,23 +1995,28 @@ export function ChatView({
                                       disabled: approved,
                                       active: approved,
                                     },
-                                    {
-                                      label: "Save as learning",
-                                      icon: Lightbulb,
-                                      active: manualLearning?.messageId === m.id,
-                                      onSelect: () =>
-                                        setManualLearning((cur) =>
-                                          cur?.messageId === m.id
-                                            ? null
-                                            : { messageId: m.id, candidate: candidateFromAnswer(m, idx) }
-                                        ),
-                                    },
+                                    ...(canSaveLearning
+                                      ? [
+                                          {
+                                            label: "Save as learning",
+                                            icon: Lightbulb,
+                                            active: manualLearning?.messageId === m.id,
+                                            onSelect: () =>
+                                              setManualLearning((cur) =>
+                                                cur?.messageId === m.id
+                                                  ? null
+                                                  : { messageId: m.id, candidate: candidateFromAnswer(m, idx) }
+                                              ),
+                                          },
+                                        ]
+                                      : []),
                                     { label: "Branch from here", icon: GitBranch, onSelect: () => branch(idx), disabled: branching },
                                     ...(idx === lastIndex && !busy
                                       ? [{ label: "Compare with another model", icon: Columns2, onSelect: () => setCompareOpen(true) }]
                                       : []),
                                   ]}
                                 />
+                                {time && <MessageTime label={time} className="ml-1.5" />}
                               </div>
                             )}
                           </div>
@@ -1670,9 +2027,16 @@ export function ChatView({
 
                   {/* Awaiting the first streamed token: the orb pulses beside a
                       typing indicator and the live pipeline stage. */}
+                  {compacting && (
+                    <li aria-live="polite" className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                      <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
+                      Compacting earlier messages into a summary…
+                    </li>
+                  )}
+
                   {status === "submitted" && (
                     <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-2.5">
-                      <OrbAvatar size={28} active className="mt-0.5 shrink-0" />
+                      <OrbAvatar size={24} active className="mt-0.5 shrink-0" />
                       <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
                         <span className="inline-flex h-7 items-center gap-1 rounded-full bg-accent-soft px-3" aria-hidden>
                           <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent" />
@@ -1743,7 +2107,60 @@ export function ChatView({
                   </button>
                 </div>
               )}
-              <div className="mx-auto w-full max-w-3xl px-4 pb-3 pt-1 sm:px-6">
+              <div className={cn(THREAD_COL, "pb-3 pt-1")}>
+                {showCompactBanner && (
+                  <div
+                    role="status"
+                    className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-foreground"
+                  >
+                    <Gauge size={14} className="shrink-0 text-warning" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      This chat is using {contextPct}% of its context window. Compacting summarizes the earlier
+                      messages so answers stay sharp.
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {/* Both actions unmount this banner, so focus moves on to
+                          the composer instead of falling to <body>. Compacting
+                          waits while an answer streams (see compact()). */}
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          void compact("manual");
+                          requestAnimationFrame(() => taRef.current?.focus());
+                        }}
+                      >
+                        Compact now
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCompactDismissedAt(contextPct);
+                          requestAnimationFrame(() => taRef.current?.focus());
+                        }}
+                      >
+                        Not now
+                      </Button>
+                    </span>
+                  </div>
+                )}
+                {saveError && (
+                  <p role="alert" className="mb-2 px-1 text-[12px] text-danger">
+                    {saveError}
+                  </p>
+                )}
+                {compactNote && (
+                  <p
+                    role={compactNote.tone === "error" ? "alert" : "status"}
+                    className={cn(
+                      "mb-2 px-1 text-[12px]",
+                      compactNote.tone === "error" ? "text-danger" : "text-muted-foreground"
+                    )}
+                  >
+                    {compactNote.text}
+                  </p>
+                )}
                 {toolbar}
                 <Composer {...composerCore} variant="dock" />
                 <p className="mt-1.5 hidden text-center text-[11px] text-subtle-foreground sm:block">
@@ -1792,15 +2209,199 @@ function MessageTime({ label, className }: { label: string; className?: string }
   );
 }
 
-/** The user's avatar: their initial on a dark disc. */
-function UserAvatar({ name }: { name: string }) {
+/** At most 200 turns for /api/compact, keeping a leading earlier summary. */
+function boundForCompaction<T extends { role: string; content: string }>(list: T[]): T[] {
+  if (list.length <= 200) return list;
+  return isSummaryMessage(list[0]) ? [list[0], ...list.slice(-199)] : list.slice(-200);
+}
+
+/** Keep the start and end of a very long message (the middle matters least). */
+function clipMiddle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = Math.floor(max * 0.66);
+  return `${text.slice(0, head)}
+…
+${text.slice(text.length - (max - head))}`;
+}
+
+/** "12.3k" style token counts. */
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k`;
+}
+
+/**
+ * Context-window meter for the thread toolbar: a small ring + percentage that
+ * opens the details (tokens used of the budget, the auto-compact setting) and
+ * a "Compact now" action. `onCompact: null` (no "chat.compaction") keeps the
+ * meter but drops the compaction line and action.
+ */
+function ContextMeter({
+  used,
+  budget,
+  pct,
+  turns,
+  maxTurns,
+  threshold,
+  autoCompact,
+  compacting,
+  disabled,
+  onCompact,
+}: {
+  used: number;
+  budget: number;
+  /** Share of the window used (lib/compaction contextUsagePct: tokens or turns, whichever is higher). */
+  pct: number;
+  turns: number;
+  maxTurns: number;
+  threshold: number;
+  autoCompact: boolean;
+  compacting: boolean;
+  disabled: boolean;
+  onCompact: (() => void) | null;
+}) {
+  const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
+  const hot = pct >= threshold;
+  const R = 6;
+  const C = 2 * Math.PI * R;
+
+  // Focus moves INTO the popover: the action when there is one, else the
+  // (focusable) popover itself — so Escape and screen readers always reach it.
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(
+      () => (itemsRef.current[0] ?? menuRef.current)?.focus({ preventScroll: true }),
+      0
+    );
+    return () => window.clearTimeout(t);
+  }, [open, itemsRef, menuRef]);
+
+  const actionDisabled = compacting || disabled;
+
   return (
-    <span
-      aria-hidden
-      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#262626] text-[11px] font-semibold text-white"
-    >
-      {(name || "?").charAt(0).toUpperCase()}
-    </span>
+    <div ref={ref} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Context window: ${pct}% used`}
+        title={`Context window: ${formatTokens(used)} of ${formatTokens(budget)} tokens · ${turns} of ${maxTurns} turns`}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && open) {
+            e.preventDefault();
+            close();
+          }
+        }}
+        className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {compacting ? (
+          <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden />
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 16 16" className="shrink-0 -rotate-90" aria-hidden>
+            <circle cx="8" cy="8" r={R} fill="none" strokeWidth="2.25" className="stroke-border" />
+            <circle
+              cx="8"
+              cy="8"
+              r={R}
+              fill="none"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeDasharray={C}
+              strokeDashoffset={C * (1 - Math.max(pct, 2) / 100)}
+              className={hot ? "stroke-warning" : "stroke-accent"}
+            />
+          </svg>
+        )}
+        <span className="tabular-nums">{pct}%</span>
+      </button>
+      <FloatingMenu
+        open={open}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
+        onClose={close}
+        width={288}
+        align="right"
+        label="Context window"
+        role="dialog"
+        className="focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            close();
+          }
+        }}
+      >
+        <div className="px-2.5 pb-2 pt-1.5">
+          <p className="text-[13px] font-semibold text-foreground">Context window</p>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-muted">
+            <div
+              className={cn("h-full rounded-full", hot ? "bg-warning" : "bg-accent")}
+              style={{ width: `${Math.max(pct, 2)}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-xs tabular-nums text-muted-foreground">
+            ~{formatTokens(used)} of {formatTokens(budget)} tokens · {turns} of {maxTurns} turns ({pct}%)
+          </p>
+          {onCompact && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {autoCompact
+                ? `Auto-compacts at ${threshold}%: earlier messages are summarized so the chat can keep going.`
+                : `Suggests compacting at ${threshold}%. Auto-compact is off in workspace settings.`}
+            </p>
+          )}
+        </div>
+        {onCompact && (
+          <button
+            ref={(el) => {
+              itemsRef.current[0] = el;
+            }}
+            type="button"
+            // aria-disabled (not disabled) keeps it focusable while an answer
+            // streams or a compaction runs; the click is guarded instead.
+            aria-disabled={actionDisabled || undefined}
+            onClick={() => {
+              if (actionDisabled) return;
+              // Back to the trigger: the popover (and this button) unmounts.
+              close();
+              onCompact();
+            }}
+            className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          >
+            <Layers size={14} className="shrink-0 text-accent" aria-hidden />
+            {compacting ? "Compacting…" : "Compact now"}
+          </button>
+        )}
+      </FloatingMenu>
+    </div>
+  );
+}
+
+/** Where a chat was compacted: a quiet divider that expands to the summary. */
+function CompactionDivider({ summary, count }: { summary: string; count: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-surface-muted/50 px-3.5 py-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-md text-left text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Layers size={14} className="shrink-0 text-accent" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="font-medium text-foreground">Context compacted</span>
+          {count > 0 && ` · ${count} earlier message${count === 1 ? "" : "s"} summarized`}
+        </span>
+        <ChevronDown size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open && (
+        <div className="mt-2 border-t border-border pt-2 text-[13px] leading-6 text-foreground">
+          <Markdown content={summary} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1827,6 +2428,8 @@ function speakableText(md: string): string {
  *    prompts + Attach file.
  *  - "dock" (in thread, reference "Qubi"): a pill with a dark round attach
  *    button, the textarea, saved prompts, mic and a tea-green send button.
+ * The attach controls and the mic only render when the user's capabilities
+ * allow them (see `attachAccept` / `onDictate`).
  */
 function Composer({
   variant,
@@ -1842,8 +2445,11 @@ function Composer({
   onAttachFiles,
   onRemoveAttachment,
   onRetryAttachment,
+  attachAccept,
+  attachLabel,
   onDictate,
   canSend,
+  maxFiles,
   onOpenLibrary,
   leftTools,
   rightTools,
@@ -1861,8 +2467,14 @@ function Composer({
   onAttachFiles: (files: FileList | File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onRetryAttachment: (id: string) => void;
-  onDictate: (text: string) => void;
+  /** The file picker's `accept` (the granted kinds); null hides attaching (button, picker, drop). */
+  attachAccept: string | null;
+  /** Human-readable list of the accepted types, for the attach tooltip. */
+  attachLabel: string;
+  /** Dictation target; null hides the mic (no "extract.audio"). */
+  onDictate: ((text: string) => void) | null;
   canSend: boolean;
+  maxFiles: number;
   onOpenLibrary: () => void;
   leftTools?: React.ReactNode;
   rightTools?: React.ReactNode;
@@ -1871,7 +2483,8 @@ function Composer({
   const [dismissed, setDismissed] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const atMax = attachments.length >= MAX_FILES;
+  const atMax = attachments.length >= maxFiles;
+  const canAttach = attachAccept !== null;
 
   function pickFiles() {
     fileInputRef.current?.click();
@@ -1883,7 +2496,7 @@ function Composer({
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length) onAttachFiles(e.dataTransfer.files);
+    if (canAttach && e.dataTransfer.files && e.dataTransfer.files.length) onAttachFiles(e.dataTransfer.files);
   }
 
   // Slash menu is open when the input is a bare "/word" (no space yet).
@@ -1954,18 +2567,19 @@ function Composer({
     </div>
   ) : null;
 
-  const fileInput = (
+  const fileInput = canAttach ? (
     <input
       ref={fileInputRef}
       type="file"
       multiple
-      accept={ACCEPTED_ACCEPT}
+      accept={attachAccept}
       onChange={onFilesChosen}
       className="hidden"
       aria-hidden="true"
       tabIndex={-1}
     />
-  );
+  ) : null;
+  const mic = onDictate ? <VoiceInput onText={onDictate} /> : null;
 
   const tray =
     attachments.length > 0 ? (
@@ -1981,10 +2595,12 @@ function Composer({
       </ul>
     ) : null;
 
+  // Drag-and-drop attaching. Without any attachable kind a drop is still
+  // swallowed (so the browser doesn't open the file over the chat) but ignored.
   const dragProps = {
     onDragOver: (e: React.DragEvent) => {
       e.preventDefault();
-      if (!dragging) setDragging(true);
+      if (canAttach && !dragging) setDragging(true);
     },
     onDragLeave: (e: React.DragEvent) => {
       // Only clear when leaving the card, not when moving over a child.
@@ -2017,7 +2633,7 @@ function Composer({
       aria-label="Stop generating"
       onClick={onStop}
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-transform duration-100 hover:bg-[#1a1a1a] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "flex shrink-0 items-center justify-center rounded-full bg-ink text-ink-foreground transition-transform duration-100 hover:bg-ink-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         className
       )}
     >
@@ -2050,7 +2666,7 @@ function Composer({
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">{leftTools}</div>
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               {rightTools}
-              <VoiceInput onText={onDictate} />
+              {mic}
               {busy ? (
                 stopButton("ml-1 h-8 w-8")
               ) : (
@@ -2074,16 +2690,18 @@ function Composer({
               <Sparkles size={14} className="shrink-0" aria-hidden />
               Saved prompts
             </button>
-            <button
-              type="button"
-              onClick={pickFiles}
-              disabled={atMax}
-              title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Paperclip size={14} className="shrink-0" aria-hidden />
-              Attach file
-            </button>
+            {canAttach && (
+              <button
+                type="button"
+                onClick={pickFiles}
+                disabled={atMax}
+                title={atMax ? `Up to ${maxFiles} files` : `Attach files · ${attachLabel}`}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Paperclip size={14} className="shrink-0" aria-hidden />
+                Attach file
+              </button>
+            )}
           </div>
         </div>
       </form>
@@ -2104,16 +2722,18 @@ function Composer({
         )}
       >
         {fileInput}
-        <button
-          type="button"
-          onClick={pickFiles}
-          disabled={atMax}
-          aria-label={atMax ? `Attachment limit reached (${MAX_FILES})` : "Attach files"}
-          title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-[transform,background-color] duration-150 hover:bg-[#1a1a1a] active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <Paperclip size={16} />
-        </button>
+        {canAttach && (
+          <button
+            type="button"
+            onClick={pickFiles}
+            disabled={atMax}
+            aria-label={atMax ? `Attachment limit reached (${maxFiles})` : "Attach files"}
+            title={atMax ? `Up to ${maxFiles} files` : `Attach files · ${attachLabel}`}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-ink-foreground transition-[transform,background-color] duration-150 hover:bg-ink-hover active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Paperclip size={16} />
+          </button>
+        )}
         {textarea(
           "Type your prompt here…",
           "block max-h-[200px] min-h-[32px] flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
@@ -2128,7 +2748,7 @@ function Composer({
           >
             <Sparkles size={16} />
           </IconButton>
-          <VoiceInput onText={onDictate} />
+          {mic}
           {busy ? (
             stopButton("ml-0.5 h-8 w-8")
           ) : (

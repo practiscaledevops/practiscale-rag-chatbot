@@ -30,18 +30,10 @@ import { toNumber, chartModel } from "@/lib/chart-data";
 
 type ChartKind = "bar" | "line" | "area" | "pie";
 
-// Series palette: PractiScale greens first, then the kit's accent colors
-// (no violet/indigo — the brand swaps those for green).
-const SERIES_COLORS = [
-  "#10a388", // PractiScale green
-  "#0c6870", // deep teal
-  "#7dd9b0", // mint
-  "#f59e0b", // amber
-  "#5ccfe6", // cyan
-  "#e879b9", // pink
-  "#a3c94f", // lime
-  "#ef4444", // red
-];
+// Series palette: PractiScale greens first, then the kit's accent colors (no
+// violet/indigo — the brand swaps those for green). Theme tokens (globals.css
+// --chart-1…8), so the dark theme lifts the deep ones to stay ≥ 3:1 on the card.
+const SERIES_COLORS = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `rgb(var(--chart-${n}))`);
 
 export interface ChartBlockProps {
   headers: string[];
@@ -71,7 +63,8 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
   const effectiveKind = kind === "pie" && valueCols.length > 1 ? "bar" : kind;
 
   const axisTick = { fill: "rgb(var(--muted-foreground))", fontSize: 11 };
-  const grid = "rgb(var(--border))";
+  // Same light green-gray as the table grid, so both views read as one block.
+  const grid = "rgb(var(--table-grid))";
 
   const kinds: { id: ChartKind; label: string; icon: typeof BarChart3 }[] = [
     { id: "bar", label: "Bar", icon: BarChart3 },
@@ -81,8 +74,9 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
   ];
 
   return (
-    <div className="rounded-xl border border-border bg-surface/60 p-3">
-      <div className="mb-2 flex items-center gap-1">
+    // Sans + the table toolbar's pill buttons, whatever the answer font.
+    <div className="rounded-xl border border-border bg-surface p-3 font-sans">
+      <div className="mb-2 flex h-7 items-center gap-1">
         {kinds.map((k) => {
           const Icon = k.icon;
           const disabled = k.id === "pie" && valueCols.length > 1;
@@ -115,8 +109,12 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
             <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
             <XAxis dataKey="__cat" tick={axisTick} tickLine={false} axisLine={{ stroke: grid }} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} width={44} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgb(var(--muted-foreground) / 0.08)" }} />
-            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} />}
+            <Tooltip
+              contentStyle={TOOLTIP_STYLE}
+              itemStyle={TOOLTIP_ITEM_STYLE}
+              cursor={{ fill: "rgb(var(--muted-foreground) / 0.08)" }}
+            />
+            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} formatter={legendLabel} />}
             {valueCols.map((c, i) => (
               <Bar key={headers[c]} dataKey={headers[c]} fill={SERIES_COLORS[i % SERIES_COLORS.length]} radius={[3, 3, 0, 0]} />
             ))}
@@ -126,8 +124,8 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
             <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
             <XAxis dataKey="__cat" tick={axisTick} tickLine={false} axisLine={{ stroke: grid }} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} width={44} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} />
-            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} />}
+            <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} />
+            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} formatter={legendLabel} />}
             {valueCols.map((c, i) => (
               <Line
                 key={headers[c]}
@@ -136,6 +134,7 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
                 stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
                 strokeWidth={2}
                 dot={false}
+                activeDot={ACTIVE_DOT}
               />
             ))}
           </LineChart>
@@ -144,8 +143,8 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
             <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
             <XAxis dataKey="__cat" tick={axisTick} tickLine={false} axisLine={{ stroke: grid }} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} width={44} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} />
-            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} />}
+            <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} />
+            {valueCols.length > 1 && <Legend wrapperStyle={LEGEND_STYLE} formatter={legendLabel} />}
             {valueCols.map((c, i) => (
               <Area
                 key={headers[c]}
@@ -155,12 +154,13 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
                 fill={SERIES_COLORS[i % SERIES_COLORS.length]}
                 fillOpacity={0.18}
                 strokeWidth={2}
+                activeDot={ACTIVE_DOT}
               />
             ))}
           </AreaChart>
         ) : (
           <PieChart>
-            <Tooltip contentStyle={TOOLTIP_STYLE} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={TOOLTIP_ITEM_STYLE} />
             <Pie
               data={data}
               dataKey={headers[valueCols[0]]}
@@ -168,7 +168,11 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
               cx="50%"
               cy="50%"
               outerRadius={95}
-              label={(e: { __cat?: string }) => e.__cat ?? ""}
+              // Seams in the card colour (recharts defaults to white), and
+              // labels in the text colour rather than each slice's fill.
+              stroke="rgb(var(--surface))"
+              labelLine={{ stroke: "rgb(var(--muted-foreground))" }}
+              label={renderPieLabel}
             >
               {data.map((_, i) => (
                 <Cell key={i} fill={SERIES_COLORS[i % SERIES_COLORS.length]} />
@@ -179,7 +183,7 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
       </ResponsiveContainer>
 
       <p className="mt-1.5 text-[11px] text-muted-foreground">
-        Chart built from the table above — no data added.
+        Charted from this answer&apos;s table — no data added.
       </p>
     </div>
   );
@@ -194,3 +198,31 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 const LEGEND_STYLE: React.CSSProperties = { fontSize: 11 };
+
+/** Tooltip rows in the text colour (recharts colours them with the series). */
+const TOOLTIP_ITEM_STYLE: React.CSSProperties = { color: "rgb(var(--foreground))" };
+
+/** Hover dots ringed in the card colour (recharts' default ring is white). */
+const ACTIVE_DOT = { r: 4, stroke: "rgb(var(--surface))", strokeWidth: 2 };
+
+/** Legend labels in the text colour; the swatch keeps the series colour. */
+function legendLabel(value: unknown) {
+  return <span style={{ color: "rgb(var(--foreground))" }}>{String(value)}</span>;
+}
+
+/** A pie slice label in the text colour (a string label would take the slice fill). */
+function renderPieLabel(p: { x?: number; y?: number; textAnchor?: string; __cat?: string }) {
+  const anchor = p.textAnchor === "start" || p.textAnchor === "end" ? p.textAnchor : "middle";
+  return (
+    <text
+      x={p.x}
+      y={p.y}
+      textAnchor={anchor}
+      dominantBaseline="central"
+      fill="rgb(var(--foreground))"
+      fontSize={11}
+    >
+      {p.__cat ?? ""}
+    </text>
+  );
+}

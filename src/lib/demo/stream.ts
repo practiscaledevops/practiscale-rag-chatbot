@@ -3,6 +3,22 @@
 
 function pickAnswer(query: string): string {
   const q = (query || "").toLowerCase();
+  if (q.includes("table") || q.includes("compare")) {
+    return [
+      "## Close rates by consultant",
+      "",
+      "From the latest call-scoring sync (sample data):",
+      "",
+      "| Consultant | Calls | Close rate | Avg score |",
+      "|---|---:|---:|---:|",
+      "| Alex Carter | 42 | 9.5% | 34.1 |",
+      "| Priya Shah | 38 | 7.9% | 31.6 |",
+      "| Sam Lee | 29 | 6.9% | 28.4 |",
+      "| Maria Gomez | 25 | 4.0% | 26.2 |",
+      "",
+      "**Takeaway:** discovery is the weakest phase across the team; the top closer mirrors the customer's stated priority early. [demo-chunk-1]",
+    ].join("\n");
+  }
   if (q.includes("discovery") || q.includes("improve") || q.includes("weak")) {
     return "Based on the call-scoring data, reps score highest on closing (avg 84/100) and lowest on discovery (avg 61/100). The coaching notes suggest mirroring the customer's stated priority early, which correlates with a 23% higher close rate. Recommendation: tighten discovery questioning before pitching. [demo-chunk-1] [demo-chunk-2]";
   }

@@ -1,13 +1,15 @@
 // GET /api/brain/knowledge — browse the Brain's knowledge objects (Brain map).
 //
 // Proxies the Brain's public /api/v1/knowledge with the scoped key kept
-// server-side. The `sensitive` flag is decided HERE from the signed-in user's
-// profile (admins / the "sensitive" grant) — never from the browser — so a
-// regular team member can't list the restricted objects by flipping a param.
+// server-side. Needs the "knowledge.map" capability AND "data.document"
+// (company knowledge — the same grant /api/chat retrieves by). The `sensitive` flag is
+// decided HERE from the signed-in user's capabilities (every sensitive data.*
+// source granted) — never from the browser — so a regular team member can't
+// list the restricted objects by flipping a param.
 
 import { z } from "zod";
 import { getSessionProfile } from "@/lib/admin";
-import { canAccessSensitive } from "@/lib/access";
+import { accessFromProfile, canAccessSensitive, hasCapability } from "@/lib/access";
 import { brainListKnowledge, BrainRequestError, safeBrainError } from "@/lib/brain";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
@@ -54,9 +56,20 @@ export async function GET(req: Request) {
 
   const profile = await getSessionProfile();
   if (!profile) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const access = accessFromProfile(profile);
+  if (!hasCapability(access, "knowledge.map")) {
+    return Response.json({ error: "The Brain map isn't enabled for your account." }, { status: 403 });
+  }
+  // The map lists company-knowledge objects: an admin who switched off
+  // "data.document" for this user (so /api/chat retrieves none of it) must not
+  // have that content listed here either. The Brain can't filter objects by
+  // source type yet, so the gate is here.
+  if (!hasCapability(access, "data.document")) {
+    return Response.json({ error: "Company knowledge isn't enabled for your account." }, { status: 403 });
+  }
   const limited = rateLimit(`brain:${profile.userId}`, BRAIN_PROXY_LIMIT.limit, BRAIN_PROXY_LIMIT.windowMs);
   if (limited) return limited;
-  const sensitive = canAccessSensitive({ role: profile.role, features: profile.permissions?.features });
+  const sensitive = canAccessSensitive(access);
 
   try {
     const data = await brainListKnowledge(params, sensitive);

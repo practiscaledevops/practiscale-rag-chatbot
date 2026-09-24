@@ -1,5 +1,13 @@
 import { Fragment, memo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import {
+  LIST_ITEM_RE,
+  TASK_RE,
+  parseListRun,
+  parseTableAlign,
+  splitTableRow,
+  type MdList,
+} from "@/lib/copy-format";
 import { CopyCodeButton } from "./CopyCodeButton";
 import { TableBlock } from "./TableBlock";
 
@@ -10,11 +18,18 @@ import { TableBlock } from "./TableBlock";
  * A small, dependency-free Markdown renderer for assistant messages.
  *
  * Supports the subset a grounded chat needs: fenced code blocks (with a language
- * label + copy), headings (semantic h1-h6), ordered/unordered lists, blockquotes,
- * pipe tables, horizontal rules, paragraphs, and inline `code` / **bold** / *italic*
- * / links / [id] citation chips. Everything renders as React elements (never
- * dangerouslySetInnerHTML), so text is always escaped: retrieved/model content is
- * data, never markup. Links are restricted to http(s)/mailto by the matching regex.
+ * label + copy), headings (semantic h1-h6), nested ordered/unordered/task lists,
+ * blockquotes, pipe tables (GFM alignment), horizontal rules, paragraphs, and
+ * inline `code` / **bold** / *italic* / ~~strike~~ / links / [id] citation chips.
+ * Everything renders as React elements (never dangerouslySetInnerHTML), so text
+ * is always escaped: retrieved/model content is data, never markup. Links are
+ * restricted to http(s)/mailto by the matching regex.
+ *
+ * Typography: font family, size and line-height are INHERITED from the
+ * container (the chat wraps answers in font-serif or font-sans with its own
+ * size/leading); headings and block rhythm are in em (the .md-flow rules in
+ * globals.css), so everything scales with whatever the container sets. Code
+ * stays mono and tables stay sans at a fixed size whatever the answer font.
  *
  * Citations: the Brain tags supporting chunks as [chunk-uuid]. We map each unique
  * id to a small ordinal ([1], [2], …) so answers read cleanly instead of showing
@@ -28,23 +43,24 @@ import { TableBlock } from "./TableBlock";
  * frame — quadratic work that froze the tab and crashed it out of memory.
  */
 export function Markdown({ content }: { content: string }) {
+  const text = content.includes("\r") ? content.replace(/\r\n?/g, "\n") : content;
   // Citation ordinals are global to the answer (the first-seen id is [1], …).
   // They are passed to blocks as one string so memoized blocks compare cheaply.
   const ids: string[] = [];
   const seen = new Set<string>();
-  for (const m of content.matchAll(CITE_RE)) {
+  for (const m of text.matchAll(CITE_RE)) {
     if (!seen.has(m[1])) {
       seen.add(m[1]);
       ids.push(m[1]);
     }
   }
   const citeKey = ids.join(",");
-  const blocks = splitBlocks(content);
+  const blocks = splitBlocks(text);
 
   return (
-    <div className="space-y-3 leading-6">
-      {blocks.map((text, i) => (
-        <MarkdownBlock key={i} text={text} citeKey={citeKey} />
+    <div className="md-flow">
+      {blocks.map((block, i) => (
+        <MarkdownBlock key={i} text={block} citeKey={citeKey} />
       ))}
     </div>
   );
@@ -114,39 +130,57 @@ function renderContent(content: string, citeMap: Map<string, number>): ReactNode
     cursor = match.index + match[0].length;
   }
   if (cursor < content.length) {
-    renderTextBlocks(content.slice(cursor), `b${key++}`, blocks, citeMap);
+    const rest = content.slice(cursor);
+    // A fence whose closing ``` hasn't streamed in yet: show the code as a code
+    // block while it arrives, instead of a paragraph of raw ``` text.
+    const open = /(^|\n)[ \t]*```(\w*)[^\n`]*(?:\n|$)/.exec(rest);
+    if (open) {
+      if (open.index > 0) renderTextBlocks(rest.slice(0, open.index), `b${key++}`, blocks, citeMap);
+      blocks.push(
+        <CodeBlock key={`code-${key++}`} lang={open[2]} code={rest.slice(open.index + open[0].length)} />
+      );
+    } else {
+      renderTextBlocks(rest, `b${key++}`, blocks, citeMap);
+    }
   }
   return blocks;
 }
 
-// Sized against a 14px / 24px answer body: headings step up gently, never
-// shouting over the text they introduce.
+// Sized relative to the answer body (em), so they follow the container's font
+// size: clear steps for h1-h3, body-size semibold from h4 down.
 const HEADING_CLS: Record<number, string> = {
-  1: "mt-1 text-[15px] font-semibold leading-6 tracking-tight text-foreground",
-  2: "mt-1 text-[15px] font-semibold leading-6 text-foreground",
-  3: "text-sm font-semibold leading-6 text-foreground",
-  4: "text-sm font-semibold leading-6 text-foreground/90",
-  5: "text-[13px] font-semibold leading-5 text-foreground/80",
-  6: "text-xs font-semibold uppercase leading-5 tracking-wide text-muted-foreground",
+  1: "text-[1.35em] font-semibold leading-[1.3] tracking-[-0.01em] text-foreground",
+  2: "text-[1.2em] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground",
+  3: "text-[1.07em] font-semibold leading-[1.35] text-foreground",
+  4: "text-[1em] font-semibold leading-[1.4] text-foreground",
+  5: "text-[1em] font-semibold leading-[1.4] text-foreground/85",
+  6: "text-[1em] font-semibold leading-[1.4] text-muted-foreground",
 };
+
+// Marker styles per nesting depth (cycled).
+const BULLET_STYLE = ["list-disc", "list-[circle]", "list-[square]"];
+const ORDERED_STYLE = ["list-decimal", "list-[lower-alpha]", "list-[lower-roman]"];
+
+const isHeading = (l: string) => /^(#{1,6})\s+/.test(l);
+const isListItem = (l: string) => LIST_ITEM_RE.test(l);
+const isQuote = (l: string) => /^\s*>\s?/.test(l);
+const isRule = (l: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
+const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+const isTableSep = (l: string) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.includes("-");
+// Lines that end a list run (anything else non-blank + indented continues it).
+const breaksList = (l: string) => isHeading(l) || isQuote(l) || isRule(l) || isTableRow(l);
 
 /** Parse a non-code chunk into headings, lists, tables, quotes, rules, paragraphs. */
 function renderTextBlocks(
   text: string,
   keyBase: string,
   out: ReactNode[],
-  citeMap: Map<string, number>
+  citeMap: Map<string, number>,
+  depth = 0
 ) {
   const lines = text.split("\n");
   let i = 0;
   let k = 0;
-
-  const isHeading = (l: string) => /^(#{1,6})\s+/.test(l);
-  const isListItem = (l: string) => /^\s*([-*]|\d+\.)\s+/.test(l);
-  const isQuote = (l: string) => /^\s*>\s?/.test(l);
-  const isRule = (l: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
-  const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
-  const isTableSep = (l: string) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.includes("-");
 
   while (i < lines.length) {
     const line = lines[i];
@@ -163,7 +197,7 @@ function renderTextBlocks(
       continue;
     }
 
-    // Heading (# through ######) -> semantic h1-h6
+    // Heading (# through ######) -> semantic h1-h6 (optional closing #s dropped)
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
     if (h) {
       const level = h[1].length;
@@ -171,117 +205,54 @@ function renderTextBlocks(
       const Tag = `h${level}` as keyof React.JSX.IntrinsicElements;
       out.push(
         <Tag key={key} className={HEADING_CLS[level]}>
-          {renderInline(h[2], key, citeMap)}
+          {renderInline(h[2].replace(/\s+#+\s*$/, ""), key, citeMap)}
         </Tag>
       );
       i++;
       continue;
     }
 
-    // Table: a header row, a separator row, then body rows.
+    // Table: a header row, a separator row (with optional :alignment), then body rows.
     if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
       const header = splitTableRow(line);
+      const align = parseTableAlign(lines[i + 1]);
       i += 2; // skip header + separator
       const rows: string[][] = [];
-      while (i < lines.length && isTableRow(lines[i])) {
-        rows.push(splitTableRow(lines[i]));
+      // A body row still streaming in (no closing pipe yet) already renders in
+      // the table rather than flashing underneath it as a paragraph.
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        const cells = splitTableRow(lines[i]);
+        const partial = !isTableRow(lines[i]);
         i++;
+        if (partial && cells.every((c) => c === "")) continue;
+        // Raw (unformatted) cell strings, for charting / copying the exact values shown.
+        rows.push(header.map((_, ci) => cells[ci] ?? ""));
       }
       const key = `${keyBase}-t${k++}`;
-      // Raw (unformatted) cell strings, for charting the exact values shown.
-      const rawRows = rows.map((r) => header.map((_, ci) => (r[ci] ?? "").trim()));
-      const tableNode = (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13px] leading-5">
-            <thead>
-              <tr className="border-b border-border">
-                {header.map((c, idx) => (
-                  <th key={idx} className="px-2.5 py-2 text-left text-xs font-medium text-muted-foreground first:pl-0 last:pr-0">
-                    {renderInline(c, `${key}-h${idx}`, citeMap)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, ri) => (
-                <tr key={ri} className="border-b border-border/60">
-                  {header.map((_, ci) => (
-                    <td key={ci} className="px-2.5 py-2 align-top text-foreground/90 first:pl-0 last:pr-0">
-                      {renderInline(r[ci] ?? "", `${key}-${ri}-${ci}`, citeMap)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
       out.push(
-        <TableBlock key={key} table={tableNode} headers={header.map((h) => h.trim())} rows={rawRows} />
+        <TableBlock
+          key={key}
+          headers={header}
+          rows={rows}
+          align={align}
+          headerCells={header.map((c, ci) => renderInline(c, `${key}-h${ci}`, citeMap))}
+          bodyCells={rows.map((r, ri) =>
+            r.map((c, ci) => renderInline(c, `${key}-${ri}-${ci}`, citeMap))
+          )}
+        />
       );
       continue;
     }
 
-    // List (unordered - / * or ordered 1.)
+    // List (- * + bullets, 1. / 1) ordered, [ ] tasks), nested by indentation.
     if (isListItem(line)) {
-      const ordered = /^\s*\d+\.\s+/.test(line);
-      const items: string[] = [];
-      while (i < lines.length && isListItem(lines[i])) {
-        items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, ""));
-        i++;
-      }
-      const key = `${keyBase}-l${k++}`;
-      // GFM task list: every item is "[ ] …" or "[x] …" → render as a checklist.
-      const taskMatches = items.map((it) => /^\[( |x|X)\]\s+(.*)$/.exec(it));
-      const isTaskList = items.length > 0 && taskMatches.every(Boolean);
-
-      if (isTaskList) {
-        out.push(
-          <ul key={key} className="space-y-1.5">
-            {taskMatches.map((m, idx) => {
-              const checked = (m![1] ?? "").toLowerCase() === "x";
-              return (
-                <li key={`${key}-${idx}`} className="flex items-start gap-2">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "mt-1 grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px]",
-                      checked
-                        ? "border-accent bg-accent-soft text-accent-strong"
-                        : "border-border text-transparent"
-                    )}
-                  >
-                    ✓
-                  </span>
-                  <span className={cn(checked && "text-muted-foreground line-through")}>
-                    {renderInline(m![2], `${key}-${idx}`, citeMap)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        );
-        continue;
-      }
-
-      const inner = items.map((it, idx) => (
-        <li key={`${key}-${idx}`}>{renderInline(it, `${key}-${idx}`, citeMap)}</li>
-      ));
-      out.push(
-        ordered ? (
-          <ol key={key} className="list-decimal space-y-1 pl-5 marker:text-muted-foreground">
-            {inner}
-          </ol>
-        ) : (
-          <ul key={key} className="list-disc space-y-1 pl-5 marker:text-muted-foreground">
-            {inner}
-          </ul>
-        )
-      );
+      const { list, end } = parseListRun(lines, i, breaksList);
+      i = end;
+      out.push(renderList(list, `${keyBase}-l${k++}`, citeMap, 0));
       continue;
     }
 
-    // Blockquote
+    // Blockquote (its content is parsed as Markdown: paragraphs, lists, …)
     if (isQuote(line)) {
       const quote: string[] = [];
       while (i < lines.length && isQuote(lines[i])) {
@@ -289,12 +260,15 @@ function renderTextBlocks(
         i++;
       }
       const key = `${keyBase}-q${k++}`;
+      const inner: ReactNode[] = [];
+      if (depth < 6) renderTextBlocks(quote.join("\n"), key, inner, citeMap, depth + 1);
+      else inner.push(<p key={`${key}-p`}>{renderLines(quote.join("\n"), key, citeMap)}</p>);
       out.push(
         <blockquote
           key={key}
-          className="border-l-2 border-accent/40 pl-3 italic text-muted-foreground"
+          className="md-flow border-l-[3px] border-accent/70 pl-[0.9em] text-foreground/80"
         >
-          {renderInline(quote.join("\n"), key, citeMap)}
+          {inner}
         </blockquote>
       );
       continue;
@@ -321,27 +295,101 @@ function renderTextBlocks(
       i++;
     }
     const key = `${keyBase}-p${k++}`;
+    // An indented paragraph is a list item's continuation that a blank line
+    // split off: keep it aligned with the item text above.
     out.push(
-      <p key={key}>
-        {para.map((pl, idx) => (
-          <Fragment key={`${key}-${idx}`}>
-            {idx > 0 && <br />}
-            {renderInline(pl, `${key}-${idx}`, citeMap)}
-          </Fragment>
-        ))}
-      </p>
+      /^(?: {2,}|\t)\S/.test(line) ? (
+        <p key={key} className="pl-[1.5em]">
+          {renderLines(para.join("\n"), key, citeMap)}
+        </p>
+      ) : (
+        <p key={key}>{renderLines(para.join("\n"), key, citeMap)}</p>
+      )
     );
   }
 }
 
-/** Split a `| a | b |` table row into trimmed cells. */
-function splitTableRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((c) => c.trim());
+/** Render lines of inline Markdown, keeping the author's line breaks. */
+function renderLines(text: string, key: string, citeMap: Map<string, number>): ReactNode[] {
+  return text.split("\n").map((l, idx) => (
+    <Fragment key={`${key}-${idx}`}>
+      {idx > 0 && <br />}
+      {renderInline(l.trim(), `${key}-${idx}`, citeMap)}
+    </Fragment>
+  ));
+}
+
+/** A (nested) list. All-task lists render as a checklist. */
+function renderList(
+  list: MdList,
+  key: string,
+  citeMap: Map<string, number>,
+  depth: number
+): ReactNode {
+  const nested = depth > 0 && "mt-[0.3em]";
+  const children = (items: MdList[], itemKey: string) =>
+    items.map((child, ci) => renderList(child, `${itemKey}-c${ci}`, citeMap, depth + 1));
+
+  // GFM task list: every item is "[ ] …" or "[x] …" → render as a checklist.
+  const tasks = list.items.map((it) => TASK_RE.exec(it.text));
+  if (tasks.every(Boolean)) {
+    return (
+      <ul key={key} className={cn("space-y-[0.3em]", nested)}>
+        {list.items.map((it, idx) => {
+          const m = tasks[idx]!;
+          const checked = m[1].toLowerCase() === "x";
+          const itemKey = `${key}-${idx}`;
+          return (
+            <li key={itemKey} className="flex items-start gap-[0.55em]">
+              <span
+                aria-hidden
+                className={cn(
+                  "mt-[0.5em] grid h-[1.45em] w-[1.45em] shrink-0 place-items-center rounded-[0.3em] border font-sans text-[0.7em] leading-none",
+                  checked
+                    ? "border-accent bg-accent-soft text-accent-strong"
+                    : "border-border text-transparent"
+                )}
+              >
+                ✓
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className={checked ? "text-muted-foreground line-through" : undefined}>
+                  {renderLines(it.text.slice(m[0].length), itemKey, citeMap)}
+                </span>
+                {children(it.children, itemKey)}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  const cls = cn(
+    "space-y-[0.3em] pl-[1.5em] marker:text-muted-foreground",
+    (list.ordered ? ORDERED_STYLE : BULLET_STYLE)[depth % 3],
+    nested
+  );
+  const items = list.items.map((it, idx) => {
+    const itemKey = `${key}-${idx}`;
+    return (
+      <li key={itemKey} className="pl-[0.2em]">
+        {renderLines(it.text, itemKey, citeMap)}
+        {children(it.children, itemKey)}
+      </li>
+    );
+  });
+  // A loose ordered list arrives as separate blocks ("1." … blank … "2."): keep
+  // the author's numbering instead of restarting every block at 1.
+  return list.ordered ? (
+    <ol key={key} start={list.start !== 1 ? list.start : undefined} className={cls}>
+      {items}
+    </ol>
+  ) : (
+    <ul key={key} className={cls}>
+      {items}
+    </ul>
+  );
 }
 
 // A citation id: a chunk UUID, or a short ordinal number. Kept strict so stray
@@ -353,10 +401,17 @@ const CITE_RE =
   /\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{8}|\d{1,3})\]/g;
 
 // Inline token patterns, checked at each position; the earliest match wins.
+// Emphasis must hug its text ("a * b * c" is arithmetic, not italics) and
+// underscores inside words (snake_case_names) are never emphasis.
 const INLINE_PATTERNS = [
   { type: "code", re: /`([^`]+)`/g },
-  { type: "bold", re: /\*\*([^*]+?)\*\*|__([^_]+?)__/g },
-  { type: "italic", re: /(?<!\*)\*([^*\n]+?)\*(?!\*)|(?<!_)_([^_\n]+?)_(?!_)/g },
+  { type: "br", re: /<br\s*\/?>/gi },
+  { type: "bold", re: /\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\*)|(?<![\w_])__(?!\s)(.+?)(?<!\s)__(?![\w_])/g },
+  { type: "strike", re: /~~(?!\s)(.+?)(?<!\s)~~/g },
+  {
+    type: "italic",
+    re: /(?<!\*)\*(?![\s*])([^*\n]+?)(?<![\s*])\*(?!\*)|(?<![\w_])_(?![\s_])([^_\n]+?)(?<![\s_])_(?![\w_])/g,
+  },
   { type: "link", re: /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g },
   { type: "cite", re: new RegExp(CITE_RE.source, "g") },
 ] as const;
@@ -392,13 +447,21 @@ function renderInline(
       nodes.push(
         <code
           key={key}
-          className="rounded bg-surface-muted px-1 py-0.5 font-mono text-[0.85em]"
+          className="rounded-[0.3em] border border-border/70 bg-surface-muted px-[0.3em] py-[0.05em] font-mono text-[0.87em]"
         >
           {best.m[1]}
         </code>
       );
+    } else if (best.type === "br") {
+      nodes.push(<br key={key} />);
     } else if (best.type === "bold") {
-      nodes.push(<strong key={key}>{renderInline(best.m[1] ?? best.m[2], key, citeMap)}</strong>);
+      nodes.push(
+        <strong key={key} className="font-semibold">
+          {renderInline(best.m[1] ?? best.m[2], key, citeMap)}
+        </strong>
+      );
+    } else if (best.type === "strike") {
+      nodes.push(<del key={key}>{renderInline(best.m[1], key, citeMap)}</del>);
     } else if (best.type === "italic") {
       nodes.push(<em key={key}>{renderInline(best.m[1] ?? best.m[2], key, citeMap)}</em>);
     } else if (best.type === "link") {
@@ -434,7 +497,7 @@ function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
   return (
     <sup className="mx-0.5">
       <span
-        className="inline-flex h-4 items-center rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold leading-none text-accent-strong ring-1 ring-inset ring-accent/20"
+        className="inline-flex h-4 items-center rounded-full bg-accent-soft px-1.5 font-sans text-[10px] font-semibold leading-none text-accent-strong ring-1 ring-inset ring-accent/20"
         title={`Source ${id}`}
         aria-label={`Source ${ordinal ? `${ordinal}` : id}`}
       >
@@ -444,17 +507,17 @@ function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
   );
 }
 
-/** A fenced code block with a language label and a copy button. */
+/** A fenced code block with a language label and a copy button (mono, 13px). */
 function CodeBlock({ lang, code }: { lang?: string; code: string }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface-muted">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface-muted font-sans">
       <div className="flex h-8 items-center justify-between border-b border-border/70 pl-3 pr-1">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {lang || "code"}
         </span>
         <CopyCodeButton code={code} />
       </div>
-      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-5">
+      <pre className="overflow-x-auto p-3 font-mono text-[13px] leading-[1.6] text-foreground">
         <code>{code}</code>
       </pre>
     </div>

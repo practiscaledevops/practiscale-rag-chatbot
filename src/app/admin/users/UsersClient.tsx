@@ -1,14 +1,16 @@
 "use client";
 
 // Admin › Users — client surface. Renders the fleet table and the create/edit
-// editor with layman-friendly access controls (role, activation, team, model
-// access, features, tiers). All authority lives server-side: this component only
-// reads/writes through the admin API, which re-checks the caller's role and
-// enforces every guardrail (see /api/admin/users). Reference data (teams, model
-// catalog, feature keys, tiers, and the current admin's role) arrives in the
-// initial payload.
+// editor with layman-friendly access controls (role, activation, team, and the
+// permissions). Permissions are rendered FROM THE BRAIN'S CAPABILITY MANIFEST
+// (grouped switches, sensitive badges, dependencies, role presets), so a
+// capability the Brain gains shows up here without a code change; model access
+// is the manifest's model tiers plus the Brain's model catalog. All authority
+// lives server-side: this component only reads/writes through the admin API,
+// which re-checks the caller's role, validates every capability id against the
+// manifest and refuses grants beyond the caller's own (see /api/admin/users).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
   Plus,
@@ -19,8 +21,11 @@ import {
   Trash2,
   AlertTriangle,
   Check,
+  CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { onRadioGroupKeyDown, radioTabIndex } from "@/lib/a11y";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import type { ProfileRole } from "@/lib/admin";
@@ -28,11 +33,21 @@ import type {
   AdminUsersPayload,
   AdminUser,
   AdminModelOption,
-  AdminFeature,
   PermissionsShape,
 } from "@/lib/admin-users";
-
-type Tier = "fast" | "recommended" | "max";
+import {
+  CAPABILITY_PRESETS,
+  TIER_CAPABILITY,
+  closeGrantSet,
+  prerequisitesOf,
+  presetCapabilities,
+  presetForRole,
+  toggleCapability,
+  dependentsOf,
+  type Capability,
+  type CapabilityPresetId,
+  type ResolvedCapabilityManifest,
+} from "@/lib/capabilities-shared";
 
 // ---------------------------------------------------------------------------
 // Small formatting helpers
@@ -84,6 +99,20 @@ function modelSummary(u: AdminUser): string {
   return n === 0 ? "All models" : `${n} model${n === 1 ? "" : "s"}`;
 }
 
+/** One-line summary of a user's capabilities for the table. */
+function accessSummary(u: AdminUser, manifest: ResolvedCapabilityManifest): string {
+  if (u.role === "super_admin") return "Every permission";
+  const on = new Set(u.capabilities);
+  const total = manifest.capabilities.length;
+  const sensitive = manifest.capabilities.filter((c) => c.sensitive && on.has(c.id)).length;
+  const tiers = (Object.keys(TIER_CAPABILITY) as Array<keyof typeof TIER_CAPABILITY>).filter((t) =>
+    manifest.capabilities.some((c) => c.id === TIER_CAPABILITY[t])
+  );
+  const onTiers = tiers.filter((t) => on.has(TIER_CAPABILITY[t]));
+  const tierText = onTiers.length === tiers.length ? "" : ` · Tiers: ${onTiers.join(", ") || "none"}`;
+  return `${Math.min(on.size, total)} of ${total} permissions${sensitive ? ` · ${sensitive} sensitive` : ""}${tierText}`;
+}
+
 /** Read a server error response into a display string. */
 async function readError(res: Response): Promise<string> {
   try {
@@ -93,6 +122,19 @@ async function readError(res: Response): Promise<string> {
     /* non-JSON */
   }
   return "Something went wrong. Please try again.";
+}
+
+/** Whether a capability was added recently enough to badge as new. */
+function isRecent(since: string | undefined): boolean {
+  if (!since) return false;
+  const t = Date.parse(since);
+  return Number.isFinite(t) && Date.now() - t < 21 * 86_400_000;
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  return b.every((x) => s.has(x));
 }
 
 // ---------------------------------------------------------------------------
@@ -145,12 +187,20 @@ function Switch({
   checked,
   onChange,
   disabled,
+  focusableWhenDisabled,
   label,
+  describedBy,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  /**
+   * Keep a disabled switch in the Tab order (aria-disabled instead of the
+   * native attribute), so its described reason can still be reached.
+   */
+  focusableWhenDisabled?: boolean;
   label: string;
+  describedBy?: string;
 }) {
   return (
     <button
@@ -158,7 +208,9 @@ function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      disabled={disabled}
+      aria-describedby={describedBy}
+      disabled={disabled && !focusableWhenDisabled}
+      aria-disabled={disabled || undefined}
       onClick={() => !disabled && onChange(!checked)}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
@@ -178,6 +230,22 @@ function Switch({
   );
 }
 
+/** Small status pill used on permission rows. */
+function Pill({ tone, children }: { tone: "warning" | "accent"; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-[18px] shrink-0 items-center rounded-full border px-1.5 text-[11px] font-medium leading-none",
+        tone === "warning"
+          ? "border-warning/30 bg-warning/10 text-warning"
+          : "border-accent/25 bg-accent-soft text-accent-strong"
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 const inputClass =
   "h-9 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -186,6 +254,8 @@ const filterClass = "h-8 text-[13px]";
 
 const labelClass = "block text-xs font-medium text-muted-foreground";
 const hintClass = "text-xs text-muted-foreground";
+const linkButtonClass =
+  "rounded-md px-1.5 text-xs font-medium text-accent-strong hover:underline disabled:pointer-events-none disabled:opacity-40";
 
 // ---------------------------------------------------------------------------
 // Root
@@ -212,6 +282,13 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
       setRefreshing(false);
     }
   }, []);
+
+  // Retry the Brain after a fallback: force a fresh manifest server-side, then
+  // reload the payload so every user's permissions resolve against it.
+  const retryManifest = useCallback(async () => {
+    await fetch("/api/admin/capabilities?refresh=1", { cache: "no-store" }).catch(() => undefined);
+    await refresh();
+  }, [refresh]);
 
   // Auto-dismiss the success notice.
   useEffect(() => {
@@ -337,6 +414,7 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
                 <UserRow
                   key={u.id}
                   user={u}
+                  manifest={data.manifest}
                   isCurrent={u.id === data.currentUserId}
                   onEdit={() => setEditing(u)}
                 />
@@ -383,6 +461,7 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
           data={data}
           onClose={() => setCreating(false)}
           onSaved={onSaved}
+          onRetryManifest={retryManifest}
         />
       )}
 
@@ -394,6 +473,7 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
           user={editing}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
+          onRetryManifest={retryManifest}
         />
       )}
     </div>
@@ -406,16 +486,16 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
 
 function UserRow({
   user,
+  manifest,
   isCurrent,
   onEdit,
 }: {
   user: AdminUser;
+  manifest: ResolvedCapabilityManifest;
   isCurrent: boolean;
   onEdit: () => void;
 }) {
   const initial = (user.displayName || user.email || "?").charAt(0).toUpperCase();
-  const featureCount = user.permissions.features?.length ?? 0;
-  const tierList = user.permissions.allowed_tiers ?? [];
   const lastActive = user.usage?.lastUsedAt ?? user.lastSignInAt;
 
   return (
@@ -469,10 +549,7 @@ function UserRow({
       {/* Access */}
       <td className="px-4 py-2">
         <div>{modelSummary(user)}</div>
-        <div className="text-xs text-muted-foreground">
-          Features: {featureCount === 0 ? "all" : featureCount} · Tiers:{" "}
-          {tierList.length === 0 ? "all" : tierList.join(", ")}
-        </div>
+        <div className="text-xs text-muted-foreground">{accessSummary(user, manifest)}</div>
       </td>
 
       {/* Usage */}
@@ -514,16 +591,19 @@ function UserEditor({
   user,
   onClose,
   onSaved,
+  onRetryManifest,
 }: {
   mode: "create" | "edit";
   data: AdminUsersPayload;
   user?: AdminUser;
   onClose: () => void;
   onSaved: (message: string) => void;
+  onRetryManifest: () => Promise<void>;
 }) {
   const isEdit = mode === "edit";
   const isSelf = isEdit && user?.id === data.currentUserId;
   const canGrantSuper = data.currentUserRole === "super_admin";
+  const manifest = data.manifest;
 
   // A plain admin may not modify a super_admin — mirror the server guard so the
   // controls read as read-only rather than failing on save.
@@ -535,10 +615,30 @@ function UserEditor({
   const [role, setRole] = useState<ProfileRole>(user?.role ?? "user");
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
   const [teamId, setTeamId] = useState<string>(user?.team?.id ?? "");
-  const [canAll, setCanAll] = useState(user?.canUseAllModels ?? false);
+  const [modelMode, setModelMode] = useState<"all" | "some">(
+    user && !user.canUseAllModels && (user.permissions.models?.length ?? 0) > 0 ? "some" : "all"
+  );
   const [models, setModels] = useState<string[]>(user?.permissions.models ?? []);
-  const [features, setFeatures] = useState<string[]>(user?.permissions.features ?? []);
-  const [tiers, setTiers] = useState<Tier[]>(user?.permissions.allowed_tiers ?? []);
+
+  // Grant-what-you-have: a plain admin can only switch ON what they hold
+  // themselves, or what an existing user already had (they may keep or remove
+  // that, not re-grant it once removed). The server enforces the same rule; a
+  // new user holds nothing yet.
+  const actorCaps = useMemo(() => new Set(data.actorCapabilities), [data.actorCapabilities]);
+  const [initialCaps] = useState<string[]>(() =>
+    user
+      ? user.capabilities
+      : closeGrantSet(
+          presetCapabilities(presetForRole("user"), manifest).filter((id) => canGrantSuper || actorCaps.has(id)),
+          manifest
+        )
+  );
+  const [caps, setCaps] = useState<string[]>(initialCaps);
+  const heldBefore = useMemo(() => new Set(user ? initialCaps : []), [user, initialCaps]);
+  const canEnable = useCallback(
+    (id: string) => canGrantSuper || actorCaps.has(id) || heldBefore.has(id),
+    [canGrantSuper, actorCaps, heldBefore]
+  );
 
   // Create-only credential choice
   const [credMode, setCredMode] = useState<"password" | "invite">("password");
@@ -548,27 +648,47 @@ function UserEditor({
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const toggle = <T,>(list: T[], set: (v: T[]) => void, value: T) =>
-    set(list.includes(value) ? list.filter((x) => x !== value) : [...list, value]);
+  // A retried manifest may bring capabilities this editor hasn't seen: give each
+  // its resolved value for this user (edit) or the role preset's (create).
+  const knownIds = useRef(new Set(manifest.capabilities.map((c) => c.id)));
+  useEffect(() => {
+    const fresh = manifest.capabilities.map((c) => c.id).filter((id) => !knownIds.current.has(id));
+    if (fresh.length === 0) return;
+    knownIds.current = new Set(manifest.capabilities.map((c) => c.id));
+    const baseline = new Set(
+      user
+        ? data.users.find((u) => u.id === user.id)?.capabilities ?? []
+        : presetCapabilities(presetForRole(role), manifest).filter(canEnable)
+    );
+    const add = fresh.filter((id) => baseline.has(id));
+    if (add.length) setCaps((prev) => closeGrantSet([...prev, ...add], manifest));
+  }, [manifest, data.users, user, role, canEnable]);
 
-  // Group the model catalog by provider for the checklist.
-  const grouped = useMemo(() => {
-    const map = new Map<string, AdminModelOption[]>();
-    for (const m of data.models) {
-      const arr = map.get(m.provider) ?? [];
-      arr.push(m);
-      map.set(m.provider, arr);
+  const isSuperTarget = role === "super_admin";
+  const allIds = useMemo(() => manifest.capabilities.map((c) => c.id), [manifest]);
+  const shownCaps = isSuperTarget ? allIds : caps;
+
+  const toggleModel = (id: string) =>
+    setModels((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  function changeRole(next: ProfileRole) {
+    // Untouched switches follow the role's preset; hand-edited ones stay.
+    const presetFor = (r: ProfileRole) =>
+      closeGrantSet(presetCapabilities(presetForRole(r), manifest).filter(canEnable), manifest);
+    if (!isSuperTarget && next !== "super_admin" && sameSet(caps, presetFor(role))) {
+      setCaps(presetFor(next));
     }
-    const order = (p: string) =>
-      p.toLowerCase() === "anthropic" ? 0 : p.toLowerCase() === "openai" ? 1 : 2;
-    return [...map.entries()].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
-  }, [data.models]);
+    setRole(next);
+  }
 
-  const buildPermissions = (): PermissionsShape => {
-    const p: PermissionsShape = {};
-    if (models.length) p.models = models;
-    if (features.length) p.features = features;
-    if (tiers.length) p.allowed_tiers = tiers;
+  const buildPermissions = (): PermissionsShape & { offered: string[] } => {
+    // `offered`: the ids this editor rendered — the server decides only those
+    // (a fallback-manifest render must not deny the live-only capabilities).
+    const p: PermissionsShape & { offered: string[] } = {
+      capabilities: closeGrantSet(shownCaps, manifest),
+      offered: allIds,
+    };
+    if (modelMode === "some" && models.length) p.models = models;
     return p;
   };
 
@@ -581,6 +701,13 @@ function UserEditor({
       if (credMode === "password" && password.length < 8) {
         return setErr("Set an initial password of at least 8 characters, or switch to an invite.");
       }
+    }
+    const tierIds = Object.values(TIER_CAPABILITY).filter((id) => allIds.includes(id));
+    if (tierIds.length && !tierIds.some((id) => shownCaps.includes(id))) {
+      return setErr("Turn on at least one model tier.");
+    }
+    if (modelMode === "some" && models.length === 0) {
+      return setErr("Pick at least one model, or choose “All models”.");
     }
 
     setBusy(true);
@@ -597,7 +724,7 @@ function UserEditor({
             mode: credMode,
             password: credMode === "password" ? password : undefined,
             permissions: buildPermissions(),
-            canUseAllModels: canAll,
+            canUseAllModels: false,
             isActive,
           }),
         });
@@ -618,7 +745,10 @@ function UserEditor({
             isActive,
             teamId: teamId || null,
             permissions: buildPermissions(),
-            canUseAllModels: canAll,
+            // The editor has no "full access" switch: leave a stored
+            // can_use_all_models as it is unless the admin restricts to
+            // "Only selected" (a true flag would override that allowlist).
+            ...(modelMode === "some" ? { canUseAllModels: false } : {}),
           }),
         });
         if (!res.ok) return setErr(await readError(res));
@@ -643,16 +773,18 @@ function UserEditor({
   }
 
   const disabled = busy || locked;
+  const onCount = shownCaps.length;
+  const sensitiveOn = manifest.capabilities.filter((c) => c.sensitive && shownCaps.includes(c.id)).length;
 
   return (
     <Modal
       open
       onClose={onClose}
       title={mode === "create" ? "Add user" : "Edit user"}
-      className="max-w-2xl"
+      className="max-w-3xl"
     >
-      <form onSubmit={submit}>
-        <div className="-mr-1 max-h-[65vh] space-y-5 overflow-y-auto pr-1">
+      <form onSubmit={submit} className="flex flex-col">
+        <div className="-mx-5 max-h-[min(72vh,calc(100dvh_-_11rem))] space-y-5 overflow-y-auto px-5 pb-4">
           {locked && (
             <p className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground">
               <AlertTriangle size={14} className="mt-px shrink-0 text-warning" />
@@ -780,7 +912,7 @@ function UserEditor({
               <select
                 id="ue-role"
                 value={role}
-                onChange={(e) => setRole(e.target.value as ProfileRole)}
+                onChange={(e) => changeRole(e.target.value as ProfileRole)}
                 disabled={disabled || isSelf}
                 className={inputClass}
               >
@@ -835,151 +967,31 @@ function UserEditor({
             </div>
           </section>
 
-          {/* --- Model access --- */}
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold">Model access</h3>
-                <p className={hintClass}>Which AI models this person can choose.</p>
-              </div>
-              <label className="flex shrink-0 items-center gap-2 text-[13px]">
-                <span>Full access</span>
-                <Switch
-                  checked={canAll}
-                  onChange={setCanAll}
-                  disabled={disabled}
-                  label="Full model access"
-                />
-              </label>
-            </div>
-
-            <div
-              className={cn(
-                "rounded-xl border border-border p-2",
-                canAll && "pointer-events-none opacity-50"
-              )}
-              aria-disabled={canAll}
-            >
-              {canAll ? (
-                <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
-                  This user can select any model the Brain offers.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {grouped.map(([provider, list]) => {
-                    const ids = list.map((m) => m.id);
-                    const allOn = ids.every((id) => models.includes(id));
-                    return (
-                      <div key={provider}>
-                        <div className="mb-0.5 flex h-6 items-center justify-between">
-                          <span className="px-2 text-[11px] font-semibold text-muted-foreground">
-                            {providerLabel(provider)}
-                          </span>
-                          <button
-                            type="button"
-                            className="rounded-md px-2 text-xs font-medium text-accent-strong hover:underline"
-                            onClick={() =>
-                              setModels((prev) =>
-                                allOn
-                                  ? prev.filter((id) => !ids.includes(id))
-                                  : [...new Set([...prev, ...ids])]
-                              )
-                            }
-                          >
-                            {allOn ? "Clear" : "Select all"}
-                          </button>
-                        </div>
-                        <div className="grid gap-0.5 sm:grid-cols-2 sm:gap-x-1.5">
-                          {list.map((m) => (
-                            <label
-                              key={m.id}
-                              className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] transition-colors hover:bg-surface-muted"
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 shrink-0 rounded border-border accent-accent"
-                                checked={models.includes(m.id)}
-                                onChange={() => toggle(models, setModels, m.id)}
-                              />
-                              <span className="truncate">{m.label}</span>
-                              {m.tier && (
-                                <span className="ml-auto shrink-0 rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
-                                  {m.tier}
-                                </span>
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <p className={cn(hintClass, "px-2 pb-1")}>
-                    Tip: with none selected, no model restriction applies. Pick specific
-                    models to limit this person to just those.
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* --- Features --- */}
-          <section className="space-y-2">
-            <h3 className="text-sm font-semibold">Features</h3>
-            <div className="grid gap-0.5 rounded-xl border border-border p-2 sm:grid-cols-2 sm:gap-x-1.5">
-              {data.features.map((f: AdminFeature) => (
-                <label
-                  key={f.key}
-                  className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors hover:bg-surface-muted"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-border accent-accent"
-                    checked={features.includes(f.key)}
-                    onChange={() => toggle(features, setFeatures, f.key)}
-                    disabled={disabled}
-                  />
-                  <span>
-                    <span className="font-medium">{f.label}</span>
-                    <span className="block text-xs text-muted-foreground">{f.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <p className={hintClass}>If none are selected, no feature restriction applies.</p>
-          </section>
-
-          {/* --- Tiers --- */}
-          <section className="space-y-2">
-            <h3 className="text-sm font-semibold">Allowed speed tiers</h3>
-            <div className="flex flex-wrap gap-2">
-              {data.tiers.map((t) => {
-                const on = tiers.includes(t);
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={on}
-                    disabled={disabled}
-                    onClick={() => toggle(tiers, setTiers, t)}
-                    className={cn(
-                      "inline-flex h-8 items-center rounded-full border px-3 text-[13px] font-medium capitalize transition-colors",
-                      on
-                        ? "border-accent/30 bg-accent-soft text-accent-strong"
-                        : "border-border bg-surface text-muted-foreground hover:bg-surface-muted hover:text-foreground",
-                      disabled && "cursor-not-allowed opacity-60"
-                    )}
-                  >
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
-            <p className={hintClass}>If none are selected, all tiers are allowed.</p>
-          </section>
+          {/* --- Permissions (from the Brain's capability manifest) --- */}
+          <PermissionsPanel
+            manifest={manifest}
+            caps={shownCaps}
+            setCaps={setCaps}
+            canEnable={canEnable}
+            disabled={disabled || isSuperTarget}
+            superTarget={isSuperTarget}
+            onRetryManifest={onRetryManifest}
+            modelAccess={
+              <ModelAllowlist
+                models={data.models}
+                mode={modelMode}
+                setMode={setModelMode}
+                selected={models}
+                toggle={toggleModel}
+                setSelected={setModels}
+                disabled={disabled}
+              />
+            }
+          />
 
           {/* --- Danger zone (super admin, editing someone else) --- */}
           {isEdit && canGrantSuper && !isSelf && (
-            <section className="space-y-2.5 rounded-xl border border-danger/30 bg-danger/5 p-4">
+            <section className="space-y-2.5 rounded-2xl border border-danger/30 bg-danger/5 p-4">
               <h3 className="text-sm font-semibold text-danger">Danger zone</h3>
               <p className={hintClass}>
                 To temporarily disable access, turn off “Account active” above. Deleting is
@@ -1030,26 +1042,462 @@ function UserEditor({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-4">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={disabled}>
-            {busy ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                {mode === "create" ? <Plus size={16} /> : <Check size={16} />}
-                {mode === "create" ? "Create user" : "Save changes"}
-              </>
-            )}
-          </Button>
+        {/* Footer — outside the scroll area, so it stays in view */}
+        <div className="-mx-5 -mb-5 flex items-center justify-between gap-3 rounded-b-2xl border-t border-border bg-surface px-5 py-3">
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {onCount} of {allIds.length} permissions on{sensitiveOn ? ` · ${sensitiveOn} sensitive` : ""}
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={busy} className="h-8 text-[13px]">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={disabled} className="h-8 text-[13px]">
+              {busy ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  {mode === "create" ? <Plus size={14} /> : <Check size={14} />}
+                  {mode === "create" ? "Create user" : "Save changes"}
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Permissions panel: presets, sync note, filter, grouped switches
+// ---------------------------------------------------------------------------
+
+function PermissionsPanel({
+  manifest,
+  caps,
+  setCaps,
+  canEnable,
+  disabled,
+  superTarget,
+  onRetryManifest,
+  modelAccess,
+}: {
+  manifest: ResolvedCapabilityManifest;
+  caps: string[];
+  setCaps: (next: string[]) => void;
+  canEnable: (id: string) => boolean;
+  disabled: boolean;
+  superTarget: boolean;
+  onRetryManifest: () => Promise<void>;
+  modelAccess: React.ReactNode;
+}) {
+  const [filter, setFilter] = useState("");
+  const on = useMemo(() => new Set(caps), [caps]);
+  const byId = useMemo(() => new Map(manifest.capabilities.map((c) => [c.id, c])), [manifest]);
+
+  // A capability can be switched on when it and every prerequisite it would
+  // pull in are grantable (or already on).
+  const enableBlocked = useCallback(
+    (id: string) => [id, ...prerequisitesOf(id, manifest)].some((x) => !on.has(x) && !canEnable(x)),
+    [manifest, on, canEnable]
+  );
+
+  // Presets only fill switches the actor may grant (a plain admin's own set).
+  const presets = useMemo(
+    () =>
+      CAPABILITY_PRESETS.map((p) => ({
+        ...p,
+        ids: closeGrantSet(presetCapabilities(p.id, manifest).filter(canEnable), manifest),
+      })),
+    [manifest, canEnable]
+  );
+  const activePreset: CapabilityPresetId | null = presets.find((p) => sameSet(p.ids, caps))?.id ?? null;
+
+  const needle = filter.trim().toLowerCase();
+  const matches = (c: Capability) =>
+    !needle ||
+    c.label.toLowerCase().includes(needle) ||
+    c.description.toLowerCase().includes(needle) ||
+    c.id.includes(needle) ||
+    (c.sensitive === true && "sensitive".includes(needle));
+
+  const groups = manifest.groups
+    .map((g) => ({ group: g, items: manifest.capabilities.filter((c) => c.group === g.id && matches(c)) }))
+    .filter((g) => g.items.length > 0 || (g.group.id === "models" && !needle));
+
+  function setGroup(ids: string[], value: boolean) {
+    let next = caps;
+    for (const id of ids) {
+      if (value && (on.has(id) || enableBlocked(id))) continue;
+      if (!value && !next.includes(id)) continue;
+      next = toggleCapability(next, id, value, manifest);
+    }
+    setCaps(next);
+  }
+
+  const hasModelsGroup = manifest.groups.some((g) => g.id === "models");
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">Permissions</h3>
+          <p className={hintClass}>What this person can use. Sensitive items expose call data or private executive context.</p>
+        </div>
+        <SyncNote manifest={manifest} onRetry={onRetryManifest} />
+      </div>
+
+      {superTarget ? (
+        <p className="flex items-start gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs text-muted-foreground">
+          <ShieldCheck size={14} className="mt-px shrink-0 text-accent" />
+          Super admins always have every permission.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <div role="group" aria-label="Role presets" className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs font-medium text-muted-foreground">Start from</span>
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                title={p.description}
+                aria-pressed={activePreset === p.id}
+                disabled={disabled}
+                onClick={() => setCaps(p.ids)}
+                className={cn(
+                  "inline-flex h-8 items-center rounded-full border px-3 text-[13px] font-medium transition-colors",
+                  activePreset === p.id
+                    ? "border-accent/30 bg-accent-soft text-accent-strong"
+                    : "border-border bg-surface text-muted-foreground hover:bg-surface-muted hover:text-foreground",
+                  "disabled:cursor-not-allowed disabled:opacity-60"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+            {!activePreset && <span className="ml-1 text-xs text-muted-foreground">Custom</span>}
+          </div>
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter permissions…"
+              aria-label="Filter permissions"
+              className={cn(inputClass, "h-8 pl-8 text-[13px]")}
+            />
+          </div>
+        </div>
+      )}
+
+      {groups.map(({ group, items }) => {
+        const all = manifest.capabilities.filter((c) => c.group === group.id);
+        const onInGroup = all.filter((c) => on.has(c.id)).length;
+        return (
+          <div key={group.id} className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <div className="flex items-center justify-between gap-2 border-b border-border bg-surface-muted/60 px-3 py-1.5">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <h4 className="truncate text-[13px] font-semibold">{group.label}</h4>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {onInGroup}/{all.length}
+                </span>
+              </div>
+              {!disabled && all.length > 0 && (
+                <div className="flex shrink-0 items-center">
+                  <button type="button" className={linkButtonClass} onClick={() => setGroup(all.map((c) => c.id), true)}>
+                    All
+                  </button>
+                  <span aria-hidden className="text-xs text-subtle-foreground">/</span>
+                  <button type="button" className={linkButtonClass} onClick={() => setGroup(all.map((c) => c.id), false)}>
+                    None
+                  </button>
+                </div>
+              )}
+            </div>
+            {items.length > 0 && (
+              <div className="grid gap-x-2 p-1.5 sm:grid-cols-2">
+                {items.map((c, i) => {
+                  const sectionStart = c.section && c.section !== items[i - 1]?.section;
+                  const checked = on.has(c.id);
+                  const blocked = !checked && enableBlocked(c.id);
+                  const missing = checked ? [] : (c.requires ?? []).filter((r) => !on.has(r));
+                  const dependents = checked ? dependentsOf(c.id, manifest).filter((d) => on.has(d)) : [];
+                  return (
+                    <CapabilityRowWithSection key={c.id} section={sectionStart ? c.section : undefined}>
+                      <CapabilityRow
+                        cap={c}
+                        checked={checked}
+                        disabled={disabled || blocked}
+                        blockedReason={blocked ? "You can only grant permissions you have yourself." : undefined}
+                        hint={
+                          missing.length
+                            ? `Also turns on ${missing.map((r) => byId.get(r)?.label ?? r).join(", ")}`
+                            : dependents.length
+                              ? `Turning off also turns off ${dependents.length === 1 ? byId.get(dependents[0])?.label ?? dependents[0] : `${dependents.length} others`}`
+                              : undefined
+                        }
+                        onChange={(v) => setCaps(toggleCapability(caps, c.id, v, manifest))}
+                      />
+                    </CapabilityRowWithSection>
+                  );
+                })}
+              </div>
+            )}
+            {group.id === "models" && !needle && modelAccess}
+          </div>
+        );
+      })}
+
+      {!hasModelsGroup && !needle && (
+        <div className="overflow-hidden rounded-2xl border border-border bg-surface">{modelAccess}</div>
+      )}
+
+      {needle && groups.length === 0 && (
+        <p className="px-1 text-[13px] text-muted-foreground">No permissions match “{filter.trim()}”.</p>
+      )}
+    </section>
+  );
+}
+
+/** Renders an optional full-width sub-heading before a row (work-mode families). */
+function CapabilityRowWithSection({ section, children }: { section?: string; children: React.ReactNode }) {
+  return (
+    <>
+      {section && (
+        <div className="px-2.5 pb-0.5 pt-2 text-[11px] font-semibold text-muted-foreground sm:col-span-2">{section}</div>
+      )}
+      {children}
+    </>
+  );
+}
+
+function CapabilityRow({
+  cap,
+  checked,
+  disabled,
+  blockedReason,
+  hint,
+  onChange,
+}: {
+  cap: Capability;
+  checked: boolean;
+  disabled: boolean;
+  blockedReason?: string;
+  hint?: string;
+  onChange: (v: boolean) => void;
+}) {
+  const baseId = `cap-${cap.id.replace(/[^a-z0-9]/gi, "-")}`;
+  const descId = `${baseId}-desc`;
+  const hintId = `${baseId}-hint`;
+  const reasonId = `${baseId}-reason`;
+  // Everything a sighted admin sees on the row reaches the switch's name /
+  // description: the Sensitive / New pills, the dependency hint, and why a
+  // switch is blocked (a hover title alone never reaches assistive tech).
+  const describedBy = [descId, hint && hintId, blockedReason && reasonId].filter(Boolean).join(" ");
+  const srLabel = cap.label + (cap.sensitive ? " (sensitive)" : "") + (isRecent(cap.since) ? " (new)" : "");
+  return (
+    <label
+      title={blockedReason}
+      className={cn(
+        "flex min-h-[52px] items-center gap-3 rounded-xl px-2.5 py-1.5 transition-colors",
+        disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-surface-muted"
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className={cn("truncate text-[13px] font-medium", disabled && !checked && "text-muted-foreground")}>
+            {cap.label}
+          </span>
+          {cap.sensitive && <Pill tone="warning">Sensitive</Pill>}
+          {isRecent(cap.since) && <Pill tone="accent">New</Pill>}
+        </span>
+        {/* Wraps to two lines (not truncated): readable on touch, where a hover title isn't. */}
+        <span id={descId} className="line-clamp-2 text-xs text-muted-foreground" title={cap.description}>
+          {cap.description}
+        </span>
+        {hint && (
+          <span id={hintId} className="line-clamp-2 text-[11px] text-subtle-foreground">
+            {hint}
+          </span>
+        )}
+        {blockedReason && (
+          <span id={reasonId} className="sr-only">
+            {blockedReason}
+          </span>
+        )}
+      </span>
+      <Switch
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        focusableWhenDisabled={!!blockedReason}
+        label={srLabel}
+        describedBy={describedBy}
+      />
+    </label>
+  );
+}
+
+/** "Synced with Brain · vN" or the fallback warning with a retry. */
+function SyncNote({ manifest, onRetry }: { manifest: ResolvedCapabilityManifest; onRetry: () => Promise<void> }) {
+  const [retrying, setRetrying] = useState(false);
+  if (manifest.source === "brain") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={`Fetched ${manifest.fetchedAt}`}>
+        <CheckCircle2 size={12} className="text-success" />
+        Synced with Brain · v{manifest.version}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-warning" title={manifest.reason}>
+      <AlertTriangle size={12} />
+      {manifest.reason === "demo mode" ? "Demo mode — showing built-in list" : "Brain unreachable — showing built-in list"}
+      <button
+        type="button"
+        disabled={retrying}
+        onClick={async () => {
+          setRetrying(true);
+          try {
+            await onRetry();
+          } finally {
+            setRetrying(false);
+          }
+        }}
+        className="inline-flex items-center gap-1 rounded-md px-1 font-medium text-accent-strong hover:underline disabled:opacity-50"
+      >
+        <RefreshCw size={11} className={cn(retrying && "animate-spin")} />
+        Retry
+      </button>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Model allowlist (the Brain's model catalog)
+// ---------------------------------------------------------------------------
+
+function ModelAllowlist({
+  models,
+  mode,
+  setMode,
+  selected,
+  toggle,
+  setSelected,
+  disabled,
+}: {
+  models: AdminModelOption[];
+  mode: "all" | "some";
+  setMode: (m: "all" | "some") => void;
+  selected: string[];
+  toggle: (id: string) => void;
+  setSelected: (fn: (prev: string[]) => string[]) => void;
+  disabled: boolean;
+}) {
+  // Group the model catalog by provider for the checklist.
+  const grouped = useMemo(() => {
+    const map = new Map<string, AdminModelOption[]>();
+    for (const m of models) {
+      const arr = map.get(m.provider) ?? [];
+      arr.push(m);
+      map.set(m.provider, arr);
+    }
+    const order = (p: string) =>
+      p.toLowerCase() === "anthropic" ? 0 : p.toLowerCase() === "openai" ? 1 : 2;
+    return [...map.entries()].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
+  }, [models]);
+
+  return (
+    <div className="space-y-2 border-t border-border px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium">Specific models</div>
+          <p className={hintClass}>Within the tiers above, which of the Brain&apos;s models this person can pick.</p>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Model access"
+          onKeyDown={onRadioGroupKeyDown}
+          className="inline-flex shrink-0 rounded-full border border-border bg-surface-muted p-0.5"
+        >
+          {(["all", "some"] as const).map((m, i) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={mode === m}
+              tabIndex={radioTabIndex(mode === m, i, true)}
+              disabled={disabled}
+              onClick={() => setMode(m)}
+              className={cn(
+                "h-7 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                mode === m ? "bg-surface text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {m === "all" ? "All models" : "Only selected"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === "some" && (
+        <div className="space-y-2.5">
+          {grouped.map(([provider, list]) => {
+            const ids = list.map((m) => m.id);
+            const allOn = ids.every((id) => selected.includes(id));
+            return (
+              <div key={provider}>
+                <div className="mb-0.5 flex h-6 items-center justify-between">
+                  <span className="px-1 text-[11px] font-semibold text-muted-foreground">
+                    {providerLabel(provider)}
+                  </span>
+                  <button
+                    type="button"
+                    className={linkButtonClass}
+                    disabled={disabled}
+                    onClick={() =>
+                      setSelected((prev) =>
+                        allOn ? prev.filter((id) => !ids.includes(id)) : [...new Set([...prev, ...ids])]
+                      )
+                    }
+                  >
+                    {allOn ? "Clear" : "Select all"}
+                  </button>
+                </div>
+                <div className="grid gap-0.5 sm:grid-cols-2 sm:gap-x-1.5">
+                  {list.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex h-8 items-center gap-2 rounded-lg px-1 text-[13px] transition-colors hover:bg-surface-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 shrink-0 rounded border-border accent-accent"
+                        checked={selected.includes(m.id)}
+                        onChange={() => toggle(m.id)}
+                        disabled={disabled}
+                      />
+                      <span className="truncate">{m.label}</span>
+                      {m.tier && (
+                        <span className="ml-auto shrink-0 rounded-full bg-surface-muted px-1.5 py-px text-[11px] font-medium capitalize text-muted-foreground">
+                          {m.tier}
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

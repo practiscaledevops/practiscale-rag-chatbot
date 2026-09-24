@@ -16,10 +16,13 @@
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { rowTimestamps } from "@/lib/message-times";
 import type { ModelTier } from "@/lib/brain";
 
 const TIERS = ["fast", "recommended", "max"] as const;
 
+// Bounds mirror /api/chat and /api/conversations (2000 turns of ≤ 100,000
+// chars), so a thread that can still be chatted in can still be saved.
 const InputSchema = z.object({
   conversationId: z.string().uuid().nullable(),
   tier: z.enum(TIERS),
@@ -27,10 +30,12 @@ const InputSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
+        content: z.string().max(100_000),
+        // When the message was sent (ISO); kept as its created_at.
+        createdAt: z.string().max(64).optional(),
       })
     )
-    .max(500),
+    .max(2000),
 });
 
 export type SaveTurnInput = z.infer<typeof InputSchema>;
@@ -116,7 +121,13 @@ export async function saveConversationTurn(
   await supabase.from("messages").delete().eq("conversation_id", conversationId);
 
   if (messages.length > 0) {
-    const rows = messages.map((m) => ({
+    // Each row keeps the time its message was sent, strictly increasing: a
+    // multi-row insert would otherwise stamp every row with the same now(), and
+    // the /c/[id] loader (ordered by created_at) could rebuild the thread — and
+    // the summary's position in it — out of order. The real send times also let
+    // the Brain resolve "yesterday" in a reopened chat (lib/message-times).
+    const times = rowTimestamps(messages);
+    const rows = messages.map((m, i) => ({
       conversation_id: conversationId,
       user_id: user.id,
       role: m.role,
@@ -124,6 +135,7 @@ export async function saveConversationTurn(
       citations: m.role === "assistant" ? extractCitations(m.content) : [],
       input_tokens: m.role === "user" ? estimateTokens(m.content) : 0,
       output_tokens: m.role === "assistant" ? estimateTokens(m.content) : 0,
+      created_at: times[i],
     }));
     const { error } = await supabase.from("messages").insert(rows);
     if (error) return { ok: false, error: "save_failed" };

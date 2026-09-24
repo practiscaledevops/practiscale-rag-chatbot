@@ -261,8 +261,11 @@ function geometry(): BrainGeometry {
   return GEOMETRY;
 }
 
-// Line colour by height: crown green → base deep teal.
-const LINE = ["12,104,112", "14,140,125", "24,160,120"];
+// Line colour by height: crown green → base deep teal (white workspace).
+const LINE_LIGHT = ["12,104,112", "14,140,125", "24,160,120"];
+// The dark theme: the ring / accent-strong family, so the base folds keep
+// ≥ ~3.7:1 on #1A1A19 / #222221 (the deep teals above drop to ~1.4:1 there).
+const LINE_DARK = ["45,212,180", "94,219,190", "150,235,200"];
 // Body fill by height: base teal → crown lime-mint.
 const FILL = ["70,190,170", "120,220,185", "185,240,160"];
 
@@ -315,8 +318,12 @@ export function BrainOrb({ size = 128, active = false, className }: BrainOrbProp
     let t = 0;
     let yaw = -0.75;
     let energy = activeRef.current ? 1 : 0;
+    // The theme is the `.dark` class on <html>. Watched directly: a "System"
+    // preference follows the OS by toggling the class without any app event.
+    let dark = document.documentElement.classList.contains("dark");
 
     function frame(g: CanvasRenderingContext2D, dt: number) {
+      const LINE = dark ? LINE_DARK : LINE_LIGHT;
       const target = activeRef.current ? 1 : 0;
       energy += (target - energy) * Math.min(1, dt * 2.5);
       t += dt;
@@ -353,8 +360,9 @@ export function BrainOrb({ size = 128, active = false, className }: BrainOrbProp
       g.translate(cx, cy + S * 0.36);
       g.scale(1, 0.2);
       const sh = g.createRadialGradient(0, 0, 0, 0, 0, S * 0.3);
-      sh.addColorStop(0, "rgba(10,90,80,0.16)");
-      sh.addColorStop(1, "rgba(10,90,80,0)");
+      // A teal shadow vanishes on the dark surfaces; a neutral one reads there.
+      sh.addColorStop(0, dark ? "rgba(0,0,0,0.35)" : "rgba(10,90,80,0.16)");
+      sh.addColorStop(1, dark ? "rgba(0,0,0,0)" : "rgba(10,90,80,0)");
       g.fillStyle = sh;
       g.beginPath();
       g.arc(0, 0, S * 0.3, 0, Math.PI * 2);
@@ -428,7 +436,7 @@ export function BrainOrb({ size = 128, active = false, className }: BrainOrbProp
       drawSegs(folds, foldPaths, backPath);
       g.lineCap = "butt";
       g.lineWidth = lineW;
-      g.strokeStyle = "rgba(14,140,125,0.07)";
+      g.strokeStyle = `rgba(${LINE[1]},0.07)`;
       g.stroke(backPath);
       for (let band = 0; band < LINE.length; band++) {
         for (let k = 0; k < FB; k++) {
@@ -492,9 +500,16 @@ export function BrainOrb({ size = 128, active = false, className }: BrainOrbProp
       g.fill();
     }
 
+    // Follow theme switches (redraw the still frame when motion is reduced).
+    const themeObserver = new MutationObserver(() => {
+      dark = document.documentElement.classList.contains("dark");
+      if (reduce) frame(ctx, 0);
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
     if (reduce) {
       frame(ctx, 0);
-      return;
+      return () => themeObserver.disconnect();
     }
 
     let raf = 0;
@@ -534,6 +549,7 @@ export function BrainOrb({ size = 128, active = false, className }: BrainOrbProp
     return () => {
       stop();
       io.disconnect();
+      themeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [size]);

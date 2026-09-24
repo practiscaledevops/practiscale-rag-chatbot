@@ -21,11 +21,16 @@ import {
   ClipboardList,
   Crown,
   ChevronDown,
+  ChevronRight,
   Check,
   ShieldCheck,
   Cpu,
-  Database,
   Layers,
+  BrainCircuit,
+  Building2,
+  BookOpen,
+  Lightbulb,
+  PhoneCall,
   Sparkles,
   Megaphone,
   Package,
@@ -45,6 +50,12 @@ import {
 import { cn } from "@/lib/utils";
 import { MODE_GROUP_LABELS, EXECUTIVE_MODES, type WorkMode, type WorkModeDef, type ModeGroup } from "@/lib/work-modes";
 import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
+import {
+  BUILTIN_KNOWLEDGE_SCOPES,
+  DEFAULT_KNOWLEDGE_SCOPE,
+  normalizeKnowledgeScopes,
+  type KnowledgeScope,
+} from "@/lib/knowledge-scopes";
 import type { ModelOption } from "@/components/AppShell";
 
 export const MODE_ICON: Record<WorkMode, LucideIcon> = {
@@ -162,6 +173,7 @@ export function FloatingMenu({
   width,
   align,
   label,
+  role = "menu",
   onKeyDown,
   onClose,
   className,
@@ -173,6 +185,12 @@ export function FloatingMenu({
   width: number;
   align: "left" | "right";
   label: string;
+  /**
+   * "menu" (default) for pickers of menuitems; "dialog" for a non-modal popover
+   * of mostly read-only content (the container itself takes focus, so Escape
+   * works even when it holds no enabled item).
+   */
+  role?: "menu" | "dialog";
   onKeyDown?: (e: React.KeyboardEvent) => void;
   /** Close the menu; `focusTrigger` returns focus to the trigger. */
   onClose: (focusTrigger?: boolean) => void;
@@ -194,9 +212,14 @@ export function FloatingMenu({
       const vh = window.innerHeight;
       const M = 8; // viewport margin
       const GAP = 6; // space between trigger and menu
+      // Installed app (window-controls-overlay): the fixed, draggable
+      // .app-titlebar covers the top of the viewport, so an upward menu must
+      // stop below it. The strip is display:none elsewhere, so this is 0.
+      const strip = document.querySelector<HTMLElement>(".app-titlebar");
+      const topInset = strip ? Math.max(0, strip.getBoundingClientRect().bottom) : 0;
       const w = Math.min(width, vw - M * 2);
       const left = Math.max(M, Math.min(align === "right" ? r.right - w : r.left, vw - w - M));
-      const above = r.top - GAP - M;
+      const above = r.top - GAP - M - topInset;
       const below = vh - r.bottom - GAP - M;
       setStyle(
         above >= below
@@ -223,8 +246,9 @@ export function FloatingMenu({
   return createPortal(
     <div
       ref={menuRef}
-      role="menu"
+      role={role}
       aria-label={label}
+      tabIndex={-1}
       onKeyDown={(e) => {
         // The menu lives at the end of <body>; Tab must not wander off there.
         // Close + refocus the trigger, and let the browser's Tab move on from it.
@@ -244,19 +268,84 @@ export function FloatingMenu({
 }
 
 // ---------------------------------------------------------------------------
-// Source scope
+// Search in (knowledge scope + optional collections)
 // ---------------------------------------------------------------------------
 
-interface Collection {
+export interface KnowledgeCollection {
   id: string;
   name: string;
 }
 
+/** The "Search in" selection: a knowledge scope, plus an optional collection narrowing. */
+export interface SearchScopeValue {
+  /** A lib/knowledge-scopes id ("auto", "playbook", "calls" …). */
+  scope: string;
+  /** Collections to narrow to (an ADDITIONAL filter; empty = no narrowing). */
+  collectionIds: string[];
+}
+
+/** Icons for the scopes the Brain ships today. */
+export const KNOWLEDGE_SCOPE_ICON: Readonly<Record<string, LucideIcon>> = {
+  auto: Sparkles,
+  all: BrainCircuit,
+  reality: Building2,
+  playbook: BookOpen,
+  learning: Lightbulb,
+  calls: PhoneCall,
+};
+
+/** The icon for a scope id. A scope the Brain adds later gets Layers. */
+export function knowledgeScopeIcon(id: string): LucideIcon {
+  return KNOWLEDGE_SCOPE_ICON[id] ?? Layers;
+}
+
+export interface SearchOptions {
+  /** The scopes this user may pick (sensitive ones already filtered server-side), Auto first. */
+  scopes: KnowledgeScope[];
+  collections: KnowledgeCollection[];
+}
+
 /**
- * Source-scope picker — narrow the answer to specific collections instead of all
- * company knowledge. Fetches the permitted collections itself (server keeps the
- * key). Multi-select; empty selection = all company knowledge. Renders nothing
- * when there are no collections to narrow to.
+ * What the "Search in" controls can offer this user, from GET /api/collections
+ * (which keeps the Brain key server-side and filters sensitive scopes per user).
+ * null while loading. When the request fails, the built-in scopes are used and
+ * there are no collections.
+ */
+export function useSearchOptions(): SearchOptions | null {
+  const [options, setOptions] = React.useState<SearchOptions | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let next: SearchOptions = { scopes: [...BUILTIN_KNOWLEDGE_SCOPES], collections: [] };
+      try {
+        const res = await fetch("/api/collections", { cache: "no-store" });
+        if (res.ok) {
+          const data = (await res.json()) as { collections?: unknown; scopes?: unknown };
+          next = {
+            scopes: normalizeKnowledgeScopes(data.scopes) ?? next.scopes,
+            collections: Array.isArray(data.collections)
+              ? (data.collections as KnowledgeCollection[]).filter((c) => c && typeof c.id === "string" && typeof c.name === "string")
+              : [],
+          };
+        }
+      } catch {
+        /* keep the built-in scopes */
+      }
+      if (!cancelled) setOptions(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return options;
+}
+
+/**
+ * "Search in" picker: which knowledge the answer searches. A radio group of the
+ * Brain's knowledge scopes (Auto · All Brain · Reality · Playbooks · Learnings ·
+ * Consultant calls · any scope the Brain adds later), then an optional
+ * collapsible "Narrow to collections" checkbox list. Fetches its options itself
+ * (the server keeps the key). Renders nothing until they load.
  */
 export function SourceScopePicker({
   value,
@@ -264,71 +353,75 @@ export function SourceScopePicker({
   size = "md",
   iconOnly = false,
   align = "left",
-}: { value: string[]; onChange: (ids: string[]) => void } & TriggerStyle) {
-  const [collections, setCollections] = React.useState<Collection[] | null>(null);
+}: { value: SearchScopeValue; onChange: (v: SearchScopeValue) => void } & TriggerStyle) {
+  const options = useSearchOptions();
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const [collectionsOpen, setCollectionsOpen] = React.useState(false);
   const { open, setOpen, ref, triggerRef, itemsRef, menuRef, close } = useMenu();
 
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/collections", { cache: "no-store" });
-        if (res.ok && !cancelled) {
-          const data = (await res.json()) as { collections?: Collection[] };
-          setCollections(data.collections ?? []);
-        } else if (!cancelled) {
-          setCollections([]);
-        }
-      } catch {
-        if (!cancelled) setCollections([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const scopes = options?.scopes ?? null;
+  const collections = options?.collections ?? [];
 
+  // A stored scope this user can't pick (access changed, or the Brain dropped
+  // it) falls back to Auto, which is what /api/chat would do on send anyway.
   React.useEffect(() => {
-    if (!open) return;
-    const t = window.setTimeout(() => itemsRef.current[activeIndex]?.focus({ preventScroll: true }), 0);
+    if (scopes && !scopes.some((s) => s.id === value.scope)) onChange({ ...value, scope: DEFAULT_KNOWLEDGE_SCOPE });
+  }, [scopes, value, onChange]);
+
+  // On open: the collections section starts expanded only when some are
+  // selected, and focus lands on the selected scope.
+  React.useEffect(() => {
+    if (!open || !scopes) return;
+    setCollectionsOpen(value.collectionIds.length > 0);
+    const idx = Math.max(0, scopes.findIndex((s) => s.id === value.scope));
+    setActiveIndex(idx);
+    const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  if (!collections || collections.length === 0) return null;
+  if (!scopes) return null;
 
-  const rowCount = collections.length + 1;
-  const selectedNames = collections.filter((c) => value.includes(c.id)).map((c) => c.name);
-  const label =
-    value.length === 0
-      ? "Company knowledge"
-      : value.length === 1
-        ? selectedNames[0] ?? "1 collection"
-        : `${value.length} collections`;
+  const current = scopes.find((s) => s.id === value.scope) ?? scopes[0];
+  const CurrentIcon = knowledgeScopeIcon(current.id);
+  const narrowedCount = value.collectionIds.length;
+  const hasCollections = collections.length > 0;
+  const toggleIndex = scopes.length; // the "Narrow to collections" row
+  const rowCount = scopes.length + (hasCollections ? 1 + (collectionsOpen ? collections.length : 0) : 0);
 
-  function move(dir: 1 | -1) {
-    const next = (activeIndex + dir + rowCount) % rowCount;
-    setActiveIndex(next);
-    itemsRef.current[next]?.focus();
+  const narrowedLabel =
+    narrowedCount === 0
+      ? ""
+      : narrowedCount === 1
+        ? collections.find((c) => c.id === value.collectionIds[0])?.name ?? "1 collection"
+        : `${narrowedCount} collections`;
+  const a11yLabel = `Search in: ${current.label}${narrowedLabel ? ` (${narrowedLabel})` : ""}`;
+
+  function focusRow(i: number) {
+    setActiveIndex(i);
+    itemsRef.current[i]?.focus();
   }
-  function toggle(id: string) {
-    onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  function toggleCollection(id: string) {
+    const ids = value.collectionIds;
+    onChange({ ...value, collectionIds: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] });
   }
   function onMenuKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
       close();
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      move(1);
-    } else if (e.key === "ArrowUp") {
+      focusRow((activeIndex + (e.key === "ArrowDown" ? 1 : -1) + rowCount) % rowCount);
+    } else if (e.key === "Home") {
       e.preventDefault();
-      move(-1);
+      focusRow(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      focusRow(rowCount - 1);
     }
   }
 
-  const narrowed = value.length > 0;
+  const tone: Tone = current.id !== DEFAULT_KNOWLEDGE_SCOPE || narrowedCount > 0 ? "accent" : "neutral";
 
   return (
     <div className="relative" ref={ref}>
@@ -337,15 +430,18 @@ export function SourceScopePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={iconOnly ? `Knowledge: ${label}` : undefined}
+        aria-label={a11yLabel}
+        title={a11yLabel}
         onClick={() => setOpen((o) => !o)}
-        className={triggerClass(size, iconOnly, narrowed ? "accent" : "neutral")}
-        title="Choose which knowledge to search"
+        className={triggerClass(size, iconOnly, tone)}
       >
-        <Database size={triggerIconSize(size, iconOnly)} className="shrink-0" aria-hidden />
+        <CurrentIcon size={triggerIconSize(size, iconOnly)} className={tone === "neutral" && !iconOnly ? "shrink-0 text-accent" : "shrink-0"} aria-hidden />
         {!iconOnly && (
           <>
-            <span className="max-w-[9rem] truncate">{label}</span>
+            <span className="max-w-[10rem] truncate">
+              {current.label}
+              {narrowedCount > 0 && <span className="opacity-70"> · {narrowedCount}</span>}
+            </span>
             <ChevronDown size={12} className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
           </>
         )}
@@ -356,66 +452,102 @@ export function SourceScopePicker({
         triggerRef={triggerRef}
         menuRef={menuRef}
         onClose={close}
-        width={collections.length > 6 ? 520 : 288}
+        width={360}
         align={align}
-        label="Source scope"
+        label="Search in"
         onKeyDown={onMenuKeyDown}
       >
-          <p className={SECTION}>Search in</p>
-          <button
-            ref={(el) => {
-              itemsRef.current[0] = el;
-            }}
-            type="button"
-            role="menuitemradio"
-            aria-checked={value.length === 0}
-            tabIndex={activeIndex === 0 ? 0 : -1}
-            onClick={() => onChange([])}
-            className={cn(ITEM, ITEM_SINGLE, value.length === 0 ? "bg-accent-soft" : "hover:bg-surface-muted")}
-          >
-            {/* Same 14px leading indicator box as the collection checkboxes, so
-                both row types read [indicator][icon][label] and labels align. */}
-            <span className="grid h-3.5 w-3.5 shrink-0 place-items-center" aria-hidden>
-              {value.length === 0 && <Check size={12} className="text-accent" />}
-            </span>
-            <Database size={14} className={cn("shrink-0", value.length === 0 ? "text-accent" : "text-muted-foreground")} aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">All company knowledge</span>
-          </button>
-
-          <div className="mx-1 my-1 border-t border-border" />
-
-          <div className={collections.length > 6 ? COLS2 : undefined}>
-          {collections.map((c, i) => {
-            const idx = i + 1;
-            const checked = value.includes(c.id);
-            return (
-              <button
-                key={c.id}
-                ref={(el) => {
-                  itemsRef.current[idx] = el;
-                }}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={checked}
-                tabIndex={activeIndex === idx ? 0 : -1}
-                onClick={() => toggle(c.id)}
-                className={cn(ITEM, ITEM_SINGLE, checked ? "bg-accent-soft" : "hover:bg-surface-muted")}
-              >
-                <span
-                  className={cn(
-                    "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border",
-                    checked ? "border-accent bg-accent text-accent-foreground" : "border-border"
-                  )}
-                  aria-hidden
-                >
-                  {checked && <Check size={10} strokeWidth={3} />}
+        <p className={SECTION}>Search in</p>
+        {scopes.map((s, i) => {
+          const Icon = knowledgeScopeIcon(s.id);
+          const selected = s.id === current.id;
+          return (
+            <button
+              key={s.id}
+              ref={(el) => {
+                itemsRef.current[i] = el;
+              }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={selected}
+              tabIndex={i === activeIndex ? 0 : -1}
+              onClick={() => {
+                onChange({ ...value, scope: s.id });
+                close();
+              }}
+              className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
+            >
+              <Icon
+                size={14}
+                className={cn(ITEM_ICON, selected || s.id === DEFAULT_KNOWLEDGE_SCOPE ? "text-accent" : "text-muted-foreground")}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-[13px] font-medium leading-5">
+                  {s.label}
+                  {s.sensitive && <ShieldCheck size={12} className="shrink-0 text-accent" aria-label="Sensitive data" />}
                 </span>
-                <Layers size={14} className="shrink-0 text-muted-foreground" aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-[13px]">{c.name}</span>
-              </button>
-            );
-          })}
-          </div>
+                {s.description && <span className={ITEM_HINT}>{s.description}</span>}
+              </span>
+              {selected && <Check size={14} className={cn(ITEM_ICON, "text-accent")} aria-hidden />}
+            </button>
+          );
+        })}
+
+        {hasCollections && (
+          <>
+            <div className="mx-1 my-1 border-t border-border" />
+            <button
+              ref={(el) => {
+                itemsRef.current[toggleIndex] = el;
+              }}
+              type="button"
+              role="menuitem"
+              aria-expanded={collectionsOpen}
+              tabIndex={activeIndex === toggleIndex ? 0 : -1}
+              onClick={() => setCollectionsOpen((o) => !o)}
+              className={cn(ITEM, ITEM_SINGLE, "hover:bg-surface-muted")}
+            >
+              <ChevronRight
+                size={14}
+                className={cn("shrink-0 text-muted-foreground transition-transform", collectionsOpen && "rotate-90")}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">Narrow to collections (optional)</span>
+              {narrowedCount > 0 && <span className="shrink-0 text-xs text-muted-foreground">{narrowedCount} selected</span>}
+            </button>
+            {collectionsOpen &&
+              collections.map((c, i) => {
+                const idx = toggleIndex + 1 + i;
+                const checked = value.collectionIds.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    ref={(el) => {
+                      itemsRef.current[idx] = el;
+                    }}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={checked}
+                    tabIndex={activeIndex === idx ? 0 : -1}
+                    onClick={() => toggleCollection(c.id)}
+                    className={cn(ITEM, ITEM_SINGLE, "pl-8", checked ? "bg-accent-soft" : "hover:bg-surface-muted")}
+                  >
+                    <span
+                      className={cn(
+                        "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border",
+                        checked ? "border-accent bg-accent text-accent-foreground" : "border-border"
+                      )}
+                      aria-hidden
+                    >
+                      {checked && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px]">{c.name}</span>
+                  </button>
+                );
+              })}
+          </>
+        )}
       </FloatingMenu>
     </div>
   );
