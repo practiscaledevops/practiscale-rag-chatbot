@@ -58,6 +58,7 @@ import {
 } from "@/lib/export-doc";
 import { Markdown } from "./Markdown";
 import { saveConversationTurn } from "./actions";
+import { JobProgress } from "./JobProgress";
 import {
   MAX_FILES,
   ACCEPTED_ACCEPT,
@@ -447,6 +448,25 @@ export function ChatView({
   // later /api/chat call carries the id — that's what attributes usage to the
   // thread (the route verifies ownership before trusting it).
   const [activeConversationId, setActiveConversationId] = useState<string | null>(conversationId);
+  // Deep-audit background jobs launched from this thread; each renders a live
+  // progress card. Persisted in localStorage so the cards SURVIVE navigation
+  // (the job runs server-side regardless); pruned after 3 hours.
+  const [audits, setAudits] = useState<{ id: string; title: string; startedAt: number }[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = JSON.parse(localStorage.getItem("practiscale:audits") || "[]") as { id: string; title: string; startedAt: number }[];
+      return raw.filter((a) => a && a.id && Date.now() - (a.startedAt ?? 0) < 3 * 60 * 60 * 1000);
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("practiscale:audits", JSON.stringify(audits.slice(0, 6)));
+    } catch {
+      /* localStorage may be unavailable */
+    }
+  }, [audits]);
 
   const chatBody = useMemo(
     () => ({
@@ -771,6 +791,37 @@ export function ChatView({
     const uploading = attachmentsRef.current.some((a) => a.status === "uploading");
     if (busy || uploading) return;
     if (!hasText && ready.length === 0) return;
+    const t = input.trim().toLowerCase();
+    const isDeepAudit =
+      hasText &&
+      (t.includes("deep audit") ||
+        t.includes("full audit") ||
+        t.includes("thorough audit") ||
+        t.includes("detailed audit") ||
+        t.includes("audit all") ||
+        t.includes("audit every") ||
+        t.includes("audit each") ||
+        ((t.includes("all") || t.includes("every")) && t.includes("read") && t.includes("transcript")));
+    if (isDeepAudit) {
+      const query = input.trim();
+      setInput("");
+      void (async () => {
+        try {
+          const res = await fetch("/api/jobs", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ query }),
+          });
+          const json = (await res.json().catch(() => ({}))) as { job?: { id: string; title: string }; error?: string };
+          const jb = json.job;
+          if (res.ok && jb) setAudits((prev) => [{ id: jb.id, title: jb.title, startedAt: Date.now() }, ...prev]);
+          else void append({ role: "assistant", content: json.error ? `I couldn't start that audit: ${json.error}` : "I couldn't start that audit." }, { body: chatBody });
+        } catch {
+          void append({ role: "assistant", content: "I couldn't start that audit (network error)." }, { body: chatBody });
+        }
+      })();
+      return;
+    }
     stickRef.current = true;
     setData(undefined); // clear last turn's status/sources so `activity` is per-turn
     const payload: ChatAttachment[] = ready.map((a) => ({ name: a.name, text: a.text as string }));
@@ -788,7 +839,7 @@ export function ChatView({
     }
     setAttachments([]);
     attachStartedRef.current.clear();
-  }, [input, busy, handleSubmit, append, chatBody, setData]);
+  }, [input, busy, handleSubmit, append, chatBody, setData, setInput]);
 
   const regenerate = useCallback(() => {
     stickRef.current = true;
@@ -1222,6 +1273,18 @@ export function ChatView({
           <div className="flex min-w-0 flex-1 flex-col">
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-6">
+              {audits.length > 0 && (
+                <div className="mb-6 space-y-3">
+                  {audits.map((a) => (
+                    <JobProgress
+                      key={a.id}
+                      jobId={a.id}
+                      title={a.title}
+                      onDismiss={() => setAudits((prev) => prev.filter((x) => x.id !== a.id))}
+                    />
+                  ))}
+                </div>
+              )}
               <ul className="space-y-6">
                 {messages.map((m, idx) => (
                   <li key={m.id}>

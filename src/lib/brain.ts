@@ -77,6 +77,54 @@ function authHeaders(): Record<string, string> {
   return { authorization: `Bearer ${BRAIN_KEY}`, "content-type": "application/json" };
 }
 
+/** A background job's live progress (deep audit). */
+export interface JobProgress {
+  job: {
+    id: string;
+    title: string;
+    status: string;
+    total_tasks: number;
+    completed_tasks: number;
+    failed_tasks: number;
+    result: unknown;
+    finished_at: string | null;
+  };
+  tasks: { idx: number; label: string; status: string }[];
+}
+
+/** Start a deep-audit background job in the Brain (scoped key, server-side). */
+export async function brainStartAudit(
+  query: string
+): Promise<{ id: string; title: string; status: string; total_tasks: number }> {
+  const res = await fetch(`${BRAIN_URL}/api/v1/jobs`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    job?: { id: string; title: string; status: string; total_tasks: number };
+    error?: string;
+  };
+  if (!res.ok || !json.job) {
+    throw new BrainRequestError(res.status, json.error ?? "Could not start the audit");
+  }
+  return json.job;
+}
+
+/** Poll a job's progress (scoped key, server-side). */
+export async function brainJobProgress(id: string): Promise<JobProgress> {
+  const res = await fetch(`${BRAIN_URL}/api/v1/jobs/${encodeURIComponent(id)}`, {
+    headers: authHeaders(),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as JobProgress & { error?: string };
+  if (!res.ok || !json.job) {
+    throw new BrainRequestError(res.status, json.error ?? "Could not read job progress");
+  }
+  return json;
+}
+
 /**
  * Grounded chat against the Brain. Returns the raw streamed Response so the
  * caller can pipe it straight back to the browser (AI SDK data stream).
