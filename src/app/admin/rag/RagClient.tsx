@@ -8,6 +8,7 @@
 import { useCallback, useState } from "react";
 import { Bug, Loader2, Search, AlertTriangle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/Button";
 
 interface DebugItem {
   id: string;
@@ -34,21 +35,21 @@ function confidenceMeta(c: number | null | undefined) {
 }
 
 const TONE_CLS: Record<string, string> = {
-  high: "text-emerald-600 dark:text-emerald-400",
-  medium: "text-amber-600 dark:text-amber-400",
-  low: "text-rose-600 dark:text-rose-400",
+  high: "bg-success/10 text-success",
+  medium: "bg-warning/10 text-warning",
+  low: "bg-danger/10 text-danger",
 };
 
 function scoreBar(score: number | null) {
   if (typeof score !== "number") return null;
   const pct = Math.round(Math.max(0, Math.min(1, score)) * 100);
-  const tone = pct >= 66 ? "bg-emerald-500" : pct >= 33 ? "bg-amber-500" : "bg-rose-500";
+  const tone = pct >= 66 ? "bg-success" : pct >= 33 ? "bg-warning" : "bg-danger";
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted">
+    <span className="inline-flex items-center gap-2">
+      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-sunken">
         <span className={cn("block h-full rounded-full", tone)} style={{ width: `${pct}%` }} />
       </span>
-      <span className="tabular-nums text-[11px] text-muted-foreground">{pct}%</span>
+      <span className="tabular-nums text-xs text-muted-foreground">{pct}%</span>
     </span>
   );
 }
@@ -81,10 +82,10 @@ export function RagClient() {
   const conf = result?.ok ? confidenceMeta(result.confidence) : null;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
+    <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-          <Bug size={20} className="text-accent" />
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <Bug size={22} className="text-accent" />
           RAG debugger
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -94,33 +95,33 @@ export function RagClient() {
       </div>
 
       <form
-        className="mt-5 flex items-center gap-2"
+        className="mt-6 flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           void run();
         }}
       >
-        <div className="flex flex-1 items-center gap-2 rounded-xl border border-border bg-surface px-3 shadow-soft">
+        <div className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-surface px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/30">
           <Search size={16} className="shrink-0 text-muted-foreground" aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask what a user might ask…"
-            className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-muted-foreground"
+            className="h-full w-full bg-transparent text-sm outline-none placeholder:text-subtle-foreground focus-visible:outline-none"
           />
         </div>
-        <button
+        <Button
           type="submit"
           disabled={loading || !query.trim()}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:pointer-events-none disabled:opacity-50"
+          className="h-11"
         >
           {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
           Retrieve
-        </button>
+        </Button>
       </form>
 
       {result && !result.ok && (
-        <div className="mt-5 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-foreground">
+        <div className="mt-5 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
           <span>{result.error || "Retrieval failed."}</span>
         </div>
@@ -129,7 +130,7 @@ export function RagClient() {
       {result?.ok && (
         <div className="mt-5 space-y-4">
           {/* Summary bar */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-soft">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-border bg-surface px-5 py-4 text-sm shadow-soft">
             <div>
               <span className="text-muted-foreground">Chunks: </span>
               <span className="font-semibold">{result.results.length}</span>
@@ -137,7 +138,14 @@ export function RagClient() {
             {conf && (
               <div>
                 <span className="text-muted-foreground">Confidence: </span>
-                <span className={cn("font-semibold", TONE_CLS[conf.tone])}>{conf.pct}%</span>
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums",
+                    TONE_CLS[conf.tone]
+                  )}
+                >
+                  {conf.pct}%
+                </span>
               </div>
             )}
             {result.query && (
@@ -145,7 +153,7 @@ export function RagClient() {
                 <span className="text-muted-foreground">Searched: </span>
                 <span className="font-medium">{result.query}</span>
                 {result.rewritten && (
-                  <span className="ml-1.5 rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <span className="ml-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
                     rewritten
                   </span>
                 )}
@@ -155,18 +163,23 @@ export function RagClient() {
 
           {/* Retrieved chunks */}
           {result.results.length === 0 ? (
-            <p className="rounded-xl border border-border bg-surface px-4 py-10 text-center text-sm text-muted-foreground">
-              Nothing retrieved. The knowledge base has no matching content in this key&apos;s scope.
-            </p>
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
+                <Search size={20} aria-hidden />
+              </span>
+              <p className="text-sm text-muted-foreground">
+                Nothing retrieved. The knowledge base has no matching content in this key&apos;s scope.
+              </p>
+            </div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {result.results.map((r, i) => (
-                <li key={r.id} className="rounded-xl border border-border bg-surface p-3 shadow-soft">
-                  <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <li key={r.id} className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
+                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                       <FileText size={12} aria-hidden />#{i + 1}
                     </span>
-                    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
                       {(r.source_type || "source").replace(/_/g, " ")}
                     </span>
                     <span className="ml-auto">{scoreBar(r.score)}</span>

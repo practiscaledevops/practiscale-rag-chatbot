@@ -1,72 +1,90 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Design system for the Practiscale chatbot — kept in lockstep with the Brain
- * dashboard so the two products look like one.
+ * Design system for the Practiscale chatbot — the "Qubi" layout language in
+ * PractiScale green (see globals.css for the token values and rationale).
  *
- * Colors are driven by CSS variables (see globals.css) so light/dark themes swap
- * without duplicating class names. Dark mode follows the OS via `media` — no
- * toggle to build or persist. A soft, enterprise, light-first surface with a
- * single teal-green accent and a constant dark sidebar rail.
+ * Colors are driven by CSS variables so opacity modifiers work (bg-accent/10).
+ * The app is light by design: dark mode is opt-in via a `.dark` class only, so
+ * an OS dark preference never flips the white workspace.
  */
 const config: Config = {
-  darkMode: "media",
+  darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Semantic tokens — each maps to a CSS variable (rgb channel triplet)
-        // so we can use Tailwind's opacity modifiers, e.g. bg-surface/50.
         background: "rgb(var(--background) / <alpha-value>)",
         foreground: "rgb(var(--foreground) / <alpha-value>)",
         surface: "rgb(var(--surface) / <alpha-value>)",
         "surface-muted": "rgb(var(--surface-muted) / <alpha-value>)",
+        "surface-sunken": "rgb(var(--surface-sunken) / <alpha-value>)",
         border: "rgb(var(--border) / <alpha-value>)",
         muted: "rgb(var(--muted) / <alpha-value>)",
         "muted-foreground": "rgb(var(--muted-foreground) / <alpha-value>)",
+        "subtle-foreground": "rgb(var(--subtle-foreground) / <alpha-value>)",
         accent: "rgb(var(--accent) / <alpha-value>)",
+        "accent-strong": "rgb(var(--accent-strong) / <alpha-value>)",
         "accent-foreground": "rgb(var(--accent-foreground) / <alpha-value>)",
         "accent-hover": "rgb(var(--accent-hover) / <alpha-value>)",
+        "accent-soft": "rgb(var(--accent-soft) / <alpha-value>)",
+        "accent-softer": "rgb(var(--accent-softer) / <alpha-value>)",
+        tea: "rgb(var(--tea) / <alpha-value>)",
+        "tea-hover": "rgb(var(--tea-hover) / <alpha-value>)",
+        "tea-foreground": "rgb(var(--tea-foreground) / <alpha-value>)",
         ring: "rgb(var(--ring) / <alpha-value>)",
         success: "rgb(var(--success) / <alpha-value>)",
         warning: "rgb(var(--warning) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
         private: "rgb(var(--private) / <alpha-value>)",
-        // Dark sidebar rail tokens (constant across light/dark).
+        // Dark navigation rail (constant).
         sidebar: "rgb(var(--sidebar) / <alpha-value>)",
+        "sidebar-panel": "rgb(var(--sidebar-panel) / <alpha-value>)",
+        "sidebar-item": "rgb(var(--sidebar-item) / <alpha-value>)",
+        "sidebar-item-hover": "rgb(var(--sidebar-item-hover) / <alpha-value>)",
         "sidebar-foreground": "rgb(var(--sidebar-foreground) / <alpha-value>)",
         "sidebar-muted": "rgb(var(--sidebar-muted) / <alpha-value>)",
         "sidebar-border": "rgb(var(--sidebar-border) / <alpha-value>)",
+        // Folder accent bars.
+        "folder-1": "rgb(var(--folder-1) / <alpha-value>)",
+        "folder-2": "rgb(var(--folder-2) / <alpha-value>)",
+        "folder-3": "rgb(var(--folder-3) / <alpha-value>)",
+        "folder-4": "rgb(var(--folder-4) / <alpha-value>)",
+        "folder-5": "rgb(var(--folder-5) / <alpha-value>)",
       },
       borderColor: {
         DEFAULT: "rgb(var(--border) / <alpha-value>)",
       },
       borderRadius: {
-        lg: "0.625rem",
-        xl: "0.875rem",
-        "2xl": "1.125rem",
+        lg: "0.75rem",
+        xl: "1rem",
+        "2xl": "1.25rem",
+        "3xl": "1.75rem",
       },
       boxShadow: {
-        // Soft, enterprise elevation for cards + popovers. Theme-aware via CSS
-        // vars so shadows stay visible on the dark canvas (see globals.css).
         soft: "var(--shadow-soft)",
         "soft-lg": "var(--shadow-soft-lg)",
+        float: "var(--shadow-float)",
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["var(--font-sans)"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       keyframes: {
-        // Popover/menu open: gentle rise + fade (respects reduced motion via
-        // the motion-safe: variant at the call site).
+        // Popover/menu open: gentle rise + fade (use with motion-safe:).
         fadeUp: {
           from: { opacity: "0", transform: "translateY(5px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        fadeIn: {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
       },
       animation: {
         fadeUp: "fadeUp 160ms ease-out",
+        fadeIn: "fadeIn 220ms ease-out",
       },
     },
   },

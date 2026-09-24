@@ -30,16 +30,17 @@ import { toNumber, chartModel } from "@/lib/chart-data";
 
 type ChartKind = "bar" | "line" | "area" | "pie";
 
-// A palette that reads well in both light and dark themes.
+// Series palette: PractiScale greens first, then the kit's accent colors
+// (no violet/indigo — the brand swaps those for green).
 const SERIES_COLORS = [
-  "#14b8a6", // teal (brand accent)
-  "#6366f1", // indigo
+  "#10a388", // PractiScale green
+  "#0c6870", // deep teal
+  "#7dd9b0", // mint
   "#f59e0b", // amber
+  "#5ccfe6", // cyan
+  "#e879b9", // pink
+  "#a3c94f", // lime
   "#ef4444", // red
-  "#8b5cf6", // violet
-  "#10b981", // emerald
-  "#ec4899", // pink
-  "#0ea5e9", // sky
 ];
 
 export interface ChartBlockProps {
@@ -95,9 +96,9 @@ export function ChartBlock({ headers, rows }: ChartBlockProps) {
               title={disabled ? "Pie needs a single value column" : `${k.label} chart`}
               aria-pressed={active}
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
                 active
-                  ? "bg-accent/10 text-accent"
+                  ? "bg-accent-soft text-accent-strong"
                   : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
               )}
             >

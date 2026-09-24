@@ -60,10 +60,10 @@ export function FeedbackClient() {
   const counts = data?.counts ?? { up: 0, down: 0 };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
+    <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-          <MessageSquareText size={20} className="text-accent" />
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <MessageSquareText size={22} className="text-accent" />
           Feedback &amp; QA
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -73,52 +73,58 @@ export function FeedbackClient() {
       </div>
 
       {/* Counts */}
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
-          <ThumbsUp size={18} className="text-success" />
-          <div>
-            <div className="text-lg font-semibold tabular-nums">{counts.up.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Helpful</div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+          <div className="flex items-center gap-2.5 text-muted-foreground">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-success/10 text-success">
+              <ThumbsUp size={16} />
+            </span>
+            <span className="text-sm font-medium">Helpful</span>
           </div>
+          <div className="mt-4 text-2xl font-semibold tracking-tight tabular-nums">{counts.up.toLocaleString()}</div>
         </div>
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 shadow-soft">
-          <ThumbsDown size={18} className="text-danger" />
-          <div>
-            <div className="text-lg font-semibold tabular-nums">{counts.down.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Needs work</div>
+        <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+          <div className="flex items-center gap-2.5 text-muted-foreground">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
+              <ThumbsDown size={16} />
+            </span>
+            <span className="text-sm font-medium">Needs work</span>
           </div>
+          <div className="mt-4 text-2xl font-semibold tracking-tight tabular-nums">{counts.down.toLocaleString()}</div>
         </div>
       </div>
 
       {/* Filter */}
-      <div className="mt-5 flex items-center gap-2">
-        {(["down", "up", "all"] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            className={cn(
-              "rounded-full border px-3 py-1 text-sm capitalize transition-colors",
-              filter === f
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-muted-foreground hover:bg-surface-muted"
-            )}
-          >
-            {f === "down" ? "Needs work" : f === "up" ? "Helpful" : "All"}
-          </button>
-        ))}
+      <div className="mt-6 flex items-center gap-3">
+        <div className="inline-flex rounded-full bg-surface-muted p-1">
+          {(["down", "up", "all"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-sm font-medium capitalize transition-colors",
+                filter === f
+                  ? "bg-surface text-foreground shadow-soft"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {f === "down" ? "Needs work" : f === "up" ? "Helpful" : "All"}
+            </button>
+          ))}
+        </div>
         {loading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
       </div>
 
       {/* List */}
       {data && !data.enabled ? (
-        <p className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+        <p className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
           Feedback isn’t enabled yet — run migration 0006_message_feedback.sql in Supabase.
         </p>
       ) : (
         <ul className="mt-4 space-y-3">
           {(data?.items ?? []).map((it) => (
-            <li key={it.id} className="rounded-xl border border-border bg-surface p-4 shadow-soft">
+            <li key={it.id} className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {it.rating === "up" ? (
                   <ThumbsUp size={13} className="text-success" />
@@ -127,9 +133,9 @@ export function FeedbackClient() {
                 )}
                 <span className="font-medium text-foreground">{it.user || "Someone"}</span>
                 {it.mode && it.mode !== "general" && (
-                  <span className="rounded bg-surface-muted px-1.5 py-0.5 capitalize">{it.mode.replace(/_/g, " ")}</span>
+                  <span className="rounded-full bg-surface-muted px-2.5 py-0.5 font-medium capitalize">{it.mode.replace(/_/g, " ")}</span>
                 )}
-                {it.model && <span className="rounded bg-surface-muted px-1.5 py-0.5">{it.model}</span>}
+                {it.model && <span className="rounded-full bg-surface-muted px-2.5 py-0.5 font-medium">{it.model}</span>}
                 <span className="ml-auto">{relTime(it.createdAt)}</span>
               </div>
               {it.prompt && (
@@ -147,8 +153,11 @@ export function FeedbackClient() {
             </li>
           ))}
           {!loading && (data?.items?.length ?? 0) === 0 && (
-            <li className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              No feedback yet in this view.
+            <li className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
+                <MessageSquareText size={20} />
+              </span>
+              <p className="text-sm text-muted-foreground">No feedback yet in this view.</p>
             </li>
           )}
         </ul>

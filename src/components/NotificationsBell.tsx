@@ -18,6 +18,8 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/Button";
+import { IconButton } from "@/components/IconButton";
 
 interface NotificationItem {
   id: string;
@@ -30,9 +32,9 @@ interface NotificationItem {
 }
 
 const CATEGORY_META: Record<string, { icon: typeof Info; cls: string }> = {
-  info: { icon: Info, cls: "text-sky-500" },
-  success: { icon: CheckCircle2, cls: "text-emerald-500" },
-  warning: { icon: AlertTriangle, cls: "text-amber-500" },
+  info: { icon: Info, cls: "text-info" },
+  success: { icon: CheckCircle2, cls: "text-success" },
+  warning: { icon: AlertTriangle, cls: "text-warning" },
   action: { icon: Zap, cls: "text-accent" },
 };
 
@@ -163,53 +165,60 @@ export function NotificationsBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button
+      <IconButton
         type="button"
         aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="relative grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn("relative", open && "bg-surface-muted text-foreground")}
       >
         <Bell size={18} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-foreground">
+          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-foreground ring-2 ring-surface">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
-      </button>
+      </IconButton>
 
       {open && (
         <div
           // A panel of buttons + text, not a menu of menuitems — so "dialog".
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 z-40 mt-1.5 w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-soft-lg"
+          className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <div className="-mx-1.5 -mt-1.5 mb-1.5 flex items-center justify-between gap-2 border-b border-border py-2.5 pl-4 pr-2.5">
             <span className="text-sm font-semibold">Notifications</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {loading && <Loader2 size={13} className="animate-spin text-muted-foreground" />}
               {unread > 0 && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={markAll}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+                  className="h-7 gap-1 px-2.5 text-muted-foreground hover:text-foreground"
                 >
                   <CheckCheck size={13} />
                   Mark all read
-                </button>
+                </Button>
               )}
             </div>
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto">
             {items.length === 0 ? (
-              <p className="px-3 py-10 text-center text-sm text-muted-foreground">
-                You&apos;re all caught up.
-              </p>
+              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
+                <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent" aria-hidden>
+                  <Bell size={20} />
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  You&apos;re all caught up.
+                </p>
+              </div>
             ) : (
-              <ul className="divide-y divide-border">
+              <ul className="space-y-0.5">
                 {items.map((n) => {
                   const meta = CATEGORY_META[n.category] ?? CATEGORY_META.info;
                   const Icon = meta.icon;
@@ -221,9 +230,9 @@ export function NotificationsBell() {
                         disabled={!clickable && !!n.read_at}
                         onClick={() => openItem(n)}
                         className={cn(
-                          "flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
+                          "flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                           clickable ? "hover:bg-surface-muted" : "cursor-default",
-                          !n.read_at && "bg-accent/5"
+                          !n.read_at && "bg-accent-softer"
                         )}
                       >
                         <Icon size={16} className={cn("mt-0.5 shrink-0", meta.cls)} aria-hidden />
@@ -235,7 +244,7 @@ export function NotificationsBell() {
                             {!n.read_at && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />}
                           </span>
                           {n.body && <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{n.body}</span>}
-                          <span className="mt-0.5 block text-[11px] text-muted-foreground/70">{relTime(n.created_at)}</span>
+                          <span className="mt-1 block text-[11px] text-subtle-foreground">{relTime(n.created_at)}</span>
                         </span>
                       </button>
                     </li>

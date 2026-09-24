@@ -227,7 +227,7 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-foreground/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-[#111315]/30 backdrop-blur-[3px] motion-safe:animate-fadeIn"
         onClick={onClose}
       />
       <aside
@@ -235,22 +235,22 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-border bg-surface text-foreground shadow-soft-lg"
+        className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-border bg-surface text-foreground shadow-soft-lg sm:rounded-l-3xl"
       >
         {/* Header */}
-        <div className="flex shrink-0 items-start gap-2 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 items-start gap-2 border-b border-border px-5 py-4 sm:px-6">
           {stack.length > 0 && (
-            <IconButton aria-label="Back to previous object" size="sm" onClick={back} className="mt-0.5">
-              <ArrowLeft size={15} />
+            <IconButton aria-label="Back to previous object" onClick={back} className="-ml-1.5 -mt-0.5">
+              <ArrowLeft size={17} />
             </IconButton>
           )}
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-xs text-accent">{active}</p>
-            <h2 id={titleId} className="mt-0.5 text-base font-semibold leading-snug">
+            <p className="font-mono text-xs text-accent-strong">{active}</p>
+            <h2 id={titleId} className="mt-1 text-lg font-semibold leading-snug tracking-tight">
               {o ? o.name : state.status === "loading" ? "Loading…" : "Knowledge object"}
             </h2>
             {o && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
                 <Chip tone="accent">{classLabel(o.intelligence_class)}</Chip>
                 {o.domain && <Chip>{domainLabel(o.domain)}</Chip>}
                 {o.object_type && <Chip>{humanize(o.object_type)}</Chip>}
@@ -258,28 +258,28 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
               </div>
             )}
           </div>
-          <IconButton ref={closeRef} aria-label="Close object" size="sm" onClick={onClose}>
-            <X size={16} />
+          <IconButton ref={closeRef} aria-label="Close object" onClick={onClose} className="-mr-1.5 -mt-0.5">
+            <X size={18} />
           </IconButton>
         </div>
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
           {state.status === "loading" && <DrawerSkeleton />}
 
           {state.status === "error" && (
             <div
               role="alert"
               className={cn(
-                "rounded-xl border px-3.5 py-3 text-sm",
+                "rounded-xl border px-4 py-3 text-sm",
                 state.notFound
-                  ? "border-border bg-surface-muted/60 text-muted-foreground"
+                  ? "border-border bg-surface-muted text-muted-foreground"
                   : "border-danger/30 bg-danger/10 text-danger"
               )}
             >
               <p>{state.message}</p>
               {!state.notFound && (
-                <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReload((n) => n + 1)}>
+                <Button variant="secondary" size="sm" className="mt-3" onClick={() => setReload((n) => n + 1)}>
                   <RefreshCw size={13} />
                   Retry
                 </Button>
@@ -288,9 +288,9 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
           )}
 
           {o && data && (
-            <div className="space-y-5">
+            <div className="divide-y divide-border">
               {/* Governance */}
-              <section aria-label="Governance">
+              <section aria-label="Governance" className={sectionClass}>
                 <div className="flex flex-wrap gap-1.5">
                   <Chip tone="strong" title="Authority — what the Brain believes when sources conflict">
                     <BadgeCheck size={12} aria-hidden />
@@ -315,7 +315,7 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
                     <Chip tone="warning">{STATUS_LABEL[o.status] ?? humanize(o.status)}</Chip>
                   )}
                 </div>
-                <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
                   <Fact label="Implementation" value={o.implementation_status ? IMPLEMENTATION_LABEL[o.implementation_status] ?? humanize(o.implementation_status) : null} />
                   <Fact label="Validation" value={o.internal_validation ? VALIDATION_LABEL[o.internal_validation] ?? humanize(o.internal_validation) : null} />
                   <Fact label="Priority" value={o.priority ? PRIORITY_LABEL[o.priority] ?? humanize(o.priority) : null} />
@@ -327,10 +327,10 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
 
               {/* Summary */}
               {o.summary && (
-                <section aria-label="Summary">
+                <section aria-label="Summary" className={sectionClass}>
                   <p className="text-sm leading-relaxed text-foreground/90">{o.summary}</p>
                   {(o.applies_to.length > 0 || o.goals.length > 0 || o.platforms.length > 0) && (
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-3 flex flex-wrap gap-1.5">
                       {o.applies_to.map((t) => <Chip key={`a-${t}`} title="Applies to">{t}</Chip>)}
                       {o.goals.map((t) => <Chip key={`g-${t}`} title="Goal">{humanize(t)}</Chip>)}
                       {o.platforms.map((t) => <Chip key={`p-${t}`} title="Platform">{humanize(t)}</Chip>)}
@@ -340,46 +340,46 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
               )}
 
               {/* Provenance */}
-              <section aria-labelledby={`${titleId}-src`}>
+              <section aria-labelledby={`${titleId}-src`} className={sectionClass}>
                 <h3 id={`${titleId}-src`} className={sectionHeading}>Where it came from</h3>
                 <Provenance o={o} />
               </section>
 
               {/* Compiled markdown */}
               {o.compiled_markdown && (
-                <section aria-label="Full object">
+                <section aria-label="Full object" className={sectionClass}>
                   <FullObject markdown={o.compiled_markdown} />
                 </section>
               )}
 
               {/* Relationships */}
-              <section aria-labelledby={`${titleId}-rel`}>
+              <section aria-labelledby={`${titleId}-rel`} className={sectionClass}>
                 <h3 id={`${titleId}-rel`} className={sectionHeading}>
-                  <Link2 size={12} aria-hidden /> How it connects
+                  <Link2 size={14} aria-hidden /> How it connects
                 </h3>
                 <Relationships self={o.ref} list={data.relationships} onOpen={navigate} />
               </section>
 
               {/* Linked learning */}
-              <section aria-labelledby={`${titleId}-lrn`}>
+              <section aria-labelledby={`${titleId}-lrn`} className={sectionClass}>
                 <h3 id={`${titleId}-lrn`} className={sectionHeading}>
-                  <Lightbulb size={12} aria-hidden /> Learning built on it
+                  <Lightbulb size={14} aria-hidden /> Learning built on it
                 </h3>
                 {data.learning.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No learning records reference this object yet.</p>
+                  <p className="text-sm text-muted-foreground">No learning records reference this object yet.</p>
                 ) : (
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-2">
                     {data.learning.map((l) => (
-                      <li key={l.id} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs">
+                      <li key={l.id} className="rounded-xl border border-border bg-surface px-3.5 py-3 text-xs">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-accent">{l.ref}</span>
-                          <span className={cn("rounded-full border px-1.5 py-px text-[10px] font-semibold", LEARNING_TYPE_TONE[l.record_type] ?? "border-border text-muted-foreground")}>
+                          <span className="font-mono text-accent-strong">{l.ref}</span>
+                          <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-medium", LEARNING_TYPE_TONE[l.record_type] ?? "border-border text-muted-foreground")}>
                             {LEARNING_TYPE_LABEL[l.record_type] ?? humanize(l.record_type)}
                           </span>
                           <span className="text-muted-foreground">{LEARNING_STATUS_LABEL[l.status] ?? humanize(l.status)}</span>
                           {l.department && <span className="text-muted-foreground">· {l.department}</span>}
                         </div>
-                        <p className="mt-0.5 font-medium text-foreground">{l.title}</p>
+                        <p className="mt-1.5 text-sm font-medium text-foreground">{l.title}</p>
                       </li>
                     ))}
                   </ul>
@@ -391,7 +391,7 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
 
         {/* Actions */}
         {o && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-5 py-4 sm:px-6">
             <Button size="sm" onClick={() => ask(o.ref, o.name)}>
               <MessageSquare size={14} />
               Ask about this
@@ -407,17 +407,20 @@ export function ObjectDrawer({ refId, onClose, onAsk }: ObjectDrawerProps) {
   );
 }
 
+// Drawer sections are stacked with hairline dividers (divide-y on the parent).
+const sectionClass = "py-5 first:pt-0 last:pb-0";
+
 const sectionHeading =
-  "mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground";
+  "mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground [&>svg]:text-accent";
 
 type ChipTone = "muted" | "accent" | "strong" | "warning" | "success";
 
 const CHIP_TONE: Record<ChipTone, string> = {
-  muted: "border-border bg-surface-muted/60 text-muted-foreground",
-  accent: "border-accent/30 bg-accent/10 text-accent",
+  muted: "border-transparent bg-surface-muted text-muted-foreground",
+  accent: "border-transparent bg-accent-soft text-accent-strong",
   strong: "border-border bg-surface text-foreground",
-  warning: "border-warning/40 bg-warning/10 text-warning",
-  success: "border-success/30 bg-success/10 text-success",
+  warning: "border-transparent bg-warning/10 text-warning",
+  success: "border-transparent bg-success/10 text-success",
 };
 
 /** Small rounded label used across the drawer + pages. */
@@ -436,7 +439,7 @@ export function Chip({
     <span
       title={title}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4",
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium",
         CHIP_TONE[tone],
         className
       )}
@@ -450,8 +453,8 @@ function Fact({ label, value }: { label: string; value: string | null | undefine
   if (!value) return null;
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="truncate text-foreground">{value}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 }
@@ -478,7 +481,7 @@ function Provenance({ o }: { o: KnowledgeDetailResponse["object"] }) {
           href={o.source_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-accent hover:underline"
+          className="inline-flex max-w-full items-center gap-1 text-accent-strong hover:underline"
         >
           <span className="truncate">{o.source_url.replace(/^https?:\/\//, "")}</span>
           <ExternalLink size={11} aria-hidden />
@@ -489,12 +492,12 @@ function Provenance({ o }: { o: KnowledgeDetailResponse["object"] }) {
     ]);
   }
   if (rows.length === 0 && claims.length === 0 && sources.length === 0) {
-    return <p className="text-xs text-muted-foreground">No provenance recorded for this object.</p>;
+    return <p className="text-sm text-muted-foreground">No provenance recorded for this object.</p>;
   }
   return (
-    <div className="rounded-lg border border-border bg-surface-muted/40 px-3 py-2 text-xs">
+    <div className="rounded-xl border border-border bg-surface-muted/50 px-4 py-3 text-sm">
       {rows.length > 0 && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>
@@ -504,17 +507,17 @@ function Provenance({ o }: { o: KnowledgeDetailResponse["object"] }) {
         </dl>
       )}
       {claims.length > 0 && (
-        <div className={rows.length ? "mt-2" : ""}>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Source claims</p>
-          <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-foreground/90">
+        <div className={rows.length ? "mt-3 border-t border-border pt-3" : ""}>
+          <p className="text-xs font-medium text-muted-foreground">Source claims</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-foreground/90">
             {claims.map((c, i) => <li key={i}>{c}</li>)}
           </ul>
         </div>
       )}
       {sources.length > 0 && (
-        <div className={rows.length || claims.length ? "mt-2" : ""}>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Sources</p>
-          <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-foreground/90">
+        <div className={rows.length || claims.length ? "mt-3 border-t border-border pt-3" : ""}>
+          <p className="text-xs font-medium text-muted-foreground">Sources</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-foreground/90">
             {sources.map((s, i) => <li key={i} className="break-words">{s}</li>)}
           </ul>
         </div>
@@ -527,23 +530,27 @@ function Provenance({ o }: { o: KnowledgeDetailResponse["object"] }) {
 function FullObject({ markdown }: { markdown: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-border">
+    <div className="overflow-hidden rounded-xl border border-border">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <span className="inline-flex items-center gap-1.5">
-          {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+          {open ? (
+            <ChevronDown size={15} className="text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronRight size={15} className="text-muted-foreground" aria-hidden />
+          )}
           Read the full object
         </span>
-        <span className="text-[11px] font-normal text-muted-foreground">
+        <span className="text-xs font-normal text-muted-foreground">
           {Math.max(1, Math.round(markdown.length / 1000))}k chars
         </span>
       </button>
       {open && (
-        <div className="border-t border-border px-3 py-3 text-sm leading-relaxed text-foreground">
+        <div className="border-t border-border px-4 py-4 text-sm leading-relaxed text-foreground">
           <Markdown content={markdown} />
         </div>
       )}
@@ -561,7 +568,7 @@ function Relationships({
   onOpen: (ref: string) => void;
 }) {
   if (list.length === 0) {
-    return <p className="text-xs text-muted-foreground">No confirmed or suggested connections yet.</p>;
+    return <p className="text-sm text-muted-foreground">No confirmed or suggested connections yet.</p>;
   }
   const out = list.filter((r) => r.direction === "out");
   const inn = list.filter((r) => r.direction === "in");
@@ -570,19 +577,19 @@ function Relationships({
       <button
         type="button"
         onClick={() => onOpen(r.ref)}
-        className="flex w-full items-start gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-left text-xs transition-colors hover:border-accent/40 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-start gap-2 rounded-xl border border-border bg-surface px-3.5 py-2.5 text-left text-sm transition-colors hover:border-accent/30 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 leading-snug">
           {incoming ? (
             <>
-              <span className="font-mono text-accent">{r.ref}</span>{" "}
+              <span className="font-mono text-xs text-accent-strong">{r.ref}</span>{" "}
               <span className="font-medium text-foreground">{r.name}</span>{" "}
               <span className="text-muted-foreground">{relationshipLabel(r.type)} {self}</span>
             </>
           ) : (
             <>
               <span className="text-muted-foreground">{relationshipLabel(r.type)}</span>{" "}
-              <span className="font-mono text-accent">{r.ref}</span>{" "}
+              <span className="font-mono text-xs text-accent-strong">{r.ref}</span>{" "}
               <span className="font-medium text-foreground">{r.name}</span>
             </>
           )}
@@ -597,17 +604,17 @@ function Relationships({
     </li>
   );
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {out.length > 0 && (
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">This object…</p>
-          <ul className="space-y-1">{out.map((r) => row(r, false))}</ul>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">This object…</p>
+          <ul className="space-y-1.5">{out.map((r) => row(r, false))}</ul>
         </div>
       )}
       {inn.length > 0 && (
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Other objects…</p>
-          <ul className="space-y-1">{inn.map((r) => row(r, true))}</ul>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Other objects…</p>
+          <ul className="space-y-1.5">{inn.map((r) => row(r, true))}</ul>
         </div>
       )}
     </div>
@@ -623,15 +630,15 @@ function DrawerSkeleton() {
         <div className="h-5 w-20 animate-pulse rounded-full bg-surface-muted" />
       </div>
       <div className="space-y-2">
-        <div className="h-3 w-11/12 animate-pulse rounded bg-surface-muted" />
-        <div className="h-3 w-4/5 animate-pulse rounded bg-surface-muted [animation-delay:120ms]" />
-        <div className="h-3 w-2/3 animate-pulse rounded bg-surface-muted [animation-delay:240ms]" />
+        <div className="h-3 w-11/12 animate-pulse rounded-full bg-surface-muted" />
+        <div className="h-3 w-4/5 animate-pulse rounded-full bg-surface-muted [animation-delay:120ms]" />
+        <div className="h-3 w-2/3 animate-pulse rounded-full bg-surface-muted [animation-delay:240ms]" />
       </div>
-      <div className="h-20 animate-pulse rounded-lg bg-surface-muted" />
-      <div className="h-10 animate-pulse rounded-lg bg-surface-muted" />
+      <div className="h-20 animate-pulse rounded-xl bg-surface-muted" />
+      <div className="h-11 animate-pulse rounded-xl bg-surface-muted" />
       <div className="space-y-1.5">
-        <div className="h-8 animate-pulse rounded-lg bg-surface-muted" />
-        <div className="h-8 animate-pulse rounded-lg bg-surface-muted [animation-delay:120ms]" />
+        <div className="h-10 animate-pulse rounded-xl bg-surface-muted" />
+        <div className="h-10 animate-pulse rounded-xl bg-surface-muted [animation-delay:120ms]" />
       </div>
     </div>
   );

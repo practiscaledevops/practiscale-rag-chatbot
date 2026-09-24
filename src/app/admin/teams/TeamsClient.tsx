@@ -138,7 +138,7 @@ function BudgetBar({ spend, budget }: { spend: number; budget: number | null }) 
 
       {hasBudget ? (
         <div
-          className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface-muted"
+          className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface-sunken"
           role="progressbar"
           aria-label="Monthly budget used"
           aria-valuenow={Math.round(pct)}
@@ -157,7 +157,7 @@ function BudgetBar({ spend, budget }: { spend: number; budget: number | null }) 
       )}
 
       {over && (
-        <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-danger/10 px-1.5 py-0.5 text-[11px] font-medium text-danger">
+        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger">
           <AlertTriangle size={12} aria-hidden />
           Over budget by {formatUsd(spend - budget)}
         </div>
@@ -171,14 +171,14 @@ function BudgetBar({ spend, budget }: { spend: number; budget: number | null }) 
 // ===========================================================================
 function RoleBadge({ role }: { role: TeamRole }) {
   const styles: Record<TeamRole, string> = {
-    owner: "bg-accent/12 text-accent",
+    owner: "bg-accent-soft text-accent-strong",
     manager: "bg-surface-muted text-muted-foreground",
     member: "bg-surface-muted text-muted-foreground",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
         styles[role]
       )}
     >
@@ -320,14 +320,18 @@ function TeamFormModal({
     }
   }
 
-  const inputClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40";
+  // Shared field look; single-line inputs add a fixed height, the textarea
+  // adds vertical padding instead.
+  const fieldClass =
+    "w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
+  const inputClass = cn(fieldClass, "h-11");
+  const labelClass = "block text-xs font-medium text-muted-foreground";
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <div className="space-y-1.5">
-          <label htmlFor="team-name" className="block text-sm font-medium">
+          <label htmlFor="team-name" className={labelClass}>
             Name
           </label>
           <input
@@ -343,8 +347,8 @@ function TeamFormModal({
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="team-desc" className="block text-sm font-medium">
-            Description <span className="text-muted-foreground">(optional)</span>
+          <label htmlFor="team-desc" className={labelClass}>
+            Description <span className="font-normal">(optional)</span>
           </label>
           <textarea
             id="team-desc"
@@ -352,18 +356,18 @@ function TeamFormModal({
             onChange={(e) => setDescription(e.target.value)}
             maxLength={500}
             rows={2}
-            className={cn(inputClass, "resize-none")}
+            className={cn(fieldClass, "resize-none py-2.5")}
             placeholder="What this team is for"
           />
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="team-budget" className="block text-sm font-medium">
+          <label htmlFor="team-budget" className={labelClass}>
             Monthly budget{" "}
-            <span className="text-muted-foreground">(USD, optional)</span>
+            <span className="font-normal">(USD, optional)</span>
           </label>
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
               $
             </span>
             <input
@@ -385,7 +389,7 @@ function TeamFormModal({
         {err && (
           <p
             role="alert"
-            className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger"
+            className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger"
           >
             {err}
           </p>
@@ -395,11 +399,7 @@ function TeamFormModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            disabled={pending}
-            className="bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
-          >
+          <Button type="submit" variant="primary" disabled={pending}>
             {pending && <Loader2 size={16} className="animate-spin" />}
             {submitLabel}
           </Button>
@@ -501,13 +501,13 @@ function TeamCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface shadow-soft">
+    <div className="rounded-2xl border border-border bg-surface shadow-soft">
       {/* Header: name + description, member count, actions */}
-      <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+      <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold">{team.name}</h3>
+          <h3 className="truncate text-base font-semibold">{team.name}</h3>
           {team.description ? (
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
               {team.description}
             </p>
           ) : null}
@@ -538,12 +538,12 @@ function TeamCard({
       </div>
 
       {/* Budget bar */}
-      <div className="p-4">
+      <div className="px-5 py-4">
         <BudgetBar spend={team.spendUsd} budget={team.monthlyBudgetUsd} />
       </div>
 
       {/* Roster */}
-      <div className="border-t border-border p-4 pt-3">
+      <div className="border-t border-border px-5 pb-5 pt-3">
         {team.members.length > 0 ? (
           <ul className="divide-y divide-border">
             {team.members.map((m) => (
@@ -571,11 +571,11 @@ function TeamCard({
             onChange={(e) => setNewEmail(e.target.value)}
             placeholder="member@practiscale.co"
             autoComplete="off"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40"
+            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           />
           <Button
             type="submit"
-            size="sm"
+            size="md"
             variant="secondary"
             disabled={addingMember || !newEmail.trim()}
           >
@@ -624,9 +624,9 @@ function TeamCard({
           </Button>
           <Button
             type="button"
+            variant="danger"
             onClick={del}
             disabled={deleting}
-            className="bg-danger text-white hover:bg-danger/90 dark:bg-danger dark:text-white dark:hover:bg-danger/90"
           >
             {deleting && <Loader2 size={16} className="animate-spin" />}
             Delete team
@@ -686,11 +686,11 @@ export function TeamsClient() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-5xl">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Teams &amp; budgets</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Teams &amp; budgets</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Organize users into teams, set a monthly spend budget, and track
             usage{monthLabel ? ` for ${monthLabel}` : ""}.
@@ -698,8 +698,8 @@ export function TeamsClient() {
         </div>
         <Button
           type="button"
+          variant="primary"
           onClick={() => setCreateOpen(true)}
-          className="bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
         >
           <Plus size={16} />
           New team
@@ -710,7 +710,7 @@ export function TeamsClient() {
       {actionError && (
         <p
           role="alert"
-          className="mt-4 flex items-start justify-between gap-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger"
+          className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
         >
           <span>{actionError}</span>
           <button
@@ -726,7 +726,7 @@ export function TeamsClient() {
       {/* Body */}
       <div className="mt-6">
         {loadError ? (
-          <div className="rounded-xl border border-border bg-surface p-8 text-center">
+          <div className="rounded-2xl border border-border bg-surface p-8 text-center">
             <p className="text-sm text-danger">{loadError}</p>
             <Button
               type="button"
@@ -739,22 +739,23 @@ export function TeamsClient() {
             </Button>
           </div>
         ) : teams === null ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface p-12 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-surface p-12 text-sm text-muted-foreground">
             <Loader2 size={16} className="animate-spin" aria-hidden />
             Loading teams…
           </div>
         ) : teams.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-surface p-12 text-center">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-surface-muted text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
               <Users size={20} aria-hidden />
             </div>
-            <h2 className="mt-3 text-sm font-semibold">No teams yet</h2>
+            <h2 className="mt-3 text-sm font-medium">No teams yet</h2>
             <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
               Create your first team to group users and set a monthly budget.
             </p>
             <Button
               type="button"
-              className="mt-4 bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
+              variant="primary"
+              className="mt-4"
               onClick={() => setCreateOpen(true)}
             >
               <Plus size={16} />

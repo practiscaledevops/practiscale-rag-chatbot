@@ -15,13 +15,15 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/Button";
+import { IconButton } from "@/components/IconButton";
 import { APPROVAL_STATUS_LABEL, type ApprovalItem, type ReviewAction } from "@/lib/approvals";
 
 const STATUS_CLS: Record<string, string> = {
-  pending: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  approved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  rejected: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  changes_requested: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  pending: "bg-warning/10 text-warning",
+  approved: "bg-success/10 text-success",
+  rejected: "bg-danger/10 text-danger",
+  changes_requested: "bg-info/10 text-info",
 };
 
 function relTime(iso: string): string {
@@ -63,10 +65,10 @@ export function ApprovalsClient() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:py-8">
+    <div className="w-full">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-          <ClipboardCheck size={20} className="text-accent" />
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <ClipboardCheck size={22} className="text-accent" />
           Approvals
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -75,37 +77,44 @@ export function ApprovalsClient() {
         </p>
       </div>
 
-      <div className="mt-5 flex items-center gap-2">
-        {(["pending", "all"] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            className={cn(
-              "rounded-full border px-3 py-1 text-sm transition-colors",
-              filter === f
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-muted-foreground hover:bg-surface-muted"
-            )}
-          >
-            {f === "pending" ? "Pending" : "All"}
-          </button>
-        ))}
+      <div className="mt-6 flex items-center gap-3">
+        <div className="inline-flex rounded-full bg-surface-muted p-1">
+          {(["pending", "all"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFilter(f)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                filter === f
+                  ? "bg-surface text-foreground shadow-soft"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {f === "pending" ? "Pending" : "All"}
+            </button>
+          ))}
+        </div>
         {loading && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
       </div>
 
       {items && !enabled ? (
-        <p className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+        <p className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
           Approvals aren&apos;t enabled yet — run migration 0010_approvals.sql in Supabase.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 space-y-3">
           {(items ?? []).map((it) => (
             <ApprovalRow key={it.id} item={it} onReviewed={load} />
           ))}
           {!loading && (items?.length ?? 0) === 0 && (
-            <li className="rounded-xl border border-border bg-surface px-4 py-12 text-center text-sm text-muted-foreground">
-              {filter === "pending" ? "Nothing waiting for review." : "No submissions yet."}
+            <li className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent">
+                <ClipboardCheck size={20} />
+              </span>
+              <p className="text-sm text-muted-foreground">
+                {filter === "pending" ? "Nothing waiting for review." : "No submissions yet."}
+              </p>
             </li>
           )}
         </ul>
@@ -138,22 +147,23 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
   );
 
   return (
-    <li className="rounded-xl border border-border bg-surface shadow-soft">
-      <div className="flex items-start gap-3 p-3">
-        <button
+    <li className="rounded-2xl border border-border bg-surface shadow-soft">
+      <div className="flex items-start gap-3 p-4">
+        <IconButton
           type="button"
+          size="sm"
           onClick={() => setExpanded((e) => !e)}
-          className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-surface-muted"
+          className="-mt-0.5 shrink-0"
           aria-label={expanded ? "Collapse" : "Expand"}
         >
           {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-        </button>
+        </IconButton>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-sm font-medium">{item.title}</span>
             <span
               className={cn(
-                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                "rounded-full px-2.5 py-0.5 text-xs font-medium",
                 STATUS_CLS[item.status]
               )}
             >
@@ -172,13 +182,13 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-3 py-3">
+        <div className="border-t border-border px-4 py-4">
           {item.prompt && (
             <p className="mb-2 text-xs text-muted-foreground">
               <span className="font-semibold">Prompt:</span> {item.prompt}
             </p>
           )}
-          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface-muted/60 p-3 text-sm text-foreground/90">
+          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-4 text-sm text-foreground/90">
             {item.content}
           </div>
 
@@ -189,42 +199,45 @@ function ApprovalRow({ item, onReviewed }: { item: ApprovalItem; onReviewed: () 
           )}
 
           {isPending && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-3">
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional note to the submitter…"
                 rows={2}
-                className="w-full resize-none rounded-lg border border-border bg-surface px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full resize-none rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   disabled={!!busy}
                   onClick={() => review("approve")}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600/90 disabled:opacity-50"
                 >
                   {busy === "approve" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                   Approve
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   disabled={!!busy}
                   onClick={() => review("request_changes")}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface-muted disabled:opacity-50"
                 >
                   {busy === "request_changes" ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
                   Request changes
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   disabled={!!busy}
                   onClick={() => review("reject")}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-500/10 disabled:opacity-50 dark:text-rose-400"
+                  className="border-danger/30 text-danger hover:bg-danger/10"
                 >
                   {busy === "reject" ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
                   Reject
-                </button>
+                </Button>
               </div>
             </div>
           )}

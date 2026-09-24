@@ -9,10 +9,10 @@ import { cn } from "@/lib/utils";
 import { APPROVAL_STATUS_LABEL, type ApprovalItem } from "@/lib/approvals";
 
 const STATUS_CLS: Record<string, string> = {
-  pending: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  approved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  rejected: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  changes_requested: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  pending: "bg-warning/10 text-warning",
+  approved: "bg-success/10 text-success",
+  rejected: "bg-danger/10 text-danger",
+  changes_requested: "bg-info/10 text-info",
 };
 
 function relTime(iso: string): string {
@@ -66,18 +66,26 @@ export function MyApprovalsClient() {
         </header>
 
         {items && !enabled ? (
-          <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground">
+          <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
             Approvals aren&apos;t enabled yet — ask an admin to run migration 0010.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {(items ?? []).map((it) => (
               <Row key={it.id} item={it} />
             ))}
             {!loading && (items?.length ?? 0) === 0 && (
-              <li className="rounded-xl border border-border bg-surface px-4 py-12 text-center text-sm text-muted-foreground">
-                You haven&apos;t submitted anything for approval yet. Use “Submit for
-                approval” under an assistant answer.
+              <li className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-6 py-12 text-center">
+                <span
+                  aria-hidden
+                  className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+                >
+                  <ClipboardCheck size={20} />
+                </span>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  You haven&apos;t submitted anything for approval yet. Use “Submit for
+                  approval” under an assistant answer.
+                </p>
               </li>
             )}
           </ul>
@@ -90,13 +98,16 @@ export function MyApprovalsClient() {
 function Row({ item }: { item: ApprovalItem }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <li className="rounded-xl border border-border bg-surface shadow-soft">
+    <li className="rounded-2xl border border-border bg-surface shadow-soft">
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-start gap-3 p-3 text-left"
+        className={cn(
+          "flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-surface-muted/60",
+          expanded ? "rounded-t-2xl" : "rounded-2xl"
+        )}
       >
-        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground">
+        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground">
           {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         </span>
         <span className="min-w-0 flex-1">
@@ -104,7 +115,7 @@ function Row({ item }: { item: ApprovalItem }) {
             <span className="truncate text-sm font-medium">{item.title}</span>
             <span
               className={cn(
-                "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                "rounded-full px-2.5 py-0.5 text-xs font-medium",
                 STATUS_CLS[item.status]
               )}
             >
@@ -121,12 +132,12 @@ function Row({ item }: { item: ApprovalItem }) {
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-border px-3 py-3">
-          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface-muted/60 p-3 text-sm text-foreground/90">
+        <div className="border-t border-border px-4 py-4">
+          <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-xl bg-surface-muted p-4 text-sm text-foreground/90">
             {item.content}
           </div>
           {item.reviewNote && (
-            <p className="mt-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
+            <p className="mt-3 rounded-xl border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Reviewer note:</span> {item.reviewNote}
             </p>
           )}

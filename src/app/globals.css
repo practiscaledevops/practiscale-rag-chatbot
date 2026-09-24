@@ -3,92 +3,79 @@
 @tailwind utilities;
 
 /*
- * Practiscale design system — shared with the Brain dashboard.
+ * Practiscale design system — "Qubi" layout language in PractiScale green.
  *
- * Brand: the Practiscale mark is a teal-emerald -> deep-slate gradient. The UI is
- * a soft, enterprise, light-first surface with a teal-green accent and a dark
- * sidebar. Colors are space-separated RGB channels so Tailwind's
- * `rgb(var(--x) / <alpha-value>)` opacity modifiers work. Light is the default;
- * the dark block swaps automatically via prefers-color-scheme.
+ * A constant dark navigation rail on the left and a clean WHITE workspace on the
+ * right; Inter throughout; pill buttons and generous radii. The palette follows
+ * the reference kit (white / dark gray / light gray / tea green) with the kit's
+ * Vivid Violet — and every violet/blue tint — replaced by PractiScale green.
  *
- * The SIDEBAR tokens are intentionally dark in BOTH themes — the sidebar is a
- * constant dark rail with the white logo, matching the brand.
+ * Colors are space-separated RGB channels so Tailwind's
+ * `rgb(var(--x) / <alpha-value>)` opacity modifiers work. The app is light by
+ * design; dark mode is opt-in only (tailwind darkMode: "class").
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  /* surfaces + text (light) */
-  --background: 247 249 248;      /* soft green-tinted white */
-  --foreground: 16 24 27;         /* near-black slate */
-  --surface: 255 255 255;         /* cards / panels */
-  --surface-muted: 241 245 244;   /* subtle fill */
-  --border: 224 231 229;
-  --muted: 241 245 244;
-  --muted-foreground: 90 106 106; /* slate-teal gray */
+  /* ---- Workspace (white) ---- */
+  --background: 255 255 255;        /* #FFFFFF — the main panel */
+  --foreground: 17 19 21;           /* #111315 — primary text */
+  --surface: 255 255 255;           /* cards / bubbles / menus */
+  --surface-muted: 245 246 246;     /* #F5F6F6 — composer pill, subtle fills, hover */
+  --surface-sunken: 239 241 240;    /* #EFF1F0 — pressed / tracks */
+  --border: 234 236 236;            /* #EAECEC — hairlines */
+  --muted: 245 246 246;
+  --muted-foreground: 110 115 117;  /* #6E7375 — secondary text */
+  --subtle-foreground: 170 174 175; /* ~#BBBBBB kit Light Gray — placeholders, meta */
 
-  /* brand accent — Practiscale teal-green */
-  --accent: 13 148 136;           /* teal-600 */
+  /* ---- PractiScale green (replaces the kit's Vivid Violet #9747FF) ---- */
+  --accent: 16 163 136;             /* #10A388 — icons, active states, fills */
+  --accent-strong: 10 124 106;      /* #0A7C6A — accent TEXT on white (AA) */
+  --accent-hover: 12 140 117;       /* #0C8C75 */
   --accent-foreground: 255 255 255;
-  --accent-hover: 15 118 110;     /* teal-700 */
-  --ring: 20 184 166;             /* teal-500 */
+  --accent-soft: 230 247 241;       /* #E6F7F1 — replaces lavender tints (user bubble) */
+  --accent-softer: 243 251 248;     /* #F3FBF8 — faint wash (composer footer) */
+  --ring: 23 195 165;               /* #17C3A5 */
 
-  --success: 22 163 74;
-  --warning: 202 138 4;
+  /* ---- Tea green (kept from the kit): primary pills + send ---- */
+  --tea: 221 253 197;               /* #DDFDC5 */
+  --tea-hover: 205 248 172;
+  --tea-foreground: 24 44 16;       /* deep green ink on tea */
+
+  /* ---- Semantic ---- */
+  --success: 21 128 61;             /* green-700 — AA as text on its tint */
+  --warning: 161 98 7;              /* amber-700 — AA as text on its tint */
   --danger: 220 38 38;
-  --info: 37 99 235;              /* information (blue) */
-  --private: 124 58 237;          /* CEO / private (violet) */
+  --info: 37 99 235;
+  --private: 4 120 87;              /* CEO / private — deep emerald */
 
-  /* Elevation — theme-aware so popovers/cards lift on light AND dark. */
-  --shadow-soft: 0 1px 2px rgb(16 24 27 / 0.04), 0 4px 16px rgb(16 24 27 / 0.06);
-  --shadow-soft-lg: 0 2px 8px rgb(16 24 27 / 0.06), 0 12px 32px rgb(16 24 27 / 0.10);
+  /* ---- Elevation (soft, green-tinted) ---- */
+  --shadow-soft: 0 1px 2px rgb(17 19 21 / 0.04), 0 4px 16px rgb(17 19 21 / 0.05);
+  --shadow-soft-lg: 0 2px 8px rgb(17 19 21 / 0.06), 0 16px 40px rgb(17 19 21 / 0.10);
+  --shadow-float: 0 1px 2px rgb(10 90 75 / 0.04), 0 10px 34px -6px rgb(10 90 75 / 0.12);
 
-  /* dark sidebar rail (constant across themes) */
-  --sidebar: 11 23 22;            /* near-black, faint teal */
-  --sidebar-foreground: 228 234 232;
-  --sidebar-muted: 140 158 155;
-  --sidebar-border: 28 41 39;
+  /* ---- Dark navigation rail (constant) ---- */
+  --sidebar: 22 22 22;              /* #161616 — rail */
+  --sidebar-panel: 30 30 30;        /* #1E1E1E — the rounded panel */
+  --sidebar-item: 39 39 39;         /* #272727 — row pills */
+  --sidebar-item-hover: 49 49 49;   /* #313131 */
+  --sidebar-foreground: 236 236 236;
+  --sidebar-muted: 150 150 150;
+  --sidebar-border: 48 48 48;
 
-  /* brand gradient stops (teal-emerald -> deep teal -> slate) */
-  --brand-1: 23 195 165;
-  --brand-2: 14 158 139;
-  --brand-3: 27 59 75;
-}
+  /* ---- Folder accent bars (kit colors; violet swapped for green) ---- */
+  --folder-1: 125 227 244;          /* cyan */
+  --folder-2: 242 240 168;          /* soft yellow */
+  --folder-3: 245 163 217;          /* pink */
+  --folder-4: 221 253 197;          /* tea */
+  --folder-5: 23 195 165;           /* PractiScale green */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Deep GREEN-tinted premium surfaces with clear elevation steps:
-       canvas < sidebar < base surface < raised (composer/menus). */
-    --background: 7 15 13;        /* canvas */
-    --foreground: 237 244 240;    /* near-white primary text */
-    --surface: 15 28 24;          /* cards / panels */
-    --surface-muted: 21 40 33;    /* raised: composer, menus, hover */
-    --border: 37 64 55;
-    --muted: 21 40 33;
-    --muted-foreground: 154 176 168; /* green-gray secondary text */
-
-    --accent: 32 200 181;         /* brighter premium teal (#20C8B5) */
-    --accent-foreground: 5 20 17;
-    --accent-hover: 70 220 202;
-    --ring: 32 200 181;
-
-    --success: 45 214 160;
-    --warning: 243 182 97;        /* amber (#F3B661) */
-    --danger: 255 123 117;        /* error (#FF7B75) */
-    --info: 117 191 255;          /* information (#75BFFF) */
-    --private: 182 164 255;       /* CEO / private (#B6A4FF) */
-
-    /* Deep, visible elevation on the dark canvas (near-black, higher opacity). */
-    --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.5);
-    --shadow-soft-lg: 0 8px 24px rgb(0 0 0 / 0.55), 0 18px 50px -10px rgb(0 0 0 / 0.7);
-
-    /* deeper green-tinted sidebar rail */
-    --sidebar: 11 21 18;
-    --sidebar-foreground: 231 240 236;
-    --sidebar-muted: 148 172 164;
-    --sidebar-border: 30 52 45;
-  }
+  /* ---- Brand gradient (logo: teal-blue -> emerald) ---- */
+  --brand-1: 23 195 165;            /* #17C3A5 */
+  --brand-2: 14 158 139;            /* #0E9E8B */
+  --brand-3: 12 104 112;            /* #0C6870 */
 }
 
 * {
@@ -104,6 +91,7 @@ body {
   background-color: rgb(var(--background));
   color: rgb(var(--foreground));
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -112,25 +100,26 @@ body {
   background-color: rgb(var(--accent) / 0.18);
 }
 
-/* Consistent focus ring for keyboard users across custom controls. */
-:focus-visible {
-  outline: 2px solid rgb(var(--ring));
-  outline-offset: 2px;
+/* Consistent focus ring for keyboard users across custom controls. In the base
+   layer so a component's own `outline-none` / ring utilities take precedence. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 /* ---- Brand utilities ------------------------------------------------------ */
 
-/* Deep green -> teal -> slate gradient for hero panels, primary CTAs, marks. */
 .bg-brand-gradient {
   background-image: linear-gradient(
     135deg,
     rgb(var(--brand-1)) 0%,
-    rgb(var(--brand-2)) 45%,
+    rgb(var(--brand-2)) 50%,
     rgb(var(--brand-3)) 100%
   );
 }
 
-/* Gradient text (headlines, logotype accents). */
 .text-brand-gradient {
   background-image: linear-gradient(135deg, rgb(var(--brand-1)), rgb(var(--brand-2)));
   -webkit-background-clip: text;
@@ -138,26 +127,159 @@ body {
   color: transparent;
 }
 
-/* Soft ambient sidebar glow behind the brand mark. */
-.sidebar-glow {
-  background: radial-gradient(120% 60% at 0% 0%, rgb(var(--brand-2) / 0.14), transparent 70%);
+/* "Hello, Name" — soft green gradient with a slow shimmer (Cortex greeting). */
+.text-greeting-gradient {
+  background-image: linear-gradient(
+    100deg,
+    #8fe3c3 0%,
+    rgb(var(--brand-1)) 35%,
+    rgb(var(--brand-2)) 60%,
+    #8fe3c3 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: greeting-shimmer 9s ease-in-out infinite;
 }
 
-/* Refined thin scrollbars that match the theme. */
+@keyframes greeting-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ---- Mini orb (assistant avatar) ------------------------------------------
+ * A CSS-only miniature of the hero BrainOrb: frosted membrane, glowing green
+ * core, and a drifting dot-grid that reads as a turning globe. Cheap enough to
+ * render on every message; only the streaming one gets the `--active` class.
+ */
+.orb-mini {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  isolation: isolate;
+}
+.orb-mini::before {
+  /* soft halo */
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(var(--brand-1) / 0.32), transparent 68%);
+  z-index: -1;
+}
+.orb-mini__membrane {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 56%, #d6f78c 0%, #86e9b9 26%, #22c29f 50%, #0f8c80 72%, transparent 76%),
+    radial-gradient(circle at 34% 28%, #ffffff 0%, #effcf7 40%, #cdeee3 100%);
+  box-shadow:
+    inset 0 0 0 1.5px rgb(255 255 255 / 0.95),
+    inset 0 -3px 6px rgb(10 110 95 / 0.22),
+    0 2px 6px rgb(10 110 95 / 0.22);
+  animation: orb-morph 8s ease-in-out infinite;
+}
+.orb-mini__membrane::after {
+  /* frosted veil + dot globe */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 38%, rgb(255 255 255 / 0.55) 74%),
+    radial-gradient(circle, rgb(255 255 255 / 0.85) 0.55px, transparent 0.9px) 0 0 / 3px 3px;
+  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 76%);
+  mask-image: radial-gradient(circle, #000 60%, transparent 76%);
+  animation: orb-dots 7s linear infinite;
+}
+.orb-mini__gloss {
+  position: absolute;
+  top: 12%;
+  left: 18%;
+  width: 34%;
+  height: 26%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.95), transparent 70%);
+  pointer-events: none;
+}
+.orb-mini--active .orb-mini__membrane {
+  animation-duration: 2.6s;
+}
+.orb-mini--active .orb-mini__membrane::after {
+  animation-duration: 2.2s;
+}
+.orb-mini--active::before {
+  animation: orb-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes orb-morph {
+  0%, 100% { border-radius: 50% 50% 50% 50% / 50% 50% 50% 50%; }
+  25% { border-radius: 54% 46% 52% 48% / 47% 55% 45% 53%; }
+  50% { border-radius: 47% 53% 46% 54% / 54% 46% 53% 47%; }
+  75% { border-radius: 52% 48% 55% 45% / 48% 53% 47% 52%; }
+}
+@keyframes orb-dots {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 0, 30px 0; }
+}
+@keyframes orb-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* Typing indicator dots. */
+@keyframes dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+.typing-dot {
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-greeting-gradient,
+  .orb-mini__membrane,
+  .orb-mini__membrane::after,
+  .orb-mini--active::before,
+  .typing-dot {
+    animation: none !important;
+  }
+}
+
+/* Truncated row labels fade out instead of an ellipsis (sidebar chat rows). */
+.fade-truncate {
+  -webkit-mask-image: linear-gradient(90deg, #000 78%, transparent);
+  mask-image: linear-gradient(90deg, #000 78%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Refined thin scrollbars. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgb(var(--muted-foreground) / 0.4) transparent;
+  scrollbar-color: rgb(var(--muted-foreground) / 0.3) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: rgb(var(--muted-foreground) / 0.35);
+  background-color: rgb(var(--muted-foreground) / 0.28);
   border-radius: 9999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(var(--muted-foreground) / 0.55);
+  background-color: rgb(var(--muted-foreground) / 0.5);
+}
+/* The dark rail gets light-on-dark scrollbars. */
+.scroll-dark {
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+}
+.scroll-dark::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.14);
 }

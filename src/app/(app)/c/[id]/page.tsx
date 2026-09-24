@@ -28,7 +28,7 @@ export default async function ConversationPage({
       .maybeSingle(),
     supabase
       .from("messages")
-      .select("id, role, content")
+      .select("id, role, content, created_at")
       .eq("conversation_id", id)
       .order("created_at", { ascending: true }),
   ]);
@@ -38,6 +38,8 @@ export default async function ConversationPage({
     id: r.id as string,
     role: r.role as Message["role"],
     content: (r.content as string) ?? "",
+    // Shown as the bubble timestamp (formatted client-side in the viewer's zone).
+    createdAt: r.created_at ? new Date(r.created_at as string) : undefined,
   }));
 
   return (

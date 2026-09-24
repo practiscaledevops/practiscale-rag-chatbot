@@ -270,35 +270,35 @@ export function CommandPalette({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-foreground/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-[#111315]/30 backdrop-blur-[3px] motion-safe:animate-fadeIn"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-surface shadow-soft-lg">
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <Search size={16} className="shrink-0 text-muted-foreground" aria-hidden />
+      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border border-border bg-surface shadow-soft-lg motion-safe:animate-fadeUp">
+        <div className="flex items-center gap-3 border-b border-border px-5">
+          <Search size={18} className="shrink-0 text-muted-foreground" aria-hidden />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search commands, chats, modes…"
-            className="w-full bg-transparent py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="h-14 w-full border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-subtle-foreground focus-visible:outline-none"
           />
-          <kbd className="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+          <kbd className="hidden rounded-md border border-border bg-surface-muted px-1.5 py-0.5 text-[11px] text-muted-foreground sm:inline">
             Esc
           </kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-1.5">
+        <div ref={listRef} className="max-h-[50vh] overflow-y-auto p-2">
           {filtered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">No matches.</p>
+            <p className="px-3 py-10 text-center text-sm text-muted-foreground">No matches.</p>
           ) : (
             groupsOrder.map((group) => {
               const rows = filtered.filter((c) => c.group === group);
               if (rows.length === 0) return null;
               return (
-                <div key={group} className="mb-1">
-                  <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div key={group} className="mb-1.5 last:mb-0">
+                  <p className="px-3 pb-1.5 pt-2 text-xs font-medium text-muted-foreground">
                     {group}
                   </p>
                   {rows.map((c) => {
@@ -314,14 +314,18 @@ export function CommandPalette({
                         onMouseMove={() => setActive(idx)}
                         onClick={() => c.run()}
                         className={cn(
-                          "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                          isActive ? "bg-accent/10 text-foreground" : "text-foreground/90 hover:bg-surface-muted"
+                          "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors",
+                          isActive ? "bg-surface-muted text-foreground" : "text-foreground/90 hover:bg-surface-muted"
                         )}
                       >
-                        <Icon size={15} className="shrink-0 text-muted-foreground" aria-hidden />
+                        <Icon
+                          size={16}
+                          className={cn("shrink-0", isActive ? "text-accent" : "text-muted-foreground")}
+                          aria-hidden
+                        />
                         <span className="min-w-0 flex-1 truncate">{c.label}</span>
                         {c.hint && (
-                          <span className="shrink-0 text-[11px] text-muted-foreground">{c.hint}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{c.hint}</span>
                         )}
                         {isActive && (
                           <CornerDownLeft size={13} className="shrink-0 text-muted-foreground" aria-hidden />

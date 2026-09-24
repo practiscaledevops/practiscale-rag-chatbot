@@ -1,6 +1,8 @@
 "use client";
 
-import { Menu, PanelLeftOpen, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Menu, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import type { UsageState } from "@/components/AppShell";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { PwaInstall } from "@/components/PwaInstall";
@@ -8,10 +10,10 @@ import { IconButton } from "@/components/IconButton";
 import { cn } from "@/lib/utils";
 
 export interface TopBarProps {
-  /** Conversation title, or a neutral default. */
+  /** Conversation title, shown muted next to the wordmark. */
   title?: string | null;
 
-  /** Session token usage. */
+  /** Month-to-date token usage. */
   usage: UsageState;
 
   /** Sidebar controls. */
@@ -23,76 +25,75 @@ export interface TopBarProps {
 }
 
 /**
- * App top bar: sidebar toggles on the left, then the conversation title; a token
- * usage meter and the provider-grouped model switcher on the right. Usage is fed
- * by the token counts the Brain reports on each finished turn (see ChatView).
+ * Workspace header (reference "Qubi" layout): the PractiScale wordmark on the
+ * left (with the open conversation's title), and pills on the right — a
+ * tea-green usage pill, notifications, and the dark Settings pill.
  */
-export function TopBar({
-  title,
-  usage,
-  collapsed = false,
-  onOpenMobile,
-  onExpand,
-  className,
-}: TopBarProps) {
+export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand, className }: TopBarProps) {
+  const pathname = usePathname();
+  const onSettings = pathname.startsWith("/settings");
   return (
     <header
       className={cn(
-        "flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/80 px-3 backdrop-blur sm:px-4",
+        "flex h-[76px] shrink-0 items-center justify-between gap-3 bg-background px-4 sm:px-6 lg:px-10",
         className
       )}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
-        {/* Mobile: open the drawer. */}
-        <IconButton
-          aria-label="Open sidebar"
-          className="lg:hidden"
-          onClick={onOpenMobile}
-        >
-          <Menu size={18} />
+      <div className="flex min-w-0 items-center gap-2">
+        <IconButton aria-label="Open sidebar" className="-ml-1 lg:hidden" onClick={onOpenMobile}>
+          <Menu size={20} />
         </IconButton>
-        {/* Desktop: reopen a collapsed sidebar. */}
         {collapsed && (
-          <IconButton
-            aria-label="Expand sidebar"
-            className="hidden lg:inline-flex"
-            onClick={onExpand}
-          >
-            <PanelLeftOpen size={18} />
+          <IconButton aria-label="Expand sidebar" className="-ml-1 hidden lg:inline-flex" onClick={onExpand}>
+            <PanelLeftOpen size={20} />
           </IconButton>
         )}
-        <h1 className="truncate text-sm font-semibold text-foreground">
-          {title || "New chat"}
-        </h1>
+        <Link
+          href="/"
+          className="shrink-0 rounded-lg text-[26px] font-semibold leading-none tracking-[-0.03em] text-[#12202a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="PractiScale home"
+        >
+          Practi<span className="text-accent">Scale</span>
+        </Link>
+        {title && (
+          <span className="hidden min-w-0 items-center gap-2 md:flex">
+            <span className="text-lg font-light text-subtle-foreground" aria-hidden>
+              /
+            </span>
+            <span className="truncate text-sm font-medium text-muted-foreground">{title}</span>
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
-        <UsageMeter usage={usage} />
+      <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+        <UsagePill usage={usage} />
         <PwaInstall />
         <NotificationsBell />
+        <Link
+          href="/settings"
+          aria-current={onSettings ? "page" : undefined}
+          className="inline-flex h-10 items-center gap-2 rounded-full bg-[#262626] px-3 text-sm font-medium text-white transition-colors hover:bg-[#1a1a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4"
+        >
+          <Settings size={17} aria-hidden />
+          <span className="hidden sm:inline">Settings</span>
+        </Link>
       </div>
     </header>
   );
 }
 
-/**
- * Token counter for the current month. Seeded from the user's persisted
- * month-to-date usage and incremented live per turn. Informational only — there
- * is no budget cap or limit bar.
- */
-function UsageMeter({ usage }: { usage: UsageState }) {
+/** Month-to-date token count in the kit's tea-green pill. Informational only. */
+function UsagePill({ usage }: { usage: UsageState }) {
   const { sessionTokens, lastTurnTokens } = usage;
-
+  const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(sessionTokens);
   return (
     <div
-      className="hidden items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 sm:flex"
+      className="hidden h-10 items-center gap-2 rounded-full bg-tea px-4 text-sm font-medium text-tea-foreground sm:inline-flex"
       title={`${sessionTokens.toLocaleString()} tokens this month · last turn ${lastTurnTokens.toLocaleString()}`}
     >
-      <Sparkles size={13} className="text-accent" aria-hidden />
-      <span className="tabular-nums text-xs font-medium text-muted-foreground">
-        {sessionTokens.toLocaleString()}
-        <span className="ml-1 hidden text-muted-foreground/70 md:inline">tokens this month</span>
-      </span>
+      <Sparkles size={16} aria-hidden />
+      <span className="tabular-nums">{compact}</span>
+      <span className="hidden font-normal opacity-75 lg:inline">tokens this month</span>
     </div>
   );
 }

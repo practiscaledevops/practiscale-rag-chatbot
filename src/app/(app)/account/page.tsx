@@ -130,7 +130,7 @@ export default async function AccountPage() {
           {/* This-month usage */}
           <section
             aria-labelledby="usage-heading"
-            className="rounded-xl border border-border bg-surface p-5 shadow-soft sm:p-6"
+            className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6"
           >
             <h2 id="usage-heading" className="text-sm font-semibold">
               Usage this month
@@ -163,7 +163,7 @@ export default async function AccountPage() {
           {/* Access summary */}
           <section
             aria-labelledby="access-heading"
-            className="rounded-xl border border-border bg-surface p-5 shadow-soft sm:p-6"
+            className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6"
           >
             <h2 id="access-heading" className="text-sm font-semibold">
               Your access
@@ -221,10 +221,10 @@ export default async function AccountPage() {
           {isAdmin && (
             <a
               href="/admin"
-              className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface p-5 shadow-soft transition-colors hover:bg-surface-muted"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5 shadow-soft transition-colors hover:bg-surface-muted"
             >
               <span className="flex items-center gap-3">
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent/10 text-accent">
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent">
                   <ShieldCheck size={18} />
                 </span>
                 <span>
@@ -258,7 +258,7 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-background p-3">
+    <div className="rounded-xl bg-surface-muted p-4">
       <div className="flex items-center gap-1.5 text-muted-foreground">
         <Icon size={14} aria-hidden />
         <span className="text-xs font-medium">{label}</span>
@@ -290,7 +290,7 @@ function ChipList({ items }: { items: string[] }) {
       {items.map((item) => (
         <span
           key={item}
-          className="inline-flex items-center rounded-md border border-border bg-surface-muted px-2 py-0.5 text-xs font-medium text-foreground"
+          className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-foreground"
         >
           {item}
         </span>

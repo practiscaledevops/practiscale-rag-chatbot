@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Check,
+  CheckCheck,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -18,13 +20,16 @@ import {
   Database,
   Download,
   FileText,
+  Gavel,
   Image as ImageIcon,
   Lightbulb,
   Loader2,
   Mic,
+  MoreHorizontal,
   PanelRight,
   Paperclip,
   Pencil,
+  PieChart,
   RefreshCw,
   RotateCw,
   SearchCheck,
@@ -32,6 +37,8 @@ import {
   Square,
   ThumbsDown,
   ThumbsUp,
+  Volume2,
+  VolumeX,
   Wand2,
   X,
 } from "lucide-react";
@@ -44,7 +51,18 @@ import { Modal } from "@/components/Modal";
 import { cn } from "@/lib/utils";
 import { spliceText } from "@/lib/voice-shared";
 import { isExecutiveMode, type WorkMode, type WorkModeDef } from "@/lib/work-modes";
-import { WorkModePicker, ModelQualityPicker, SourceScopePicker } from "./ComposerControls";
+import {
+  WorkModePicker,
+  ModelQualityPicker,
+  SourceScopePicker,
+  OutputFormatPicker,
+  DeepResearchToggle,
+} from "./ComposerControls";
+import { PromptLibrary } from "./PromptLibrary";
+import { BrainOrb } from "@/components/BrainOrb";
+import { OrbAvatar } from "@/components/OrbAvatar";
+import { PopoverMenu } from "@/components/PopoverMenu";
+import { readPrefs } from "@/lib/prefs";
 import { CompareDrafts, type ComparePane } from "./CompareDrafts";
 import { friendlyError, parseOptions } from "@/lib/chat-format";
 import {
@@ -102,29 +120,29 @@ function formatBytes(n: number): string {
 }
 
 // Suggested-prompt cards on the empty state — each prefills the composer.
-const SUGGESTIONS = [
+const SUGGESTIONS: Suggestion[] = [
   {
-    icon: Database,
-    title: "Summarize reports",
-    hint: "Pull the key trends together",
+    icon: PieChart,
+    title: "Synthesize data",
+    hint: "Turn our latest call scores into 5 key takeaways.",
     prompt:
-      "Summarize the key trends across our latest reports and highlight what changed.",
+      "Summarize our latest call scores into the 5 key takeaways, with the numbers behind each.",
   },
   {
-    icon: Wand2,
-    title: "Brainstorm ideas",
-    hint: "Explore fresh angles",
+    icon: Lightbulb,
+    title: "Creative brainstorm",
+    hint: "Fresh angles for our next outreach campaign.",
     prompt:
       "Brainstorm five fresh angles for our next customer outreach campaign.",
   },
   {
-    icon: SearchCheck,
+    icon: Gavel,
     title: "Check facts",
-    hint: "Verify against the knowledge base",
+    hint: "Verify a claim against our knowledge base.",
     prompt:
       "Fact-check the following claim against our knowledge base and cite your sources: ",
   },
-] as const;
+];
 
 // Mode-specific launchpad — the selected work mode feels functional before the
 // user types. Falls back to the general SUGGESTIONS above.
@@ -180,14 +198,6 @@ const MODE_SUGGESTIONS: Partial<Record<WorkMode, Suggestion[]>> = {
     { icon: Database, title: "Case study post", hint: "Proof-led", prompt: "Write a proof-led post about this client result: " },
   ],
 };
-
-// Quick pills — lightweight starters under the composer.
-const PILLS: { label: string; prompt: string }[] = [
-  { label: "Summarize a document", prompt: "Summarize this document: " },
-  { label: "Draft an email", prompt: "Draft a short, professional email that " },
-  { label: "Explain a concept", prompt: "Explain this concept in simple terms: " },
-  { label: "Compare options", prompt: "Compare the pros and cons of " },
-];
 
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
 
@@ -333,7 +343,8 @@ export function ChatView({
   initialMessages,
   initialInput,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs } = useAppShell();
+  const { selection, setSelection, options, addUsage, firstName, mode, setMode, modeDefs, outputType, setOutputType } =
+    useAppShell();
   const router = useRouter();
   const [branching, setBranching] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -345,7 +356,10 @@ export function ChatView({
 
   // Source scope: collections the user narrowed to (empty = all company
   // knowledge). Per-message setting, forwarded to /api/chat → the Brain.
-  const [scopeCollectionIds, setScopeCollectionIds] = useState<string[]>([]);
+  const [scopeCollectionIds, setScopeCollectionIds] = useState<string[]>(() => {
+    const ids = readPrefs().collectionIds;
+    return Array.isArray(ids) ? ids.filter((x) => typeof x === "string") : [];
+  });
 
   // Attachments for the NEXT message: files the user attached, uploaded to
   // /api/attachments for text extraction, then forwarded with the send. Cleared
@@ -474,9 +488,10 @@ export function ChatView({
       tier: selection.value,
       mode,
       conversationId: activeConversationId,
+      outputType,
       ...(scopeCollectionIds.length ? { collectionIds: scopeCollectionIds } : {}),
     }),
-    [selection.value, mode, activeConversationId, scopeCollectionIds]
+    [selection.value, mode, activeConversationId, scopeCollectionIds, outputType]
   );
 
   // useChat throttles message-state updates (experimental_throttle below) but
@@ -840,26 +855,36 @@ export function ChatView({
     // navigates away mid-stream — a new chat otherwise has no id server-side and
     // the in-progress answer is lost on navigation. One extra round-trip, only on
     // the first message of a new chat; existing threads already carry their id.
+    //
+    // NOTE: this goes through the plain /api/conversations route, NOT the
+    // saveConversationTurn Server Action. A Server Action resolving right as we
+    // replaceState to /c/[id] makes Next.js re-render that route, which remounts
+    // this view mid-stream and the in-progress answer vanishes from the screen.
     let convId = conversationIdRef.current;
     if (convId === null) {
       if (preCreatingRef.current) return; // a create is already in flight
       preCreatingRef.current = true;
       try {
-        const res = await saveConversationTurn({
-          conversationId: null,
-          tier: selection.tier,
-          messages: [{ role: "user", content: firstText }],
+        const res = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tier: selection.tier, messages: [{ role: "user", content: firstText }] }),
         });
-        if (res.ok && res.conversationId) {
-          convId = res.conversationId;
-          conversationIdRef.current = res.conversationId;
-          setActiveConversationId(res.conversationId);
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("chat:saved", { detail: { id: res.conversationId, title: res.title, created: true } })
-            );
-            window.history.replaceState(null, "", `/c/${res.conversationId}`);
-          }
+        const json = (await res.json().catch(() => ({}))) as {
+          conversationId?: string;
+          conversation?: { title?: string | null } | null;
+        };
+        if (res.ok && json.conversationId) {
+          const id = json.conversationId;
+          convId = id;
+          conversationIdRef.current = id;
+          setActiveConversationId(id);
+          window.dispatchEvent(
+            new CustomEvent("chat:saved", {
+              detail: { id, title: json.conversation?.title ?? firstText.slice(0, 80), created: true },
+            })
+          );
+          window.history.replaceState(null, "", `/c/${id}`);
         }
       } catch {
         // Pre-create failed — fall back to an unscoped turn. The client's own
@@ -1202,38 +1227,137 @@ export function ChatView({
   const attachReadyCount = attachments.filter((a) => a.status === "ready").length;
   const canSend = (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading;
 
-  const composer = (
+  // --- Deep research (toggles the "Deep analysis" preset) -----------------
+  const deepOption = useMemo(() => options.find((o) => o.value === "deep" && o.available) ?? null, [options]);
+  const beforeDeepRef = useRef<ModelOption | null>(null);
+  const deepOn = selection.value === "deep";
+  const toggleDeep = useCallback(() => {
+    if (!deepOption) return;
+    if (deepOn) {
+      setSelection(beforeDeepRef.current ?? options.find((o) => o.value === "smart") ?? tierPreset("recommended"));
+    } else {
+      beforeDeepRef.current = selection;
+      setSelection(deepOption);
+    }
+  }, [deepOption, deepOn, options, selection, setSelection]);
+
+  // --- Saved prompts (the user's prompt library) --------------------------
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
+  // --- Client-only bits: timestamps (viewer's time zone) + read aloud ------
+  // Rendered after mount so server (UTC) and browser times never disagree.
+  const [hydrated, setHydrated] = useState(false);
+  const [canSpeak, setCanSpeak] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+    setCanSpeak(typeof window !== "undefined" && "speechSynthesis" in window);
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    };
+  }, []);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const speak = useCallback(
+    (id: string, text: string) => {
+      if (!("speechSynthesis" in window)) return;
+      const synth = window.speechSynthesis;
+      if (speakingId === id) {
+        synth.cancel();
+        setSpeakingId(null);
+        return;
+      }
+      synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(speakableText(text));
+      const done = () => setSpeakingId((cur) => (cur === id ? null : cur));
+      utterance.onend = done;
+      utterance.onerror = done;
+      setSpeakingId(id);
+      synth.speak(utterance);
+    },
+    [speakingId]
+  );
+
+  const composerCore = {
+    textareaRef: taRef,
+    value: input,
+    onChange: handleInputChange,
+    onKeyDown,
+    onSubmit: onFormSubmit,
+    busy,
+    onStop: stop,
+    onSlashSelect: prefill,
+    attachments,
+    onAttachFiles: addFiles,
+    onRemoveAttachment: removeAttachment,
+    onRetryAttachment: retryAttachment,
+    onDictate: insertDictation,
+    canSend,
+    onOpenLibrary: () => setLibraryOpen(true),
+  };
+
+  // New-chat composer card: deep research, mode + format on the left; model +
+  // knowledge scope (icon-only) on the right, next to mic + send.
+  const heroComposer = (
     <Composer
-      textareaRef={taRef}
-      value={input}
-      onChange={handleInputChange}
-      onKeyDown={onKeyDown}
-      onSubmit={onFormSubmit}
-      busy={busy}
-      onStop={stop}
-      onSlashSelect={prefill}
-      mode={mode}
-      onModeChange={setMode}
-      modeDefs={modeDefs}
-      selection={selection}
-      options={options}
-      onSelectModel={setSelection}
-      scopeCollectionIds={scopeCollectionIds}
-      onScopeChange={setScopeCollectionIds}
-      attachments={attachments}
-      onAttachFiles={addFiles}
-      onRemoveAttachment={removeAttachment}
-      onRetryAttachment={retryAttachment}
-      onDictate={insertDictation}
-      canSend={canSend}
+      {...composerCore}
+      variant="hero"
+      leftTools={
+        <>
+          {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} />}
+          <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} />
+          <OutputFormatPicker value={outputType} onChange={setOutputType} iconOnly />
+        </>
+      }
+      rightTools={
+        <>
+          <ModelQualityPicker options={options} value={selection} onChange={setSelection} iconOnly align="right" />
+          <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} iconOnly align="right" />
+        </>
+      }
     />
   );
 
+  // In-thread: a compact settings row above the pill composer.
+  const toolbar = (
+    <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+      <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
+      <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
+      <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" />
+      <SourceScopePicker value={scopeCollectionIds} onChange={setScopeCollectionIds} size="sm" />
+      {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
+      {selection.value === "smart" && activity.routedTier && (
+        <span className="inline-flex h-8 items-center rounded-full bg-surface-muted px-2.5 text-[11px] text-muted-foreground">
+          Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
+        </span>
+      )}
+      {mode === "auto" && activity.modeInfo && (
+        <span
+          className="inline-flex h-8 items-center gap-1 rounded-full bg-accent-soft px-2.5 text-[11px] font-medium text-accent-strong"
+          title="The Brain picked this expert for your last message. Choose a mode to override."
+        >
+          <Sparkles size={11} aria-hidden /> Auto → {activity.modeInfo.label}
+        </span>
+      )}
+      <div className="ml-auto flex items-center gap-0.5">
+        {activity.sourcesCount ? (
+          <button
+            type="button"
+            onClick={() => setEvidenceOpen((o) => !o)}
+            className="hidden h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+          >
+            <PanelRight size={14} aria-hidden />
+            {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
+          </button>
+        ) : null}
+        <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
+      </div>
+    </div>
+  );
+
+  const suggestions: Suggestion[] = (MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).slice(0, 3);
+
   return (
     <div className="flex h-full flex-col bg-background">
-      {isCeoMode && (
-        <CeoMemoryModal open={memoryOpen} onClose={() => setMemoryOpen(false)} />
-      )}
+      {isCeoMode && <CeoMemoryModal open={memoryOpen} onClose={() => setMemoryOpen(false)} />}
       <ApprovalSubmitModal
         open={!!approvalFor}
         title={approvalTitle}
@@ -1251,402 +1375,373 @@ export function ChatView({
         mode={mode}
         panes={comparePanes}
       />
+      <PromptLibrary open={libraryOpen} onClose={() => setLibraryOpen(false)} onInsert={prefill} />
       <ObjectDrawer refId={drawerRef} onClose={() => setDrawerRef(null)} onAsk={askAbout} />
       {empty ? (
-        // -------- Empty state: greeting centered above, composer docked lower
-        //          (so the upward work-mode menu clears the greeting) ----------
-        <div className="flex h-full flex-col overflow-hidden">
-          <div className="flex flex-1 items-end justify-center px-4 pb-6">
-            <div className="text-center">
-              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                Hello, <span className="text-accent">{titleCase(firstName)}</span>
+        // -------- New chat (reference "Cortex"): orb, greeting, composer card,
+        //          suggestion cards --------------------------------------------
+        <div className="flex h-full flex-col overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col justify-center px-4 pb-10 pt-2 sm:px-6">
+            <div className="flex flex-col items-center text-center">
+              <BrainOrb size={156} active={input.trim().length > 0} className="-mb-3" />
+              <h2 className="text-[30px] font-medium leading-[1.15] tracking-[-0.025em] sm:text-[40px]">
+                <span className="text-greeting-gradient">Hello, {titleCase(firstName)}</span>
               </h2>
-              <p className="mt-2 text-lg text-muted-foreground">
-                What are you working on today?
+              <p className="text-[30px] font-semibold leading-[1.15] tracking-[-0.03em] text-foreground sm:text-[40px]">
+                {isCeoMode ? "What needs your attention?" : "How can I assist you today?"}
               </p>
             </div>
-          </div>
 
-          <div className="shrink-0 px-4 pb-10">
-            <div className="mx-auto w-full max-w-2xl">
-            {composer}
+            <div className="mt-9">{heroComposer}</div>
 
             {isCeoMode ? (
-              // -------- Executive workspace quick actions --------------------
               <>
-                <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {CEO_ACTIONS.map((a) => (
                     <button
                       key={a.label}
                       type="button"
                       onClick={() => prefill(a.prompt)}
-                      className="rounded-xl border border-border bg-surface px-3.5 py-3 text-left text-sm font-medium text-foreground shadow-soft transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="rounded-2xl border border-border bg-surface px-4 py-3.5 text-left text-[15px] font-medium text-foreground transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {a.label}
                     </button>
                   ))}
                 </div>
-                <div className="mt-4 flex items-center justify-center">
+                <div className="mt-5 flex items-center justify-center">
                   <Button variant="secondary" size="sm" onClick={() => setMemoryOpen(true)}>
                     <Crown size={14} />
                     Executive context
                   </Button>
                 </div>
-                <p className="mt-6 text-center text-xs text-muted-foreground">
-                  Private executive mode. Your context is stored privately and never appears
-                  in other users&apos; chats.
+                <p className="mt-4 text-center text-xs text-subtle-foreground">
+                  Private executive mode. Your context is stored privately and never appears in other users&apos; chats.
                 </p>
               </>
             ) : (
-              <p className="mt-6 text-center text-xs text-muted-foreground">
-                Answers are grounded in your Practiscale knowledge base, with inline
-                sources you can trace back.
-              </p>
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.title}
+                      type="button"
+                      onClick={() => prefill(s.prompt)}
+                      className="group flex flex-col rounded-2xl border border-border bg-surface p-4 text-left transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <s.icon size={20} className="text-muted-foreground transition-colors group-hover:text-accent" aria-hidden />
+                      <span className="mt-5 text-[15px] font-semibold text-foreground">{s.title}</span>
+                      <span className="mt-1 text-[13px] leading-snug text-muted-foreground">{s.hint}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-6 text-center text-xs text-subtle-foreground">
+                  Answers are grounded in your PractiScale knowledge base, with sources you can trace.
+                </p>
+              </>
             )}
-            </div>
           </div>
         </div>
       ) : (
-        // -------- Active thread (chat column + evidence rail) ----------------
+        // -------- Active thread (reference "Qubi") + evidence rail -------------
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl px-4 py-6">
-              {audits.length > 0 && (
-                <div className="mb-6 space-y-3">
-                  {audits.map((a) => (
-                    <JobProgress
-                      key={a.id}
-                      jobId={a.id}
-                      title={a.title}
-                      onDismiss={() => setAudits((prev) => prev.filter((x) => x.id !== a.id))}
-                    />
-                  ))}
-                </div>
-              )}
-              <ul className="space-y-6">
-                {messages.map((m, idx) => (
-                  <li key={m.id}>
-                    {m.role === "user" ? (
-                      editingId === m.id ? (
-                        <EditBox
-                          initial={m.content}
-                          onCancel={() => setEditingId(null)}
-                          onSave={(text) => submitEdit(m.id, text)}
-                        />
-                      ) : (
-                        <div className="group flex flex-col items-end gap-1">
-                          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border bg-surface-muted px-4 py-2.5 text-sm text-foreground">
-                            {m.content}
-                          </div>
-                          {!busy && (
-                            <div className="flex items-center gap-1 pr-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                              <IconButton
-                                aria-label={copiedId === m.id ? "Copied" : "Copy message"}
-                                size="sm"
-                                onClick={() => copy(m.id, m.content)}
-                              >
-                                {copiedId === m.id ? (
-                                  <Check size={14} className="text-success" />
-                                ) : (
-                                  <Copy size={14} />
+            <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
+              <div className="mx-auto w-full max-w-[880px] px-4 pb-6 pt-3 sm:px-8">
+                {audits.length > 0 && (
+                  <div className="mb-6 space-y-3">
+                    {audits.map((a) => (
+                      <JobProgress
+                        key={a.id}
+                        jobId={a.id}
+                        title={a.title}
+                        onDismiss={() => setAudits((prev) => prev.filter((x) => x.id !== a.id))}
+                      />
+                    ))}
+                  </div>
+                )}
+                <ul className="space-y-7">
+                  {messages.map((m, idx) => {
+                    const time = hydrated ? messageTime(m) : null;
+                    const streamingThis = idx === lastIndex && busy;
+
+                    if (m.role === "user") {
+                      return (
+                        <li key={m.id}>
+                          {editingId === m.id ? (
+                            <EditBox
+                              initial={m.content}
+                              onCancel={() => setEditingId(null)}
+                              onSave={(text) => submitEdit(m.id, text)}
+                            />
+                          ) : (
+                            <div className="group flex items-start justify-end gap-3">
+                              <div className="flex min-w-0 max-w-[80%] flex-col items-end">
+                                <div className="whitespace-pre-wrap break-words rounded-[20px] rounded-tr-md bg-accent-soft px-4 py-3 text-[15px] leading-relaxed text-foreground">
+                                  {m.content}
+                                  {time && <MessageTime label={time} className="float-right ml-3 mt-[7px]" />}
+                                </div>
+                                {!busy && (
+                                  <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                                    <IconButton
+                                      aria-label={copiedId === m.id ? "Copied" : "Copy message"}
+                                      size="sm"
+                                      onClick={() => copy(m.id, m.content)}
+                                    >
+                                      {copiedId === m.id ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                                    </IconButton>
+                                    <IconButton aria-label="Edit and resend" size="sm" onClick={() => setEditingId(m.id)}>
+                                      <Pencil size={14} />
+                                    </IconButton>
+                                  </div>
                                 )}
-                              </IconButton>
-                              <IconButton
-                                aria-label="Edit and resend"
-                                size="sm"
-                                onClick={() => setEditingId(m.id)}
-                              >
-                                <Pencil size={14} />
-                              </IconButton>
+                              </div>
+                              <UserAvatar name={firstName} />
                             </div>
                           )}
-                        </div>
-                      )
-                    ) : (
-                      <div className="group flex gap-3">
-                        <span
-                          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-soft"
-                          aria-hidden
-                        >
-                          <Sparkles size={15} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          {(() => {
-                            const { text, options } = parseOptions(m.content);
-                            return (
-                              <>
-                                <div className="text-sm leading-relaxed text-foreground">
-                                  <StreamingMarkdown
-                                    content={text}
-                                    animate={idx === lastIndex && busy}
-                                  />
-                                </div>
-                                {idx === lastIndex && !busy && options.length > 0 && (
-                                  <OptionsPicker
-                                    options={options}
-                                    onPick={pickOption}
-                                    disabled={busy}
-                                  />
-                                )}
-                              </>
-                            );
-                          })()}
-                          {idx === lastIndex &&
-                          !busy &&
-                          typeof activity.confidence === "number" &&
-                          activity.confidence < 0.34 &&
-                          m.content.trim() ? (
-                            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning">
-                              <AlertTriangle size={12} aria-hidden />
-                              Limited supporting knowledge — verify before relying on this.
-                            </div>
-                          ) : null}
-                          {idx === lastIndex && !busy && activity.sourcesCount ? (
-                            <SourcesDisclosure
-                              count={activity.sourcesCount}
-                              sources={activity.sources}
-                            />
-                          ) : null}
-                          {idx === lastIndex && !busy && activity.learning && !(learningState.key === activity.learning.title && learningState.status === "ignored") ? (
-                            <LearningCard
-                              candidate={activity.learning}
-                              state={learningState.key === activity.learning.title ? learningState : { key: activity.learning.title, status: "idle" }}
-                              onSave={(notes) => saveLearning(activity.learning!, notes)}
-                              onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
-                            />
-                          ) : null}
-                          {manualLearning?.messageId === m.id ? (
-                            <LearningCard
-                              candidate={manualLearning.candidate}
-                              state={learningState.key === manualLearning.candidate.title ? learningState : { key: manualLearning.candidate.title, status: "idle" }}
-                              onSave={(notes) => saveLearning(manualLearning.candidate, notes)}
-                              onIgnore={() => setManualLearning(null)}
-                            />
-                          ) : null}
-                          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                            <IconButton
-                              aria-label={copiedId === m.id ? "Copied" : "Copy message"}
-                              size="sm"
-                              onClick={() => copy(m.id, m.content)}
-                            >
-                              {copiedId === m.id ? (
-                                <Check size={14} className="text-success" />
-                              ) : (
-                                <Copy size={14} />
+                        </li>
+                      );
+                    }
+
+                    const { text, options: choices } = parseOptions(m.content);
+                    const wide = text.length > 160 || text.includes("```") || text.includes("\n|");
+                    const approved = approvedIds.has(m.id);
+                    return (
+                      <li key={m.id}>
+                        <div className="group flex items-start gap-3">
+                          <OrbAvatar size={36} active={streamingThis} className="mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className={cn(
+                                "max-w-full rounded-[20px] rounded-tl-md border border-border bg-surface px-5 py-3.5 text-[15px] leading-relaxed text-foreground shadow-[0_1px_2px_rgb(17_19_21/0.03)]",
+                                wide ? "w-full" : "w-fit"
                               )}
-                            </IconButton>
-                            {m.content.trim() && (
-                              <>
+                            >
+                              <StreamingMarkdown content={text} animate={streamingThis} />
+                              {idx === lastIndex && !busy && choices.length > 0 && (
+                                <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
+                              )}
+                              {time && !streamingThis && m.content.trim() && (
+                                <div className="mt-1.5 flex justify-end">
+                                  <MessageTime label={time} />
+                                </div>
+                              )}
+                            </div>
+
+                            {idx === lastIndex &&
+                            !busy &&
+                            typeof activity.confidence === "number" &&
+                            activity.confidence < 0.34 &&
+                            m.content.trim() ? (
+                              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs text-warning">
+                                <AlertTriangle size={12} aria-hidden />
+                                Limited supporting knowledge — verify before relying on this.
+                              </div>
+                            ) : null}
+                            {idx === lastIndex && !busy && activity.sourcesCount ? (
+                              <SourcesDisclosure count={activity.sourcesCount} sources={activity.sources} />
+                            ) : null}
+                            {idx === lastIndex &&
+                            !busy &&
+                            activity.learning &&
+                            !(learningState.key === activity.learning.title && learningState.status === "ignored") ? (
+                              <LearningCard
+                                candidate={activity.learning}
+                                state={
+                                  learningState.key === activity.learning.title
+                                    ? learningState
+                                    : { key: activity.learning.title, status: "idle" }
+                                }
+                                onSave={(notes) => saveLearning(activity.learning!, notes)}
+                                onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
+                              />
+                            ) : null}
+                            {manualLearning?.messageId === m.id ? (
+                              <LearningCard
+                                candidate={manualLearning.candidate}
+                                state={
+                                  learningState.key === manualLearning.candidate.title
+                                    ? learningState
+                                    : { key: manualLearning.candidate.title, status: "idle" }
+                                }
+                                onSave={(notes) => saveLearning(manualLearning.candidate, notes)}
+                                onIgnore={() => setManualLearning(null)}
+                              />
+                            ) : null}
+
+                            {/* Action row: regenerate · read aloud · copy · 👍 · 👎 · more */}
+                            {!streamingThis && m.content.trim() && (
+                              <div
+                                className={cn(
+                                  "mt-1.5 flex items-center gap-0.5 transition-opacity",
+                                  idx === lastIndex
+                                    ? "opacity-100"
+                                    : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+                                )}
+                              >
+                                {idx === lastIndex && (
+                                  <RegenerateMenu options={options} onRegenerate={regenerate} onRegenerateWith={regenerateWith} />
+                                )}
+                                {canSpeak && (
+                                  <IconButton
+                                    aria-label={speakingId === m.id ? "Stop reading aloud" : "Read aloud"}
+                                    title={speakingId === m.id ? "Stop reading aloud" : "Read aloud"}
+                                    size="sm"
+                                    onClick={() => speak(m.id, m.content)}
+                                    className={
+                                      speakingId === m.id
+                                        ? "bg-accent-soft text-accent-strong hover:bg-accent-soft hover:text-accent-strong"
+                                        : undefined
+                                    }
+                                  >
+                                    {speakingId === m.id ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                                  </IconButton>
+                                )}
+                                <IconButton
+                                  aria-label={copiedId === m.id ? "Copied" : "Copy message"}
+                                  title="Copy"
+                                  size="sm"
+                                  onClick={() => copy(m.id, m.content)}
+                                >
+                                  {copiedId === m.id ? <Check size={15} className="text-success" /> : <Copy size={15} />}
+                                </IconButton>
                                 <IconButton
                                   aria-label="Good response"
+                                  title="Good response"
                                   size="sm"
                                   onClick={() => sendFeedback(m, idx, "up")}
-                                  className={feedback[m.id] === "up" ? "text-success" : undefined}
+                                  className={feedback[m.id] === "up" ? "text-accent-strong" : undefined}
                                 >
-                                  <ThumbsUp
-                                    size={14}
-                                    className={feedback[m.id] === "up" ? "fill-current" : ""}
-                                  />
+                                  <ThumbsUp size={15} className={feedback[m.id] === "up" ? "fill-current" : ""} />
                                 </IconButton>
                                 <IconButton
                                   aria-label="Bad response"
+                                  title="Bad response"
                                   size="sm"
                                   onClick={() => sendFeedback(m, idx, "down")}
                                   className={feedback[m.id] === "down" ? "text-danger" : undefined}
                                 >
-                                  <ThumbsDown
-                                    size={14}
-                                    className={feedback[m.id] === "down" ? "fill-current" : ""}
-                                  />
+                                  <ThumbsDown size={15} className={feedback[m.id] === "down" ? "fill-current" : ""} />
                                 </IconButton>
-                                <IconButton
-                                  aria-label={approvedIds.has(m.id) ? "Submitted for approval" : "Submit for approval"}
-                                  size="sm"
-                                  disabled={approvedIds.has(m.id)}
-                                  onClick={() => openApproval(m, idx)}
-                                  className={approvedIds.has(m.id) ? "text-success" : undefined}
-                                >
-                                  {approvedIds.has(m.id) ? (
-                                    <Check size={14} />
-                                  ) : (
-                                    <ClipboardCheck size={14} />
-                                  )}
-                                </IconButton>
-                                <IconButton
-                                  aria-label="Save as learning"
-                                  size="sm"
-                                  title="Save as Organizational Learning"
-                                  onClick={() =>
-                                    setManualLearning((cur) =>
-                                      cur?.messageId === m.id ? null : { messageId: m.id, candidate: candidateFromAnswer(m, idx) }
-                                    )
-                                  }
-                                  className={manualLearning?.messageId === m.id ? "text-private" : undefined}
-                                >
-                                  <Lightbulb size={14} />
-                                </IconButton>
-                              </>
-                            )}
-                            {m.content.trim() && (
-                              <IconButton
-                                aria-label="Branch a new conversation from here"
-                                size="sm"
-                                disabled={branching}
-                                onClick={() => branch(idx)}
-                                title="Branch from here"
-                              >
-                                <GitBranch size={14} />
-                              </IconButton>
-                            )}
-                            {idx === lastIndex && !busy && m.content.trim() && (
-                              <IconButton
-                                aria-label="Compare with another model"
-                                size="sm"
-                                onClick={() => setCompareOpen(true)}
-                                title="Compare drafts"
-                              >
-                                <Columns2 size={14} />
-                              </IconButton>
-                            )}
-                            {idx === lastIndex && !busy && (
-                              <RegenerateMenu
-                                options={options}
-                                onRegenerate={regenerate}
-                                onRegenerateWith={regenerateWith}
-                              />
+                                <PopoverMenu
+                                  label="More actions"
+                                  trigger={<MoreHorizontal size={16} />}
+                                  triggerClassName="h-7 w-7"
+                                  items={[
+                                    {
+                                      label: approved ? "Submitted for approval" : "Submit for approval",
+                                      icon: approved ? Check : ClipboardCheck,
+                                      onSelect: () => openApproval(m, idx),
+                                      disabled: approved,
+                                      active: approved,
+                                    },
+                                    {
+                                      label: "Save as learning",
+                                      icon: Lightbulb,
+                                      active: manualLearning?.messageId === m.id,
+                                      onSelect: () =>
+                                        setManualLearning((cur) =>
+                                          cur?.messageId === m.id
+                                            ? null
+                                            : { messageId: m.id, candidate: candidateFromAnswer(m, idx) }
+                                        ),
+                                    },
+                                    { label: "Branch from here", icon: GitBranch, onSelect: () => branch(idx), disabled: branching },
+                                    ...(idx === lastIndex && !busy
+                                      ? [{ label: "Compare with another model", icon: Columns2, onSelect: () => setCompareOpen(true) }]
+                                      : []),
+                                  ]}
+                                />
+                              </div>
                             )}
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </li>
-                ))}
+                      </li>
+                    );
+                  })}
 
-                {/* Awaiting the first streamed token — compact pipeline status
-                    chip + a skeleton shell that matches the answer layout. */}
-                {status === "submitted" && (
-                  <li aria-live="polite" aria-label="Assistant is working" className="flex gap-3">
-                    <span
-                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-soft"
-                      aria-hidden
-                    >
-                      <Sparkles size={15} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <StatusChip label={activity.label} />
-                      <div className="mt-3 space-y-2" aria-hidden>
-                        <div className="h-3 w-11/12 animate-pulse rounded bg-surface-muted" />
-                        <div className="h-3 w-4/5 animate-pulse rounded bg-surface-muted [animation-delay:120ms]" />
-                        <div className="h-3 w-2/3 animate-pulse rounded bg-surface-muted [animation-delay:240ms]" />
+                  {/* Awaiting the first streamed token: the orb pulses beside a
+                      typing indicator and the live pipeline stage. */}
+                  {status === "submitted" && (
+                    <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-3">
+                      <OrbAvatar size={36} active className="mt-0.5" />
+                      <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                        <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-accent-soft px-4" aria-hidden>
+                          <span className="typing-dot h-2 w-2 rounded-full bg-accent" />
+                          <span className="typing-dot h-2 w-2 rounded-full bg-accent [animation-delay:150ms]" />
+                          <span className="typing-dot h-2 w-2 rounded-full bg-accent [animation-delay:300ms]" />
+                        </span>
+                        <span className="text-sm text-muted-foreground">{activity.label ?? "Thinking"}…</span>
                       </div>
-                    </div>
-                  </li>
-                )}
-              </ul>
+                    </li>
+                  )}
+                </ul>
 
-              {error && (
-                <div
-                  role="alert"
-                  className="mt-6 flex flex-col gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-sm text-danger"
-                >
-                  <div className="flex items-start gap-2">
+                {error && (
+                  <div
+                    role="alert"
+                    className="mt-6 flex flex-col gap-2 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3.5 text-sm text-danger"
+                  >
                     <span className="font-medium">Couldn’t generate a response.</span>
+                    <p className="text-danger/90">{friendlyError(error)}</p>
+                    <div className="mt-0.5 flex flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={regenerate}>
+                        <RefreshCw size={14} />
+                        Retry
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
+                        Try Recommended model
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-danger/90">{friendlyError(error)}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" onClick={regenerate}>
-                      <RefreshCw size={14} />
-                      Retry
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
-                      Try Recommended model
-                    </Button>
+                )}
+
+                {emptyOutput && (
+                  <div
+                    role="alert"
+                    className="mt-6 flex flex-col gap-2 rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3.5 text-sm text-foreground"
+                  >
+                    <span className="font-medium">The model returned no output.</span>
+                    <p className="text-muted-foreground">
+                      This can happen with a specific model. Try again, or switch to the Recommended model.
+                    </p>
+                    <div className="mt-0.5 flex flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={regenerate}>
+                        <RefreshCw size={14} />
+                        Retry
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
+                        Try Recommended model
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {emptyOutput && (
-                <div
-                  role="alert"
-                  className="mt-6 flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-sm text-foreground"
-                >
-                  <span className="font-medium text-foreground">
-                    The model returned no output.
-                  </span>
-                  <p className="text-muted-foreground">
-                    This can happen with a specific model. Try again, or switch to the
-                    Recommended model.
-                  </p>
-                  <div className="mt-0.5 flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" onClick={regenerate}>
-                      <RefreshCw size={14} />
-                      Retry
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={retryWithRecommended}>
-                      Try Recommended model
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          {/* Docked composer */}
-          <div className="relative border-t border-border bg-background/80 backdrop-blur">
-            {/* Jump-to-latest — appears only when the user has scrolled up. */}
-            {!atBottom && messages.length > 0 && (
-              <div className="pointer-events-none absolute inset-x-0 -top-5 flex justify-center">
-                <button
-                  type="button"
-                  onClick={jumpToLatest}
-                  className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground shadow-soft-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-fadeUp"
-                >
-                  <ArrowDown size={13} aria-hidden />
-                  Jump to latest
-                </button>
+                <div ref={bottomRef} />
               </div>
-            )}
-            <div className="mx-auto w-full max-w-3xl px-4 py-3">
-              {/* When Smart Route is active, show which tier it chose last turn. */}
-              {((selection.value === "smart" && activity.routedTier) || (mode === "auto" && activity.modeInfo)) && (
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {selection.value === "smart" && activity.routedTier && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted px-2 py-1 text-[11px] text-muted-foreground">
-                      Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
-                    </span>
-                  )}
-                  {mode === "auto" && activity.modeInfo && (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-1 text-[11px] text-accent"
-                      title="The Brain picked this expert for your last message. Choose a mode to override."
-                    >
-                      <Sparkles size={11} aria-hidden /> Auto → {activity.modeInfo.label}
-                    </span>
-                  )}
-                </div>
-              )}
-              {composer}
-              <div className="mt-2 flex items-center justify-center gap-3 text-xs text-muted-foreground">
-                <span className="hidden sm:inline">
-                  Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
-                </span>
-                {activity.sourcesCount ? (
+            </div>
+
+            {/* Docked composer */}
+            <div className="relative shrink-0 bg-background">
+              {!atBottom && messages.length > 0 && (
+                <div className="pointer-events-none absolute inset-x-0 -top-6 flex justify-center">
                   <button
                     type="button"
-                    onClick={() => setEvidenceOpen((o) => !o)}
-                    className="hidden items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+                    onClick={jumpToLatest}
+                    className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-1.5 text-xs font-medium text-foreground shadow-soft-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-fadeUp"
                   >
-                    <PanelRight size={13} />
-                    {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
+                    <ArrowDown size={13} aria-hidden />
+                    Jump to latest
                   </button>
-                ) : null}
-                <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
+                </div>
+              )}
+              <div className="mx-auto w-full max-w-[880px] px-4 pb-4 pt-1 sm:px-8">
+                {toolbar}
+                <Composer {...composerCore} variant="dock" />
+                <p className="mt-2 hidden text-center text-[11px] text-subtle-foreground sm:block">
+                  Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
+                </p>
               </div>
             </div>
-          </div>
           </div>
           {evidenceOpen && (
             <EvidencePanel
@@ -1665,12 +1760,67 @@ export function ChatView({
   );
 }
 
+/** Local "10:25" time for a message (client-only; see `hydrated`). */
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+function messageTime(m: Message): string | null {
+  if (!m.createdAt) return null;
+  const d = new Date(m.createdAt);
+  return Number.isNaN(d.getTime()) ? null : TIME_FMT.format(d);
+}
+
+/** Timestamp + delivered ticks, as in the reference chat bubbles. */
+function MessageTime({ label, className }: { label: string; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex select-none items-center gap-1 whitespace-nowrap text-[11px] leading-none text-subtle-foreground",
+        className
+      )}
+    >
+      {label}
+      <CheckCheck size={13} className="text-accent/80" aria-hidden />
+    </span>
+  );
+}
+
+/** The user's avatar: their initial on a dark disc. */
+function UserAvatar({ name }: { name: string }) {
+  return (
+    <span
+      aria-hidden
+      className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#262626] text-sm font-semibold text-white"
+    >
+      {(name || "?").charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+/** Plain, speakable text from a markdown answer (for read-aloud). */
+function speakableText(md: string): string {
+  return parseOptions(md)
+    .text.replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\[[^\]\s]{1,40}\](?!\()/g, "")
+    .replace(/^\s*\|?[\s:|-]+\|?\s*$/gm, " ")
+    .replace(/[|*_#>~]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 12_000);
+}
+
 /**
- * The prompt input: an auto-growing textarea in a big rounded card with an
- * attach affordance and a send / stop button. Shared by the empty-state hero and
- * the docked bottom bar.
+ * The prompt input, in two shapes that share the slash-template menu, the
+ * attachments tray and drag-and-drop:
+ *  - "hero" (new chat, reference "Cortex"): a roomy card — textarea, a tools
+ *    row (left/right tool slots, mic, send) and a footer strip with Saved
+ *    prompts + Attach file.
+ *  - "dock" (in thread, reference "Qubi"): a pill with a dark round attach
+ *    button, the textarea, saved prompts, mic and a tea-green send button.
  */
 function Composer({
+  variant,
   textareaRef,
   value,
   onChange,
@@ -1679,21 +1829,17 @@ function Composer({
   busy,
   onStop,
   onSlashSelect,
-  mode,
-  onModeChange,
-  modeDefs,
-  selection,
-  options,
-  onSelectModel,
-  scopeCollectionIds,
-  onScopeChange,
   attachments,
   onAttachFiles,
   onRemoveAttachment,
   onRetryAttachment,
   onDictate,
   canSend,
+  onOpenLibrary,
+  leftTools,
+  rightTools,
 }: {
+  variant: "hero" | "dock";
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -1702,20 +1848,15 @@ function Composer({
   busy: boolean;
   onStop: () => void;
   onSlashSelect: (text: string) => void;
-  mode: WorkMode;
-  onModeChange: (m: WorkMode) => void;
-  modeDefs: WorkModeDef[];
-  selection: ModelOption;
-  options: ModelOption[];
-  onSelectModel: (o: ModelOption) => void;
-  scopeCollectionIds: string[];
-  onScopeChange: (ids: string[]) => void;
   attachments: PendingAttachment[];
   onAttachFiles: (files: FileList | File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onRetryAttachment: (id: string) => void;
   onDictate: (text: string) => void;
   canSend: boolean;
+  onOpenLibrary: () => void;
+  leftTools?: React.ReactNode;
+  rightTools?: React.ReactNode;
 }) {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
@@ -1780,118 +1921,215 @@ function Composer({
     onChange(e);
   }
 
-  return (
-    <form onSubmit={onSubmit} className="relative">
-      {slashOpen && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10">
-          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Templates
-          </p>
-          {matches.map((cmd, i) => (
-            <button
-              key={cmd.name}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => select(cmd)}
-              onMouseMove={() => setActive(i)}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
-                i === activeIdx ? "bg-surface-muted" : "hover:bg-surface-muted"
-              )}
-            >
-              <span className="font-medium text-foreground">/{cmd.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{cmd.hint}</span>
-            </button>
-          ))}
-        </div>
+  const slashMenu = slashOpen ? (
+    <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[50vh] w-72 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp">
+      <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">Templates</p>
+      {matches.map((cmd, i) => (
+        <button
+          key={cmd.name}
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => select(cmd)}
+          onMouseMove={() => setActive(i)}
+          className={cn(
+            "flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition-colors",
+            i === activeIdx ? "bg-accent-soft" : "hover:bg-surface-muted"
+          )}
+        >
+          <span className="font-medium text-foreground">/{cmd.name}</span>
+          <span className="truncate text-xs text-muted-foreground">{cmd.hint}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const fileInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      multiple
+      accept={ACCEPTED_ACCEPT}
+      onChange={onFilesChosen}
+      className="hidden"
+      aria-hidden="true"
+      tabIndex={-1}
+    />
+  );
+
+  const tray =
+    attachments.length > 0 ? (
+      <ul className={cn("flex flex-wrap gap-1.5", variant === "hero" ? "mb-2.5" : "mb-2 px-1")}>
+        {attachments.map((a) => (
+          <AttachmentChip
+            key={a.id}
+            att={a}
+            onRemove={() => onRemoveAttachment(a.id)}
+            onRetry={() => onRetryAttachment(a.id)}
+          />
+        ))}
+      </ul>
+    ) : null;
+
+  const dragProps = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!dragging) setDragging(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      // Only clear when leaving the card, not when moving over a child.
+      if (e.currentTarget === e.target) setDragging(false);
+    },
+    onDrop,
+  };
+
+  const textarea = (placeholder: string, className: string) => (
+    <>
+      <label htmlFor="chat-input" className="sr-only">
+        Message the assistant
+      </label>
+      <textarea
+        id="chat-input"
+        ref={textareaRef}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        rows={variant === "hero" ? 2 : 1}
+        placeholder={placeholder}
+        className={className}
+      />
+    </>
+  );
+
+  const stopButton = (className: string) => (
+    <button
+      type="button"
+      aria-label="Stop generating"
+      onClick={onStop}
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-transform duration-100 hover:bg-[#1a1a1a] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        className
       )}
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!dragging) setDragging(true);
-        }}
-        onDragLeave={(e) => {
-          // Only clear when leaving the card, not when moving over a child.
-          if (e.currentTarget === e.target) setDragging(false);
-        }}
-        onDrop={onDrop}
-        className={cn(
-          "rounded-2xl border bg-surface px-3 pb-2 pt-2.5 shadow-soft transition-[border-color,box-shadow] duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-ring/40",
-          dragging ? "border-accent/60 ring-2 ring-accent/40" : "border-border"
-        )}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ACCEPTED_ACCEPT}
-          onChange={onFilesChosen}
-          className="hidden"
-          aria-hidden="true"
-          tabIndex={-1}
-        />
-        {attachments.length > 0 && (
-          <ul className="mb-2 flex flex-wrap gap-1.5">
-            {attachments.map((a) => (
-              <AttachmentChip
-                key={a.id}
-                att={a}
-                onRemove={() => onRemoveAttachment(a.id)}
-                onRetry={() => onRetryAttachment(a.id)}
-              />
-            ))}
-          </ul>
-        )}
-        <label htmlFor="chat-input" className="sr-only">
-          Message the assistant
-        </label>
-        <textarea
-          id="chat-input"
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          rows={1}
-          placeholder="Message the assistant…  (type / for templates)"
-          className="block max-h-[200px] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        {/* Message controls — these settings apply to the NEXT message. */}
-        <div className="mt-1.5 flex items-center gap-2">
-          <IconButton
-            aria-label={atMax ? `Attachment limit reached (${MAX_FILES})` : "Attach files"}
-            title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
-            type="button"
-            onClick={pickFiles}
-            disabled={atMax}
-            className="shrink-0 text-muted-foreground hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40"
-          >
-            <Paperclip size={17} />
-          </IconButton>
-          <VoiceInput onText={onDictate} />
-          <WorkModePicker modes={modeDefs} value={mode} onChange={onModeChange} />
-          <ModelQualityPicker options={options} value={selection} onChange={onSelectModel} />
-          <SourceScopePicker value={scopeCollectionIds} onChange={onScopeChange} />
-          <div className="ml-auto">
-            {busy ? (
-              <IconButton
-                aria-label="Stop generating"
-                type="button"
-                onClick={onStop}
-                className="shrink-0 bg-foreground text-background transition-transform duration-100 active:scale-95 hover:bg-foreground/90 hover:text-background"
-              >
-                <Square size={15} className="fill-current" />
-              </IconButton>
-            ) : (
-              <IconButton
-                aria-label="Send message"
-                type="submit"
-                disabled={!canSend}
-                className="shrink-0 bg-accent text-accent-foreground shadow-[0_0_0_0_rgb(var(--accent)/0)] transition-[transform,box-shadow] duration-150 hover:bg-accent-hover hover:text-accent-foreground hover:shadow-[0_0_16px_-2px_rgb(var(--accent)/0.55)] active:scale-95 disabled:opacity-40 disabled:shadow-none"
-              >
-                <ArrowUp size={17} />
-              </IconButton>
+    >
+      <Square size={15} className="fill-current" />
+    </button>
+  );
+
+  if (variant === "hero") {
+    return (
+      <form onSubmit={onSubmit} className="relative">
+        {slashMenu}
+        <div
+          {...dragProps}
+          className={cn(
+            "rounded-[26px] border bg-surface shadow-float transition-[border-color,box-shadow] duration-200",
+            dragging
+              ? "border-accent/60 ring-4 ring-accent/15"
+              : "border-border focus-within:border-accent/40 focus-within:ring-4 focus-within:ring-accent/10"
+          )}
+        >
+          {fileInput}
+          <div className="px-5 pt-4">
+            {tray}
+            {textarea(
+              "Ask me anything…  (type / for templates)",
+              "block max-h-[200px] min-h-[56px] w-full resize-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-subtle-foreground"
             )}
           </div>
+          <div className="flex items-center gap-2 px-3 pb-3 pt-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{leftTools}</div>
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              {rightTools}
+              <VoiceInput onText={onDictate} />
+              {busy ? (
+                stopButton("ml-1 h-10 w-10")
+              ) : (
+                <button
+                  type="submit"
+                  aria-label="Send message"
+                  disabled={!canSend}
+                  className="ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_6px_16px_-6px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_8px_22px_-6px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <ArrowUp size={18} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2 rounded-b-[26px] border-t border-border bg-accent-softer px-3 py-2">
+            <button
+              type="button"
+              onClick={onOpenLibrary}
+              className="inline-flex h-8 items-center gap-2 rounded-full px-2.5 text-[13px] font-medium text-accent-strong transition-colors hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Sparkles size={15} aria-hidden />
+              Saved prompts
+            </button>
+            <button
+              type="button"
+              onClick={pickFiles}
+              disabled={atMax}
+              title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Paperclip size={14} aria-hidden />
+              Attach file
+            </button>
+          </div>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="relative">
+      {slashMenu}
+      {tray}
+      <div
+        {...dragProps}
+        className={cn(
+          "flex items-end gap-1.5 rounded-[32px] border p-2 transition-[border-color,background-color,box-shadow] duration-200",
+          dragging
+            ? "border-accent/60 bg-surface ring-4 ring-accent/15"
+            : "border-border bg-surface-muted focus-within:border-accent/35 focus-within:bg-surface focus-within:shadow-float"
+        )}
+      >
+        {fileInput}
+        <button
+          type="button"
+          onClick={pickFiles}
+          disabled={atMax}
+          aria-label={atMax ? `Attachment limit reached (${MAX_FILES})` : "Attach files"}
+          title={atMax ? `Up to ${MAX_FILES} files` : `Attach files · ${ACCEPTED_LABEL}`}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#262626] text-white transition-[transform,background-color] duration-150 hover:bg-[#1a1a1a] active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <Paperclip size={19} />
+        </button>
+        {textarea(
+          "Type your prompt here…",
+          "block max-h-[200px] min-h-[48px] flex-1 resize-none bg-transparent px-2.5 py-[13px] text-[15px] leading-[22px] text-foreground outline-none placeholder:text-subtle-foreground"
+        )}
+        <div className="flex h-12 shrink-0 items-center gap-0.5">
+          <IconButton
+            type="button"
+            aria-label="Saved prompts"
+            title="Saved prompts"
+            onClick={onOpenLibrary}
+            className="hidden sm:inline-flex"
+          >
+            <Sparkles size={17} />
+          </IconButton>
+          <VoiceInput onText={onDictate} />
+          {busy ? (
+            stopButton("ml-1 h-12 w-12")
+          ) : (
+            <button
+              type="submit"
+              aria-label="Send message"
+              disabled={!canSend}
+              className="ml-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <ArrowRight size={20} />
+            </button>
+          )}
         </div>
       </div>
     </form>
@@ -1916,10 +2154,8 @@ function AttachmentChip({
   return (
     <li
       className={cn(
-        "group flex max-w-[220px] items-center gap-1.5 rounded-lg border px-2 py-1 text-xs",
-        isError
-          ? "border-danger/40 bg-danger/10 text-danger"
-          : "border-white/10 bg-surface-muted text-foreground ring-1 ring-white/5"
+        "group flex max-w-[240px] items-center gap-1.5 rounded-full border py-1 pl-2.5 pr-1 text-xs",
+        isError ? "border-danger/40 bg-danger/10 text-danger" : "border-border bg-surface text-foreground shadow-soft"
       )}
       title={isError ? att.error : att.truncated ? `${att.name} (trimmed to fit)` : att.name}
     >
@@ -1939,7 +2175,7 @@ function AttachmentChip({
           type="button"
           onClick={onRetry}
           aria-label={`Retry ${att.name}`}
-          className="shrink-0 rounded p-0.5 hover:bg-white/[0.08]"
+          className="shrink-0 rounded-full p-1 hover:bg-surface-muted"
         >
           <RotateCw size={12} />
         </button>
@@ -1948,7 +2184,7 @@ function AttachmentChip({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${att.name}`}
-        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-white/[0.08] hover:text-foreground"
+        className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-surface-muted hover:text-foreground"
       >
         <X size={12} />
       </button>
@@ -1985,7 +2221,7 @@ function EditBox({
   }, [value]);
 
   return (
-    <div className="ml-auto w-full max-w-[85%] rounded-2xl border border-accent/40 bg-surface p-2 shadow-soft">
+    <div className="ml-auto w-full max-w-[85%] rounded-[20px] border border-accent/40 bg-surface p-2.5 shadow-float">
       <textarea
         ref={ref}
         value={value}
@@ -2000,7 +2236,7 @@ function EditBox({
           }
         }}
         rows={1}
-        className="max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-sm text-foreground outline-none"
+        className="max-h-[240px] w-full resize-none bg-transparent px-2 py-1 text-[15px] text-foreground outline-none focus-visible:outline-none"
         aria-label="Edit your message"
       />
       <div className="mt-1 flex items-center justify-end gap-2">
@@ -2064,24 +2300,22 @@ function ExportMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {exporting ? (
-          <Loader2 size={13} className="animate-spin" aria-hidden />
+          <Loader2 size={14} className="animate-spin" aria-hidden />
         ) : (
-          <Download size={13} aria-hidden />
+          <Download size={14} aria-hidden />
         )}
-        Export
-        <ChevronDown size={12} aria-hidden />
+        Export chat
+        <ChevronDown size={12} className="opacity-60" aria-hidden />
       </button>
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full right-0 z-30 mb-1 w-52 rounded-xl border border-border bg-surface p-1 shadow-soft-lg"
+          className="absolute bottom-full right-0 z-30 mb-1.5 w-56 rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Export as
-          </p>
+          <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">Export as</p>
           {items.map((it) => (
             <button
               key={it.fmt}
@@ -2092,14 +2326,10 @@ function ExportMenu({
                 setOpen(false);
                 onExport(it.fmt);
               }}
-              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               <span>{it.label}</span>
-              {it.note && (
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {it.note}
-                </span>
-              )}
+              {it.note && <span className="shrink-0 text-[11px] text-subtle-foreground">{it.note}</span>}
             </button>
           ))}
         </div>
@@ -2140,27 +2370,28 @@ function RegenerateMenu({
 
   return (
     <div className="relative flex items-center" ref={ref}>
-      <Button variant="ghost" size="sm" onClick={onRegenerate}>
-        <RefreshCw size={14} />
-        Regenerate
-      </Button>
+      <IconButton aria-label="Regenerate" title="Regenerate" size="sm" onClick={onRegenerate}>
+        <RefreshCw size={15} />
+      </IconButton>
       {available.length > 0 && (
-        <IconButton
+        <button
+          type="button"
           aria-label="Regenerate with a different model"
-          size="sm"
+          title="Regenerate with…"
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
+          className="-ml-1 inline-flex h-7 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ChevronDown size={14} />
-        </IconButton>
+          <ChevronDown size={12} />
+        </button>
       )}
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-30 mb-1 max-h-[60vh] w-56 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-soft-lg"
+          className="absolute bottom-full left-0 z-30 mb-1.5 max-h-[60vh] w-60 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 shadow-soft-lg motion-safe:animate-fadeUp"
         >
-          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-subtle-foreground">
             Regenerate with
           </p>
           {available.map((o) => (
@@ -2172,13 +2403,11 @@ function RegenerateMenu({
                 setOpen(false);
                 onRegenerateWith(o.value, o.tier);
               }}
-              className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="truncate">{o.label}</span>
               {o.kind === "tier" && (
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  preset
-                </span>
+                <span className="shrink-0 text-[11px] text-subtle-foreground">preset</span>
               )}
             </button>
           ))}
@@ -2193,14 +2422,14 @@ function SourcesDisclosure({ count, sources }: { count: number; sources: SourceI
   const [open, setOpen] = useState(false);
   const has = sources.length > 0;
   return (
-    <div className="mt-1.5">
+    <div className="mt-2">
       <button
         type="button"
         onClick={() => has && setOpen((o) => !o)}
         aria-expanded={has ? open : undefined}
         className={cn(
-          "inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors",
-          has && "hover:text-foreground"
+          "inline-flex items-center gap-1 rounded-full px-1 text-xs font-medium text-muted-foreground transition-colors",
+          has && "hover:text-accent-strong"
         )}
       >
         {has && (
@@ -2217,9 +2446,9 @@ function SourcesDisclosure({ count, sources }: { count: number; sources: SourceI
           {sources.map((s, i) => (
             <li
               key={s.id}
-              className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs"
+              className="rounded-xl border border-border bg-surface px-3 py-2 text-xs"
             >
-              <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-0.5 flex items-center gap-1.5 text-[11px] font-medium capitalize text-muted-foreground">
                 <FileText size={11} aria-hidden />
                 <span>
                   {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
@@ -2259,7 +2488,7 @@ function OptionsPicker({
           type="button"
           disabled={disabled}
           onClick={() => onPick(o)}
-          className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground shadow-soft transition-colors hover:border-accent/50 hover:bg-surface-muted disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm text-foreground transition-colors hover:border-accent/40 hover:bg-accent-soft disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {o}
         </button>
@@ -2336,13 +2565,15 @@ function LearningCard({
   const [notes, setNotes] = useState("");
   const saved = state.status === "saved";
   return (
-    <div className="mt-3 rounded-xl border border-private/30 bg-private/5 p-3 text-sm">
-      <div className="flex items-start gap-2">
-        <Lightbulb size={16} className="mt-0.5 shrink-0 text-private" aria-hidden />
+    <div className="mt-3 rounded-2xl border border-accent/25 bg-accent-softer p-4 text-sm">
+      <div className="flex items-start gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground" aria-hidden>
+          <Lightbulb size={16} />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-private">
+          <p className="text-xs font-semibold text-accent-strong">
             {saved ? "Saved as organizational learning" : "Possible organizational learning"}
-            <span className="ml-2 rounded border border-private/30 px-1 normal-case tracking-normal">{candidate.kind}</span>
+            <span className="ml-2 rounded-full border border-accent/30 bg-surface px-2 py-px font-medium">{candidate.kind}</span>
           </p>
           <p className="mt-1 font-medium text-foreground">{candidate.title}</p>
           {candidate.change && <p className="mt-0.5 text-xs text-muted-foreground"><span className="font-medium text-foreground">Change:</span> {candidate.change}</p>}
@@ -2360,7 +2591,7 @@ function LearningCard({
           )}
           {saved ? (
             <p className="mt-2 text-xs text-muted-foreground">
-              Recorded as <span className="font-mono text-accent">{state.ref}</span>. Complete the evidence in the Brain&apos;s Learning Lab when you have the numbers.
+              Recorded as <span className="font-mono text-accent-strong">{state.ref}</span>. Complete the evidence in the Brain&apos;s Learning Lab when you have the numbers.
             </p>
           ) : (
             <>
@@ -2370,7 +2601,7 @@ function LearningCard({
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
                   placeholder="Add the evidence: date range, baseline number, new number, sample size…"
-                  className="mt-2 w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+                  className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2 text-xs text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 />
               )}
               {state.status === "error" && <p className="mt-1 text-xs text-danger">{state.error}</p>}
@@ -2425,13 +2656,13 @@ function EvidencePanel({
         type="button"
         onClick={() => onOpenRef(ref)}
         title={`Open ${ref}`}
-        className="inline-flex items-center gap-1 rounded font-mono text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex items-center gap-1 rounded font-mono text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {ref}
         {label ? <span className="font-sans font-medium text-foreground">{label}</span> : null}
       </button>
     ) : (
-      <span className="font-mono text-accent">
+      <span className="font-mono text-accent-strong">
         {ref}
         {label ? <span className="ml-1 font-sans font-medium text-foreground">{label}</span> : null}
       </span>
@@ -2439,10 +2670,10 @@ function EvidencePanel({
   return (
     <aside
       aria-label="Evidence"
-      className="hidden w-80 shrink-0 flex-col border-l border-border bg-surface/50 lg:flex"
+      className="hidden w-[22rem] shrink-0 flex-col border-l border-border bg-accent-softer/60 lg:flex"
     >
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
-        <h2 className="text-sm font-semibold text-foreground">Evidence</h2>
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
+        <h2 className="text-[15px] font-semibold text-foreground">Evidence</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
             {count} source{count === 1 ? "" : "s"}
@@ -2455,10 +2686,10 @@ function EvidencePanel({
       {conf && (
         <div
           className={cn(
-            "flex items-center gap-2 border-b border-border px-4 py-2 text-[11px] font-medium",
-            conf.tone === "high" && "text-emerald-600 dark:text-emerald-400",
-            conf.tone === "medium" && "text-amber-600 dark:text-amber-400",
-            conf.tone === "low" && "text-rose-600 dark:text-rose-400"
+            "flex items-center gap-2 border-b border-border px-5 py-2.5 text-xs font-medium",
+            conf.tone === "high" && "text-success",
+            conf.tone === "medium" && "text-warning",
+            conf.tone === "low" && "text-danger"
           )}
           title="How well the retrieved sources matched your question. Low confidence means the answer leaned on weaker matches — verify before relying on it."
         >
@@ -2466,16 +2697,16 @@ function EvidencePanel({
             aria-hidden
             className={cn(
               "h-2 w-2 shrink-0 rounded-full",
-              conf.tone === "high" && "bg-emerald-500",
-              conf.tone === "medium" && "bg-amber-500",
-              conf.tone === "low" && "bg-rose-500"
+              conf.tone === "high" && "bg-success",
+              conf.tone === "medium" && "bg-warning",
+              conf.tone === "low" && "bg-danger"
             )}
           />
           {conf.label}
           <span className="text-muted-foreground/70">· {conf.pct}% match</span>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {sources.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
             The sources used to ground the latest answer will appear here, with the
@@ -2486,17 +2717,17 @@ function EvidencePanel({
             {sources.map((s, i) => (
               <li
                 key={s.id}
-                className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs"
+                className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-xs shadow-soft"
               >
-                <div className="mb-0.5 flex items-center justify-between gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium capitalize text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <FileText size={11} aria-hidden />
                     {i + 1}. {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
                   </span>
                   <span className="flex shrink-0 items-center gap-1 normal-case text-muted-foreground/70">
-                    {s.authority && <span className="rounded border border-border px-1" title="Authority">{s.authority}</span>}
-                    {s.endorsement === "practiscale_standard" && <span className="rounded border border-accent/40 px-1 text-accent" title="PractiScale Standard">Std</span>}
-                    {s.current === false && <span className="rounded border border-warning/40 px-1 text-warning" title="Historical or expired">past</span>}
+                    {s.authority && <span className="rounded-full border border-border px-1.5" title="Authority">{s.authority}</span>}
+                    {s.endorsement === "practiscale_standard" && <span className="rounded-full border border-accent/40 bg-accent-soft px-1.5 text-accent-strong" title="PractiScale Standard">Std</span>}
+                    {s.current === false && <span className="rounded-full border border-warning/40 px-1.5 text-warning" title="Historical or expired">past</span>}
                     {freshness(s.date) && <span>{freshness(s.date)}</span>}
                   </span>
                 </div>
@@ -2514,9 +2745,7 @@ function EvidencePanel({
 
         {performance.length > 0 && (
           <section className="mt-4" aria-label="Verified numbers">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Verified numbers
-            </h3>
+            <h3 className="text-xs font-semibold text-foreground">Verified numbers</h3>
             <p className="mb-1.5 text-[11px] text-muted-foreground/80">
               Structured results the Brain used as verified business data
             </p>
@@ -2525,10 +2754,10 @@ function EvidencePanel({
                 const period = formatPeriod(m.period_start, m.period_end);
                 const dims = m.dimensions ? Object.entries(m.dimensions).filter(([, v]) => v != null && v !== "") : [];
                 return (
-                  <li key={m.key} className="rounded-lg border border-border bg-surface px-2.5 py-2 text-xs">
+                  <li key={m.key} className="rounded-2xl border border-border bg-surface px-3.5 py-2.5 text-xs shadow-soft">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0 truncate font-medium text-foreground" title={m.label}>{m.label}</span>
-                      <span className="shrink-0 tabular-nums text-accent">{formatMetricValue(m)}</span>
+                      <span className="shrink-0 font-semibold tabular-nums text-accent-strong">{formatMetricValue(m)}</span>
                     </div>
                     {(period || m.source) && (
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -2555,12 +2784,10 @@ function EvidencePanel({
 
         {conflicts.length > 0 && (
           <section className="mt-4" aria-label="Known disagreements">
-            <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Known disagreements
-            </h3>
+            <h3 className="mb-1.5 text-xs font-semibold text-foreground">Known disagreements</h3>
             <ul className="space-y-1.5">
               {conflicts.map((p, i) => (
-                <li key={`${p.a.ref}-${p.b.ref}-${i}`} className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-xs">
+                <li key={`${p.a.ref}-${p.b.ref}-${i}`} className="rounded-2xl border border-warning/30 bg-warning/5 px-3.5 py-2.5 text-xs">
                   <p className="text-foreground">
                     {refButton(p.a.ref)} disagrees with {refButton(p.b.ref)} — the Brain favoured the
                     higher-authority, current source
@@ -2614,13 +2841,13 @@ function ApprovalSubmitModal({
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder="Short label for reviewers"
           maxLength={120}
-          className="mt-1 w-full rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-1 h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         />
       </label>
 
       <div className="mt-3">
         <p className="mb-1 text-xs font-medium text-muted-foreground">Preview</p>
-        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-muted/60 p-2.5 text-xs text-foreground/90">
+        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-surface-muted/60 p-3 text-xs text-foreground/90">
           {content.slice(0, 2000) || "(empty)"}
         </div>
       </div>
@@ -2697,7 +2924,7 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
               ? "Loading…"
               : "e.g. My top priorities this quarter are…\nHow I like recommendations framed…\nOpen decisions and their owners…"
           }
-          className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         />
         {error && (
           <p role="alert" className="text-sm text-danger">
@@ -2796,22 +3023,5 @@ function StreamingMarkdown({ content, animate }: { content: string; animate: boo
         />
       )}
     </>
-  );
-}
-
-/** A live, single-line pipeline activity indicator ("Searching…", "Writing…"). */
-/** Compact pipeline-status chip (radar-style pulse + the live stage label). */
-function StatusChip({ label }: { label: string | null }) {
-  return (
-    <span
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-muted-foreground shadow-soft"
-      aria-live="polite"
-    >
-      <span className="relative flex h-3.5 w-3.5 items-center justify-center" aria-hidden>
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/40" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-      </span>
-      {label ?? "Working"}…
-    </span>
   );
 }

@@ -15,7 +15,6 @@ import { ShieldCheck, ShieldPlus, Loader2, Trash2, Smartphone, Check } from "luc
 import { Button } from "@/components/Button";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { isDemo } from "@/lib/demo/mode";
-import { cn } from "@/lib/utils";
 
 interface Factor {
   id: string;
@@ -152,12 +151,12 @@ export function MfaSection() {
   return (
     <section
       aria-labelledby="mfa-heading"
-      className="rounded-xl border border-border bg-surface p-5 shadow-soft sm:p-6"
+      className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="mfa-heading" className="flex items-center gap-2 text-sm font-semibold">
-            <ShieldCheck size={16} className={hasMfa ? "text-emerald-500" : "text-muted-foreground"} />
+            <ShieldCheck size={16} className={hasMfa ? "text-success" : "text-muted-foreground"} />
             Two-factor authentication
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -166,7 +165,7 @@ export function MfaSection() {
           </p>
         </div>
         {hasMfa && !enrolling && (
-          <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+          <span className="shrink-0 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
             On
           </span>
         )}
@@ -183,7 +182,7 @@ export function MfaSection() {
             {verified.map((f) => (
               <li
                 key={f.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5"
               >
                 <Smartphone size={16} className="shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
@@ -192,15 +191,17 @@ export function MfaSection() {
                     Added {f.createdAt ? new Date(f.createdAt).toLocaleDateString() : "recently"}
                   </span>
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => remove(f.id)}
                   disabled={removing === f.id}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                  className="gap-1 text-danger hover:bg-danger/10"
                 >
                   {removing === f.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                   Remove
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -209,18 +210,18 @@ export function MfaSection() {
 
       {/* Enrollment flow */}
       {enrolling ? (
-        <div className="mt-4 rounded-xl border border-border bg-background p-4">
+        <div className="mt-4 rounded-xl border border-border bg-surface-muted/60 p-4">
           <p className="text-sm font-medium">Scan this with your authenticator app</p>
           <div className="mt-3 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={enrolling.qr}
               alt="Two-factor QR code"
-              className="h-40 w-40 shrink-0 rounded-lg border border-border bg-white p-1"
+              className="h-40 w-40 shrink-0 rounded-xl border border-border bg-white p-1.5"
             />
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground">Or enter this key manually:</p>
-              <code className="mt-1 block break-all rounded-md bg-surface-muted px-2 py-1 font-mono text-xs">
+              <code className="mt-1 block break-all rounded-lg border border-border bg-surface px-2.5 py-1.5 font-mono text-xs">
                 {enrolling.secret}
               </code>
               <label className="mt-3 block text-xs font-medium text-muted-foreground">
@@ -231,7 +232,7 @@ export function MfaSection() {
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   placeholder="123456"
-                  className="mt-1 w-36 rounded-lg border border-border bg-surface px-2.5 py-2 text-center font-mono text-lg tracking-widest outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="mt-1 block h-11 w-36 rounded-xl border border-border bg-surface px-3.5 text-center font-mono text-lg tracking-widest outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 />
               </label>
             </div>

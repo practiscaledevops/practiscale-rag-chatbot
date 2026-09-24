@@ -21,6 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/Button";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the /api/admin/usage response.
@@ -152,7 +153,7 @@ function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="inline-flex rounded-lg border border-border bg-surface p-0.5"
+      className="inline-flex rounded-full bg-surface-muted p-1"
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -163,10 +164,10 @@ function Segmented<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               active
-                ? "bg-accent text-accent-foreground shadow-soft"
-                : "text-muted-foreground hover:text-foreground hover:bg-surface-muted"
+                ? "bg-surface text-foreground shadow-soft"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             {opt.label}
@@ -180,7 +181,7 @@ function Segmented<T extends string>({
 /** A provider tag pill. */
 function ProviderBadge({ provider }: { provider: string }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+    <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
       {provider || "unknown"}
     </span>
   );
@@ -199,16 +200,19 @@ function KpiCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-muted-foreground" aria-hidden>
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+      <div className="flex items-center gap-2.5 text-muted-foreground">
+        <span
+          className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent"
+          aria-hidden
+        >
           {icon}
         </span>
+        <span className="text-sm font-medium">
+          {label}
+        </span>
       </div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+      <div className="mt-4 text-2xl font-semibold tracking-tight tabular-nums text-foreground">
         {value}
       </div>
       {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
@@ -216,18 +220,21 @@ function KpiCard({
   );
 }
 
-/** Detect the OS colour scheme so the chart palette matches the theme. */
-function usePrefersDark(): boolean {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const update = () => setDark(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-  return dark;
-}
+/**
+ * Chart palette. The app is light-only, so the chart always uses the light
+ * workspace palette: PractiScale green token bars on hairline grid lines.
+ */
+const CHART_COLORS = {
+  grid: "#EAECEC", // --border
+  axis: "#6E7375", // --muted-foreground
+  input: "#10A388", // --accent
+  output: "#9FDACF", // --accent at ~40% on white
+  cost: "#D97706",
+  cursor: "#F5F6F6", // --surface-muted
+  tooltipBg: "#FFFFFF",
+  tooltipBorder: "#EAECEC",
+  tooltipText: "#111315", // --foreground
+};
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -243,7 +250,6 @@ export function UsageClient() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const dark = usePrefersDark();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -295,36 +301,16 @@ export function UsageClient() {
   const overall = data?.overall;
   const hasData = (overall?.requests ?? 0) > 0;
 
-  const chartColors = dark
-    ? {
-        grid: "#1f2c2a",
-        axis: "#94a3b8",
-        input: "#2dd4bf",
-        output: "#5eead4",
-        cost: "#fbbf24",
-        tooltipBg: "#101818",
-        tooltipBorder: "#1f2c2a",
-        tooltipText: "#ecf0ef",
-      }
-    : {
-        grid: "#e2e8f0",
-        axis: "#64748b",
-        input: "#0d9488",
-        output: "#5eead4",
-        cost: "#d97706",
-        tooltipBg: "#ffffff",
-        tooltipBorder: "#e0e7e5",
-        tooltipText: "#10181b",
-      };
+  const chartColors = CHART_COLORS;
 
   const rangeLabel = RANGE_OPTIONS.find((r) => r.value === range)?.label ?? range;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+    <div className="w-full">
       {/* Header */}
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Usage &amp; cost
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -337,18 +323,19 @@ export function UsageClient() {
             ) : null}
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => setReloadKey((k) => k + 1)}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-soft transition-colors hover:text-foreground hover:bg-surface-muted"
         >
           <RefreshCw size={14} className={cn(loading && "animate-spin")} />
           Refresh
-        </button>
+        </Button>
       </header>
 
       {/* Filter bar */}
-      <div className="mb-5 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-surface p-4 shadow-soft">
+      <div className="mb-5 flex flex-wrap items-end gap-5 rounded-2xl border border-border bg-surface p-5 shadow-soft">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted-foreground">Time range</span>
           <Segmented label="Time range" value={range} options={RANGE_OPTIONS} onChange={setRange} />
@@ -362,7 +349,7 @@ export function UsageClient() {
             id="model-filter"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="h-8 rounded-lg border border-border bg-surface px-2.5 text-xs font-medium text-foreground shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-10 rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="all">All models</option>
             {modelOptions.map((m) => (
@@ -384,7 +371,7 @@ export function UsageClient() {
       {error ? (
         <div
           role="alert"
-          className="mb-5 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm text-danger"
+          className="mb-5 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
         >
           <AlertCircle size={18} className="mt-0.5 shrink-0" />
           <div>
@@ -398,7 +385,7 @@ export function UsageClient() {
       <section
         aria-label="Key metrics"
         className={cn(
-          "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4",
+          "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
           loading && !data && "animate-pulse"
         )}
       >
@@ -429,9 +416,9 @@ export function UsageClient() {
       </section>
 
       {/* Time-series chart */}
-      <section className="mt-5 rounded-xl border border-border bg-surface p-4 shadow-soft">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Tokens &amp; cost over time</h2>
+      <section className="mt-5 rounded-2xl border border-border bg-surface p-5 shadow-soft">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground">Tokens &amp; cost over time</h2>
           <span className="text-xs text-muted-foreground">Daily · last {rangeLabel}</span>
         </div>
         <div className="h-72 w-full">
@@ -468,13 +455,14 @@ export function UsageClient() {
                   width={64}
                 />
                 <Tooltip
+                  cursor={{ fill: chartColors.cursor }}
                   contentStyle={{
                     background: chartColors.tooltipBg,
                     border: `1px solid ${chartColors.tooltipBorder}`,
-                    borderRadius: 10,
+                    borderRadius: 12,
                     color: chartColors.tooltipText,
                     fontSize: 12,
-                    boxShadow: "0 4px 16px rgb(16 24 27 / 0.12)",
+                    boxShadow: "0 2px 8px rgb(17 19 21 / 0.06), 0 16px 40px rgb(17 19 21 / 0.10)",
                   }}
                   labelStyle={{ color: chartColors.tooltipText, fontWeight: 600, marginBottom: 4 }}
                   labelFormatter={(d: string) => formatDayLong(d)}
@@ -507,7 +495,7 @@ export function UsageClient() {
                   stackId="tok"
                   name="Output tokens"
                   fill={chartColors.output}
-                  radius={[3, 3, 0, 0]}
+                  radius={[4, 4, 0, 0]}
                   maxBarSize={28}
                 />
                 <Line
@@ -523,7 +511,7 @@ export function UsageClient() {
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            <div className="flex h-full items-center justify-center rounded-xl bg-surface-muted/60 text-sm text-muted-foreground">
               {loading && !data
                 ? "Loading chart…"
                 : "No usage recorded in this range."}
@@ -533,9 +521,9 @@ export function UsageClient() {
       </section>
 
       {/* Scope-driven breakdown */}
-      <section className="mt-5 rounded-xl border border-border bg-surface shadow-soft">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">
+      <section className="mt-5 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <h2 className="text-base font-semibold text-foreground">
             {scope === "overall"
               ? "By model & provider"
               : scope === "user"
@@ -569,15 +557,16 @@ export function UsageClient() {
 // Tables
 // ---------------------------------------------------------------------------
 
-const TH = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground";
-const THR = "px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground";
-const TD = "px-4 py-2.5 text-sm text-foreground";
-const TDR = "px-4 py-2.5 text-right text-sm tabular-nums text-foreground";
+const TH = "px-5 py-3 text-left text-xs font-medium text-muted-foreground";
+const THR = "px-5 py-3 text-right text-xs font-medium text-muted-foreground";
+const TD = "px-5 py-3 text-sm text-foreground";
+const TDR = "px-5 py-3 text-right text-sm tabular-nums text-foreground";
+const ROW = "border-t border-border transition-colors hover:bg-surface-muted/60";
 
 function EmptyRow({ colSpan, loading }: { colSpan: number; loading: boolean }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-muted-foreground">
+      <td colSpan={colSpan} className="px-5 py-12 text-center text-sm text-muted-foreground">
         {loading ? "Loading…" : "No usage in this range."}
       </td>
     </tr>
@@ -604,7 +593,7 @@ function ModelTable({ rows, loading }: { rows: ByModel[]; loading: boolean }) {
           <EmptyRow colSpan={7} loading={loading} />
         ) : (
           rows.map((r) => (
-            <tr key={r.model} className="border-b border-border/60 last:border-0 hover:bg-surface-muted/50">
+            <tr key={r.model} className={ROW}>
               <td className={cn(TD, "font-medium")}>{r.model}</td>
               <td className={TD}><ProviderBadge provider={r.provider} /></td>
               <td className={TDR}>{formatInt(r.requests)}</td>
@@ -639,7 +628,7 @@ function UserTable({ rows, loading }: { rows: ByUser[]; loading: boolean }) {
           <EmptyRow colSpan={6} loading={loading} />
         ) : (
           rows.map((r) => (
-            <tr key={r.userId} className="border-b border-border/60 last:border-0 hover:bg-surface-muted/50">
+            <tr key={r.userId} className={ROW}>
               <td className={TD}>
                 <div className="font-medium">{r.label}</div>
                 {r.email && r.email !== r.label ? (
@@ -680,7 +669,7 @@ function TeamTable({ rows, loading }: { rows: ByTeam[]; loading: boolean }) {
           rows.map((r) => (
             <tr
               key={r.teamId ?? "__none__"}
-              className="border-b border-border/60 last:border-0 hover:bg-surface-muted/50"
+              className={ROW}
             >
               <td className={cn(TD, "font-medium")}>{r.name}</td>
               <td className={TDR}>{formatInt(r.requests)}</td>
@@ -693,7 +682,7 @@ function TeamTable({ rows, loading }: { rows: ByTeam[]; loading: boolean }) {
                 ) : (
                   <span
                     className={cn(
-                      "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                       r.overBudget
                         ? "bg-danger/10 text-danger"
                         : "bg-success/10 text-success"

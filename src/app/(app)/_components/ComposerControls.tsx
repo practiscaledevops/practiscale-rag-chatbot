@@ -1,11 +1,14 @@
 "use client";
 
-// Composer controls — the message settings that belong WITH the next message,
-// not in the sidebar. The work-mode picker is an accessible exclusive-choice
-// menu (role=menu with menuitemradio items): arrow keys move, Enter/Space
-// selects, Escape closes and returns focus to the trigger, click-outside closes.
-// Selecting a mode changes ONLY future messages (the parent sends the current
-// mode with each send); it never rewrites past turns.
+// Composer controls — the message settings that belong WITH the next message:
+// work mode, model quality, response format, knowledge scope, deep research.
+// Each picker is an accessible menu (arrow keys move, Enter/Space selects,
+// Escape closes and returns focus to the trigger, click-outside closes).
+// Selecting changes ONLY future messages; it never rewrites past turns.
+//
+// Triggers come in two shapes: a labeled pill ("chip") and an icon-only round
+// button ("icon"), in two sizes, so the same pickers fit both the new-chat
+// composer card and the compact toolbar above the in-thread composer.
 
 import * as React from "react";
 import {
@@ -19,7 +22,7 @@ import {
   ChevronDown,
   Check,
   ShieldCheck,
-  Zap,
+  Cpu,
   Database,
   Layers,
   Sparkles,
@@ -34,10 +37,13 @@ import {
   GraduationCap,
   ListChecks,
   BarChart3,
+  LayoutList,
+  Atom,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MODE_GROUP_LABELS, EXECUTIVE_MODES, type WorkMode, type WorkModeDef, type ModeGroup } from "@/lib/work-modes";
+import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
 import type { ModelOption } from "@/components/AppShell";
 
 export const MODE_ICON: Record<WorkMode, LucideIcon> = {
@@ -64,6 +70,68 @@ export const MODE_ICON: Record<WorkMode, LucideIcon> = {
 
 const GROUP_ORDER: ModeGroup[] = ["general", "business", "content", "build", "analysis"];
 
+type Size = "sm" | "md";
+type Tone = "neutral" | "accent" | "private";
+
+interface TriggerStyle {
+  size?: Size;
+  /** Icon-only round trigger (label moves to aria-label + title). */
+  iconOnly?: boolean;
+  /** Which edge the menu aligns to (use "right" for triggers near the right edge). */
+  align?: "left" | "right";
+}
+
+function triggerClass(size: Size, iconOnly: boolean, tone: Tone): string {
+  return cn(
+    "inline-flex shrink-0 items-center justify-center rounded-full font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    iconOnly
+      ? size === "sm"
+        ? "h-8 w-8"
+        : "h-9 w-9"
+      : size === "sm"
+        ? "h-8 gap-1.5 px-2.5 text-xs"
+        : "h-9 gap-1.5 px-3 text-[13px]",
+    tone === "accent"
+      ? "border border-accent/25 bg-accent-soft text-accent-strong hover:bg-accent-soft/80"
+      : tone === "private"
+        ? "border border-private/25 bg-private/10 text-private"
+        : iconOnly
+          ? "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+          : "border border-border bg-surface text-foreground hover:bg-surface-muted"
+  );
+}
+
+const MENU =
+  "absolute bottom-full z-40 mb-2 overflow-y-auto rounded-2xl border border-border bg-surface p-1.5 text-foreground shadow-soft-lg motion-safe:animate-fadeUp";
+const ITEM =
+  "flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40";
+const SECTION = "px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-subtle-foreground";
+
+/** Shared open/close + outside-click + focus plumbing for the pickers. */
+function useMenu() {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
+  React.useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const close = React.useCallback((focusTrigger = true) => {
+    setOpen(false);
+    if (focusTrigger) triggerRef.current?.focus();
+  }, []);
+  return { open, setOpen, ref, triggerRef, itemsRef, close };
+}
+
+// ---------------------------------------------------------------------------
+// Source scope
+// ---------------------------------------------------------------------------
+
 interface Collection {
   id: string;
   name: string;
@@ -73,22 +141,18 @@ interface Collection {
  * Source-scope picker — narrow the answer to specific collections instead of all
  * company knowledge. Fetches the permitted collections itself (server keeps the
  * key). Multi-select; empty selection = all company knowledge. Renders nothing
- * when there are no collections to narrow to. Accessible: arrow keys move, Space/
- * Enter toggles, Escape closes, click-outside closes.
+ * when there are no collections to narrow to.
  */
 export function SourceScopePicker({
   value,
   onChange,
-}: {
-  value: string[];
-  onChange: (ids: string[]) => void;
-}) {
+  size = "md",
+  iconOnly = false,
+  align = "left",
+}: { value: string[]; onChange: (ids: string[]) => void } & TriggerStyle) {
   const [collections, setCollections] = React.useState<Collection[] | null>(null);
-  const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
 
   React.useEffect(() => {
     let cancelled = false;
@@ -117,19 +181,8 @@ export function SourceScopePicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  // Nothing to narrow to → don't clutter the composer.
   if (!collections || collections.length === 0) return null;
 
-  // rows: index 0 = "Company knowledge" (all), then each collection.
   const rowCount = collections.length + 1;
   const selectedNames = collections.filter((c) => value.includes(c.id)).map((c) => c.name);
   const label =
@@ -139,21 +192,14 @@ export function SourceScopePicker({
         ? selectedNames[0] ?? "1 collection"
         : `${value.length} collections`;
 
-  function close(focusTrigger = true) {
-    setOpen(false);
-    if (focusTrigger) triggerRef.current?.focus();
-  }
-
   function move(dir: 1 | -1) {
     const next = (activeIndex + dir + rowCount) % rowCount;
     setActiveIndex(next);
     itemsRef.current[next]?.focus();
   }
-
   function toggle(id: string) {
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
   }
-
   function onMenuKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -176,16 +222,18 @@ export function SourceScopePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={iconOnly ? `Knowledge: ${label}` : undefined}
         onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-[background-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          narrowed ? "border-accent/40 bg-accent/10 text-accent" : "border-border bg-surface text-foreground hover:bg-surface-muted"
-        )}
+        className={triggerClass(size, iconOnly, narrowed ? "accent" : "neutral")}
         title="Choose which knowledge to search"
       >
-        <Database size={15} aria-hidden />
-        <span className="max-w-[10rem] truncate">{label}</span>
-        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} aria-hidden />
+        <Database size={size === "sm" ? 14 : 16} aria-hidden />
+        {!iconOnly && (
+          <>
+            <span className="max-w-[9rem] truncate">{label}</span>
+            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
       </button>
 
       {open && (
@@ -193,11 +241,9 @@ export function SourceScopePicker({
           role="menu"
           aria-label="Source scope"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
+          className={cn(MENU, "max-h-[min(70vh,26rem)] w-72", align === "right" ? "right-0" : "left-0")}
         >
-          <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Search in
-          </p>
+          <p className={SECTION}>Search in</p>
           <button
             ref={(el) => {
               itemsRef.current[0] = el;
@@ -207,13 +253,10 @@ export function SourceScopePicker({
             aria-checked={value.length === 0}
             tabIndex={activeIndex === 0 ? 0 : -1}
             onClick={() => onChange([])}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              value.length === 0 ? "bg-accent/10" : "hover:bg-white/[0.06]"
-            )}
+            className={cn(ITEM, "items-center", value.length === 0 ? "bg-accent-soft" : "hover:bg-surface-muted")}
           >
             <Database size={15} className={cn("shrink-0", value.length === 0 ? "text-accent" : "text-muted-foreground")} aria-hidden />
-            <span className="flex-1 text-sm font-medium text-foreground">All company knowledge</span>
+            <span className="flex-1 text-sm font-medium">All company knowledge</span>
             {value.length === 0 && <Check size={15} className="shrink-0 text-accent" aria-hidden />}
           </button>
 
@@ -233,16 +276,19 @@ export function SourceScopePicker({
                 aria-checked={checked}
                 tabIndex={activeIndex === idx ? 0 : -1}
                 onClick={() => toggle(c.id)}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  checked ? "bg-accent/10" : "hover:bg-white/[0.06]"
-                )}
+                className={cn(ITEM, "items-center", checked ? "bg-accent-soft" : "hover:bg-surface-muted")}
               >
-                <span className={cn("grid h-4 w-4 shrink-0 place-items-center rounded border", checked ? "border-accent bg-accent text-accent-foreground" : "border-border")} aria-hidden>
+                <span
+                  className={cn(
+                    "grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border",
+                    checked ? "border-accent bg-accent text-accent-foreground" : "border-border"
+                  )}
+                  aria-hidden
+                >
                   {checked && <Check size={12} />}
                 </span>
                 <Layers size={14} className="shrink-0 text-muted-foreground" aria-hidden />
-                <span className="flex-1 truncate text-sm text-foreground">{c.name}</span>
+                <span className="flex-1 truncate text-sm">{c.name}</span>
               </button>
             );
           })}
@@ -252,27 +298,23 @@ export function SourceScopePicker({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Model quality
+// ---------------------------------------------------------------------------
+
 /**
- * Model-quality picker for the composer — the friendly tiers (Smart Route / Fast
- * / Balanced / Best quality / Deep analysis) plus any specific models the user is
- * permitted to pick. Accessible menu: arrow keys move over enabled options,
- * Enter/Space selects, Escape closes and restores focus, click-outside closes.
+ * Model-quality picker — the friendly tiers (Smart Route / Fast / Balanced /
+ * Best quality / Deep analysis) plus any specific models the user may pick.
  */
 export function ModelQualityPicker({
   options,
   value,
   onChange,
-}: {
-  options: ModelOption[];
-  value: ModelOption;
-  onChange: (o: ModelOption) => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
-
-  // Indices of enabled options (unavailable models are skipped by keyboard nav).
+  size = "md",
+  iconOnly = false,
+  align = "left",
+}: { options: ModelOption[]; value: ModelOption; onChange: (o: ModelOption) => void } & TriggerStyle) {
+  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
   const enabled = options.map((o, i) => (o.available ? i : -1)).filter((i) => i >= 0);
   const [activeIndex, setActiveIndex] = React.useState(0);
 
@@ -286,27 +328,12 @@ export function ModelQualityPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  function close(focusTrigger = true) {
-    setOpen(false);
-    if (focusTrigger) triggerRef.current?.focus();
-  }
-
   function move(dir: 1 | -1) {
     const pos = enabled.indexOf(activeIndex);
     const next = enabled[(pos + dir + enabled.length) % enabled.length];
     setActiveIndex(next);
     itemsRef.current[next]?.focus();
   }
-
   function onMenuKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -329,12 +356,18 @@ export function ModelQualityPicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={iconOnly ? `Model: ${value.label}` : undefined}
+        title={iconOnly ? `Model: ${value.label}` : "Model quality"}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm font-medium text-foreground transition-[background-color,transform] duration-150 active:scale-[0.98] hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={triggerClass(size, iconOnly, "neutral")}
       >
-        <Zap size={15} className="text-accent" aria-hidden />
-        <span>{value.label}</span>
-        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} aria-hidden />
+        <Cpu size={size === "sm" ? 14 : 16} className={iconOnly ? undefined : "text-accent"} aria-hidden />
+        {!iconOnly && (
+          <>
+            <span className="max-w-[9rem] truncate">{value.label}</span>
+            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
       </button>
 
       {open && (
@@ -342,12 +375,12 @@ export function ModelQualityPicker({
           role="menu"
           aria-label="Model quality"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,26rem)] w-72 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
+          className={cn(MENU, "max-h-[min(70vh,26rem)] w-72", align === "right" ? "right-0" : "left-0")}
         >
           {options.map((o, i) => {
             const header =
               lastKind !== o.kind ? (
-                <p key={`h-${o.kind}`} className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p key={`h-${o.kind}`} className={SECTION}>
                   {o.kind === "tier" ? "Quality" : "Specific models"}
                 </p>
               ) : null;
@@ -369,13 +402,10 @@ export function ModelQualityPicker({
                     onChange(o);
                     close();
                   }}
-                  className={cn(
-                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-40",
-                    selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
-                  )}
+                  className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">{o.label}</span>
+                    <span className="block text-sm font-medium">{o.label}</span>
                     {(o.hint || o.reason) && (
                       <span className="block text-xs text-muted-foreground">{o.available ? o.hint : o.reason ?? "Unavailable"}</span>
                     )}
@@ -391,52 +421,162 @@ export function ModelQualityPicker({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Response format
+// ---------------------------------------------------------------------------
+
+/** Response-format picker (Answer / Table / Chart / Summary / …), sent as `outputType`. */
+export function OutputFormatPicker({
+  value,
+  onChange,
+  size = "md",
+  iconOnly = false,
+  align = "left",
+}: { value: OutputType; onChange: (o: OutputType) => void } & TriggerStyle) {
+  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
+  const current = OUTPUT_TYPES.find((o) => o.id === value) ?? OUTPUT_TYPES[0];
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const idx = Math.max(0, OUTPUT_TYPES.findIndex((o) => o.id === value));
+    setActiveIndex(idx);
+    const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(t);
+  }, [open, value, itemsRef]);
+
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      const next = (activeIndex + dir + OUTPUT_TYPES.length) % OUTPUT_TYPES.length;
+      setActiveIndex(next);
+      itemsRef.current[next]?.focus();
+    }
+  }
+
+  const custom = value !== "answer";
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={iconOnly ? `Response format: ${current.label}` : undefined}
+        title="Response format"
+        onClick={() => setOpen((o) => !o)}
+        className={triggerClass(size, iconOnly, custom ? "accent" : "neutral")}
+      >
+        <LayoutList size={size === "sm" ? 14 : 16} aria-hidden />
+        {!iconOnly && (
+          <>
+            <span>{custom ? current.label : "Format"}</span>
+            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Response format"
+          onKeyDown={onMenuKeyDown}
+          className={cn(MENU, "max-h-[min(70vh,26rem)] w-64", align === "right" ? "right-0" : "left-0")}
+        >
+          <p className={SECTION}>Response format</p>
+          {OUTPUT_TYPES.map((o, i) => {
+            const selected = o.id === value;
+            return (
+              <button
+                key={o.id}
+                ref={(el) => {
+                  itemsRef.current[i] = el;
+                }}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                tabIndex={i === activeIndex ? 0 : -1}
+                onClick={() => {
+                  onChange(o.id);
+                  close();
+                }}
+                className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{o.label}</span>
+                  <span className="block text-xs text-muted-foreground">{o.hint}</span>
+                </span>
+                {selected && <Check size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deep research toggle
+// ---------------------------------------------------------------------------
+
+/** "Deep research" chip — toggles the Deep analysis preset for the next message. */
+export function DeepResearchToggle({
+  on,
+  onToggle,
+  size = "md",
+}: {
+  on: boolean;
+  onToggle: () => void;
+  size?: Size;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onToggle}
+      title="Thorough, structured, multi-angle analysis on the strongest model"
+      className={triggerClass(size, false, on ? "accent" : "neutral")}
+    >
+      <Atom size={size === "sm" ? 14 : 16} className={on ? undefined : "text-accent"} aria-hidden />
+      Deep research
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Work mode
+// ---------------------------------------------------------------------------
+
 export function WorkModePicker({
   modes,
   value,
   onChange,
-}: {
-  modes: WorkModeDef[];
-  value: WorkMode;
-  onChange: (m: WorkMode) => void;
-}) {
-  const [open, setOpen] = React.useState(false);
+  size = "md",
+  iconOnly = false,
+  align = "left",
+}: { modes: WorkModeDef[]; value: WorkMode; onChange: (m: WorkMode) => void } & TriggerStyle) {
+  const { open, setOpen, ref, triggerRef, itemsRef, close } = useMenu();
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const itemsRef = React.useRef<(HTMLButtonElement | null)[]>([]);
 
   const current = modes.find((m) => m.id === value) ?? modes[0];
   const CurrentIcon = current ? MODE_ICON[current.id] : MessageCircle;
   const isExec = EXECUTIVE_MODES.includes(value);
-  // Grouped, Auto-first ordering (keyboard indices follow this flat order).
-  const ordered = React.useMemo(
-    () => GROUP_ORDER.flatMap((g) => modes.filter((m) => m.group === g)),
-    [modes]
-  );
+  const ordered = React.useMemo(() => GROUP_ORDER.flatMap((g) => modes.filter((m) => m.group === g)), [modes]);
 
-  // Open at the current selection and focus it.
   React.useEffect(() => {
     if (!open) return;
     const idx = Math.max(0, ordered.findIndex((m) => m.id === value));
     setActiveIndex(idx);
     const t = window.setTimeout(() => itemsRef.current[idx]?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(t);
-  }, [open, ordered, value]);
-
-  React.useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  function close(focusTrigger = true) {
-    setOpen(false);
-    if (focusTrigger) triggerRef.current?.focus();
-  }
+  }, [open, ordered, value, itemsRef]);
 
   function onMenuKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
@@ -467,6 +607,7 @@ export function WorkModePicker({
   }
 
   let lastGroup: ModeGroup | null = null;
+  const tone: Tone = isExec ? "private" : value === "general" || value === "auto" ? "neutral" : "accent";
 
   return (
     <div className="relative" ref={ref}>
@@ -475,20 +616,18 @@ export function WorkModePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={iconOnly ? `Work mode: ${current?.label ?? "Mode"}` : undefined}
         onClick={() => setOpen((o) => !o)}
         title="Which expert answers. Auto picks per message."
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          isExec
-            ? "border-private/40 bg-private/10 text-private"
-            : value === "general" || value === "auto"
-              ? "border-border bg-surface text-foreground hover:bg-surface-muted"
-              : "border-accent/40 bg-accent/10 text-accent"
-        )}
+        className={triggerClass(size, iconOnly, tone)}
       >
-        <CurrentIcon size={15} className={value === "auto" ? "text-accent" : undefined} aria-hidden />
-        <span>{current?.label ?? "Mode"}</span>
-        <ChevronDown size={14} className={cn("transition-transform", open && "rotate-180")} aria-hidden />
+        <CurrentIcon size={size === "sm" ? 14 : 16} className={tone === "neutral" ? "text-accent" : undefined} aria-hidden />
+        {!iconOnly && (
+          <>
+            <span className="max-w-[10rem] truncate">{current?.label ?? "Mode"}</span>
+            <ChevronDown size={13} className={cn("opacity-60 transition-transform", open && "rotate-180")} aria-hidden />
+          </>
+        )}
       </button>
 
       {open && (
@@ -496,14 +635,14 @@ export function WorkModePicker({
           role="menu"
           aria-label="Work mode"
           onKeyDown={onMenuKeyDown}
-          className="absolute bottom-full left-0 z-40 mb-2 max-h-[min(70vh,30rem)] w-80 origin-bottom overflow-y-auto rounded-xl border border-white/10 bg-surface-muted p-1 shadow-[0_16px_40px_-8px_rgb(0_0_0/0.55)] ring-1 ring-white/10 motion-safe:animate-fadeUp"
+          className={cn(MENU, "max-h-[min(70vh,30rem)] w-80", align === "right" ? "right-0" : "left-0")}
         >
           {ordered.map((m, i) => {
             const Icon = MODE_ICON[m.id];
             const selected = m.id === value;
             const header =
               lastGroup !== m.group ? (
-                <p key={`g-${m.group}`} className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p key={`g-${m.group}`} className={SECTION}>
                   {m.group === "general" ? "Work mode" : MODE_GROUP_LABELS[m.group]}
                 </p>
               ) : null;
@@ -523,16 +662,17 @@ export function WorkModePicker({
                     onChange(m.id);
                     close();
                   }}
-                  className={cn(
-                    "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    selected ? "bg-accent/10" : "hover:bg-white/[0.06]"
-                  )}
+                  className={cn(ITEM, selected ? "bg-accent-soft" : "hover:bg-surface-muted")}
                 >
-                  <Icon size={16} className={cn("mt-0.5 shrink-0", selected || m.id === "auto" ? "text-accent" : "text-muted-foreground")} aria-hidden />
+                  <Icon
+                    size={16}
+                    className={cn("mt-0.5 shrink-0", selected || m.id === "auto" ? "text-accent" : "text-muted-foreground")}
+                    aria-hidden
+                  />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
                       {m.label}
-                      {m.restricted && <ShieldCheck size={11} className="text-info/80" aria-label="Restricted" />}
+                      {m.restricted && <ShieldCheck size={11} className="text-accent" aria-label="Restricted" />}
                     </span>
                     <span className="block text-xs text-muted-foreground">{m.hint}</span>
                   </span>

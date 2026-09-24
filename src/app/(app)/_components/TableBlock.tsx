@@ -65,9 +65,9 @@ function ToggleButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
-          ? "bg-accent/10 text-accent"
+          ? "bg-accent-soft text-accent-strong"
           : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
       )}
     >

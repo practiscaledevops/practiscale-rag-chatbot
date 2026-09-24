@@ -245,7 +245,7 @@ function renderTextBlocks(
                     className={cn(
                       "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px]",
                       checked
-                        ? "border-accent bg-accent/15 text-accent"
+                        ? "border-accent bg-accent-soft text-accent-strong"
                         : "border-border text-transparent"
                     )}
                   >
@@ -406,7 +406,7 @@ function renderInline(
           href={best.m[2]}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-accent underline underline-offset-2 hover:text-accent-hover"
+          className="font-medium text-accent-strong underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
         >
           {best.m[1]}
         </a>
@@ -432,7 +432,7 @@ function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
   return (
     <sup className="mx-0.5">
       <span
-        className="inline-flex items-center rounded bg-accent/10 px-1 text-[10px] font-semibold text-accent ring-1 ring-inset ring-accent/20"
+        className="inline-flex items-center rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold text-accent-strong ring-1 ring-inset ring-accent/20"
         title={`Source ${id}`}
         aria-label={`Source ${ordinal ? `${ordinal}` : id}`}
       >

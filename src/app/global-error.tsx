@@ -25,16 +25,41 @@ export default function GlobalError({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#0b0f14",
-          color: "#e6edf3",
-          fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+          padding: 16,
+          boxSizing: "border-box",
+          // Light workspace with the soft PractiScale-green wash (mirrors /login).
+          background:
+            "radial-gradient(1200px 600px at 50% -10%, #E6F7F1, transparent 60%), #FFFFFF",
+          color: "#111315",
+          fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+          WebkitFontSmoothing: "antialiased",
         }}
       >
-        <div style={{ textAlign: "center", maxWidth: 420, padding: 24 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
+        <div
+          style={{
+            textAlign: "center",
+            width: "100%",
+            maxWidth: 420,
+            padding: 32,
+            boxSizing: "border-box",
+            background: "#FFFFFF",
+            border: "1px solid #EAECEC",
+            borderRadius: 28,
+            boxShadow: "0 1px 2px rgb(10 90 75 / 0.04), 0 10px 34px -6px rgb(10 90 75 / 0.12)",
+          }}
+        >
+          <h1
+            style={{
+              fontSize: 24,
+              lineHeight: "32px",
+              fontWeight: 600,
+              letterSpacing: "-0.025em",
+              margin: "0 0 8px",
+            }}
+          >
             The app hit an unexpected error
           </h1>
-          <p style={{ fontSize: 14, opacity: 0.7, margin: "0 0 16px" }}>
+          <p style={{ fontSize: 14, lineHeight: "20px", color: "#6E7375", margin: "0 0 20px" }}>
             Please reload. If it keeps happening, sign out and back in.
           </p>
           <button
@@ -42,12 +67,14 @@ export default function GlobalError({
             style={{
               fontSize: 14,
               fontWeight: 500,
-              padding: "8px 16px",
-              borderRadius: 10,
+              height: 40,
+              padding: "0 20px",
+              borderRadius: 9999,
               border: "none",
               cursor: "pointer",
-              background: "#2dd4bf",
-              color: "#04211d",
+              background: "#10A388",
+              color: "#FFFFFF",
+              boxShadow: "0 1px 2px rgb(17 19 21 / 0.04), 0 4px 16px rgb(17 19 21 / 0.05)",
             }}
           >
             Reload

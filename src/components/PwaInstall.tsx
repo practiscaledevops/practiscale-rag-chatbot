@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MonitorDown } from "lucide-react";
-import { IconButton } from "@/components/IconButton";
+import { Button } from "@/components/Button";
 
 // "Install app" button for the Assistant: shown whenever the browser offers the
 // native install prompt (Chrome/Edge on desktop and Android); hidden once
@@ -56,8 +56,16 @@ export function PwaInstall() {
   };
 
   return (
-    <IconButton aria-label="Install the Assistant as an app" title="Install app" onClick={install} className="text-accent">
-      <MonitorDown size={18} />
-    </IconButton>
+    <Button
+      variant="secondary"
+      size="sm"
+      aria-label="Install the Assistant as an app"
+      title="Install app"
+      onClick={install}
+      className="gap-1.5 px-2.5 sm:px-3.5"
+    >
+      <MonitorDown size={15} className="shrink-0 text-accent" aria-hidden />
+      <span className="hidden sm:inline">Install app</span>
+    </Button>
   );
 }

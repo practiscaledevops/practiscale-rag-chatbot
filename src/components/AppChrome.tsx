@@ -40,6 +40,9 @@ export interface AppChromeProps {
   restrictedToModels?: boolean;
   /** Signed-in user's first name, for the greeting. */
   firstName?: string;
+  /** Display name + email, for the sidebar profile card. */
+  fullName?: string;
+  email?: string;
   /** Whether to surface the Admin link (role resolved server-side). */
   isAdmin?: boolean;
   /** Granted feature permissions (profiles.permissions.features), for mode gating. */
@@ -87,6 +90,8 @@ export function AppChrome({
   models = [],
   restrictedToModels = false,
   firstName = "",
+  fullName = "",
+  email = "",
   isAdmin = false,
   features = [],
   initialTokens = 0,
@@ -270,6 +275,8 @@ export function AppChrome({
         models={models}
         restrictedToModels={restrictedToModels}
         firstName={firstName}
+        fullName={fullName}
+        email={email}
         isAdmin={isAdmin}
         features={features}
         initialTokens={initialTokens}

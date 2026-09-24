@@ -103,7 +103,7 @@ async function readError(res: Response): Promise<string> {
 function RoleBadge({ role }: { role: ProfileRole }) {
   const styles: Record<ProfileRole, string> = {
     user: "bg-surface-muted text-muted-foreground",
-    admin: "bg-accent/10 text-accent",
+    admin: "bg-accent-soft text-accent-strong",
     super_admin: "bg-brand-gradient text-white",
   };
   const label: Record<ProfileRole, string> = {
@@ -114,7 +114,7 @@ function RoleBadge({ role }: { role: ProfileRole }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
         styles[role]
       )}
     >
@@ -164,14 +164,14 @@ function Switch({
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
-        checked ? "bg-accent" : "bg-neutral-300 dark:bg-neutral-700",
+        checked ? "bg-accent" : "bg-surface-sunken",
         disabled && "cursor-not-allowed opacity-50"
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+          "inline-block h-4 w-4 transform rounded-full bg-white shadow-soft transition-transform",
           checked ? "translate-x-4" : "translate-x-0.5"
         )}
       />
@@ -180,9 +180,9 @@ function Switch({
 }
 
 const inputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
 
-const labelClass = "block text-sm font-medium";
+const labelClass = "block text-xs font-medium text-muted-foreground";
 const hintClass = "text-xs text-muted-foreground";
 
 // ---------------------------------------------------------------------------
@@ -244,22 +244,19 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
   }, [data.users, q, roleFilter, statusFilter]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">
+    <div className="w-full">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            <UsersIcon size={20} className="text-accent" />
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            <UsersIcon size={22} className="text-accent" />
             Users
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Manage accounts, roles, and what each person can access.
           </p>
         </div>
-        <Button
-          onClick={() => setCreating(true)}
-          className="bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
-        >
+        <Button onClick={() => setCreating(true)}>
           <UserPlus size={16} />
           Add user
         </Button>
@@ -269,7 +266,7 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
       {notice && (
         <div
           role="status"
-          className="mt-4 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-foreground"
+          className="mt-4 flex items-center gap-2 rounded-xl border border-success/30 bg-success/10 px-3.5 py-2.5 text-sm text-foreground"
         >
           <Check size={15} className="text-success" />
           {notice}
@@ -316,18 +313,18 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-border bg-surface shadow-soft">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-4 py-3 font-medium">User</th>
-                <th scope="col" className="px-4 py-3 font-medium">Role</th>
-                <th scope="col" className="px-4 py-3 font-medium">Status</th>
-                <th scope="col" className="px-4 py-3 font-medium">Team</th>
-                <th scope="col" className="px-4 py-3 font-medium">Access</th>
-                <th scope="col" className="px-4 py-3 font-medium">Usage</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">
+              <tr className="border-b border-border text-xs font-medium text-muted-foreground">
+                <th scope="col" className="px-5 py-3 font-medium">User</th>
+                <th scope="col" className="px-5 py-3 font-medium">Role</th>
+                <th scope="col" className="px-5 py-3 font-medium">Status</th>
+                <th scope="col" className="px-5 py-3 font-medium">Team</th>
+                <th scope="col" className="px-5 py-3 font-medium">Access</th>
+                <th scope="col" className="px-5 py-3 font-medium">Usage</th>
+                <th scope="col" className="px-5 py-3 text-right font-medium">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -343,8 +340,16 @@ export function UsersClient({ initial }: { initial: AdminUsersPayload }) {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    No users match your filters.
+                  <td colSpan={7} className="px-5 py-12">
+                    <div className="flex flex-col items-center gap-3 text-center">
+                      <span
+                        aria-hidden
+                        className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+                      >
+                        <Search size={18} />
+                      </span>
+                      <p className="text-sm text-muted-foreground">No users match your filters.</p>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -411,9 +416,9 @@ function UserRow({
   const lastActive = user.usage?.lastUsedAt ?? user.lastSignInAt;
 
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-surface-muted/60">
+    <tr className="border-b border-border transition-colors last:border-0 hover:bg-surface-muted/60">
       {/* User */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         <div className="flex items-center gap-3">
           <span
             aria-hidden
@@ -427,7 +432,7 @@ function UserRow({
                 {user.displayName || user.email || "Unknown"}
               </span>
               {isCurrent && (
-                <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="shrink-0 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                   You
                 </span>
               )}
@@ -440,17 +445,17 @@ function UserRow({
       </td>
 
       {/* Role */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         <RoleBadge role={user.role} />
       </td>
 
       {/* Status */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         <StatusPill active={user.isActive} />
       </td>
 
       {/* Team */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         {user.team ? (
           <span className="text-sm">{user.team.name}</span>
         ) : (
@@ -459,7 +464,7 @@ function UserRow({
       </td>
 
       {/* Access */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         <div className="text-sm">{modelSummary(user)}</div>
         <div className="text-xs text-muted-foreground">
           Features: {featureCount === 0 ? "all" : featureCount} · Tiers:{" "}
@@ -468,7 +473,7 @@ function UserRow({
       </td>
 
       {/* Usage */}
-      <td className="px-4 py-3">
+      <td className="px-5 py-3">
         {user.usage ? (
           <div>
             <div className="text-sm">
@@ -486,7 +491,7 @@ function UserRow({
       </td>
 
       {/* Actions */}
-      <td className="px-4 py-3 text-right">
+      <td className="px-5 py-3 text-right">
         <Button variant="secondary" size="sm" onClick={onEdit}>
           <Pencil size={13} />
           Edit
@@ -646,7 +651,7 @@ function UserEditor({
       <form onSubmit={submit}>
         <div className="max-h-[65vh] space-y-6 overflow-y-auto pr-1">
           {locked && (
-            <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground">
+            <p className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-xs text-foreground">
               <AlertTriangle size={14} className="mt-px shrink-0 text-warning" />
               This is a super admin account. Only another super admin can change it.
             </p>
@@ -672,7 +677,7 @@ function UserEditor({
             ) : (
               <div className="space-y-1.5">
                 <span className={labelClass}>Email</span>
-                <div className="rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-muted-foreground">
+                <div className="flex h-11 items-center rounded-xl border border-border bg-surface-muted px-3.5 text-sm text-muted-foreground">
                   {user?.email ?? "—"}
                 </div>
               </div>
@@ -700,9 +705,9 @@ function UserEditor({
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label
                     className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition-colors",
+                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 text-sm transition-colors",
                       credMode === "password"
-                        ? "border-accent bg-accent/5"
+                        ? "border-accent bg-accent-softer"
                         : "border-border hover:bg-surface-muted"
                     )}
                   >
@@ -722,9 +727,9 @@ function UserEditor({
                   </label>
                   <label
                     className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm transition-colors",
+                      "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 text-sm transition-colors",
                       credMode === "invite"
-                        ? "border-accent bg-accent/5"
+                        ? "border-accent bg-accent-softer"
                         : "border-border hover:bg-surface-muted"
                     )}
                   >
@@ -809,7 +814,7 @@ function UserEditor({
               </select>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5 sm:col-span-2">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3 sm:col-span-2">
               <div>
                 <div className="text-sm font-medium">Account active</div>
                 <p className={hintClass}>
@@ -847,7 +852,7 @@ function UserEditor({
 
             <div
               className={cn(
-                "rounded-lg border border-border p-3",
+                "rounded-xl border border-border p-3",
                 canAll && "pointer-events-none opacity-50"
               )}
               aria-disabled={canAll}
@@ -864,12 +869,12 @@ function UserEditor({
                     return (
                       <div key={provider}>
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span className="px-2 text-xs font-semibold text-muted-foreground">
                             {providerLabel(provider)}
                           </span>
                           <button
                             type="button"
-                            className="text-xs text-accent hover:underline"
+                            className="rounded-md px-2 text-xs font-medium text-accent-strong hover:underline"
                             onClick={() =>
                               setModels((prev) =>
                                 allOn
@@ -885,7 +890,7 @@ function UserEditor({
                           {list.map((m) => (
                             <label
                               key={m.id}
-                              className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-surface-muted"
+                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-surface-muted"
                             >
                               <input
                                 type="checkbox"
@@ -895,7 +900,7 @@ function UserEditor({
                               />
                               <span className="truncate">{m.label}</span>
                               {m.tier && (
-                                <span className="ml-auto rounded bg-surface-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                                <span className="ml-auto shrink-0 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium capitalize text-muted-foreground">
                                   {m.tier}
                                 </span>
                               )}
@@ -917,11 +922,11 @@ function UserEditor({
           {/* --- Features --- */}
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">Features</h3>
-            <div className="grid gap-1.5 rounded-lg border border-border p-3 sm:grid-cols-2">
+            <div className="grid gap-1.5 rounded-xl border border-border p-3 sm:grid-cols-2">
               {data.features.map((f: AdminFeature) => (
                 <label
                   key={f.key}
-                  className="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-surface-muted"
+                  className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-surface-muted"
                 >
                   <input
                     type="checkbox"
@@ -954,10 +959,10 @@ function UserEditor({
                     disabled={disabled}
                     onClick={() => toggle(tiers, setTiers, t)}
                     className={cn(
-                      "rounded-full border px-3 py-1 text-sm capitalize transition-colors",
+                      "rounded-full border px-3.5 py-1.5 text-sm font-medium capitalize transition-colors",
                       on
-                        ? "border-accent bg-accent/10 text-accent"
-                        : "border-border text-muted-foreground hover:bg-surface-muted",
+                        ? "border-accent/30 bg-accent-soft text-accent-strong"
+                        : "border-border bg-surface text-muted-foreground hover:bg-surface-muted hover:text-foreground",
                       disabled && "cursor-not-allowed opacity-60"
                     )}
                   >
@@ -971,7 +976,7 @@ function UserEditor({
 
           {/* --- Danger zone (super admin, editing someone else) --- */}
           {isEdit && canGrantSuper && !isSelf && (
-            <section className="space-y-2 rounded-lg border border-danger/30 bg-danger/5 p-3">
+            <section className="space-y-2.5 rounded-xl border border-danger/30 bg-danger/5 p-4">
               <h3 className="text-sm font-semibold text-danger">Danger zone</h3>
               <p className={hintClass}>
                 To temporarily disable access, turn off “Account active” above. Deleting is
@@ -983,9 +988,9 @@ function UserEditor({
                   <Button
                     type="button"
                     size="sm"
+                    variant="danger"
                     onClick={remove}
                     disabled={busy}
-                    className="bg-danger text-white hover:bg-danger/90"
                   >
                     {busy ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                     Yes, delete
@@ -1006,7 +1011,7 @@ function UserEditor({
                   size="sm"
                   variant="secondary"
                   onClick={() => setConfirmDelete(true)}
-                  className="border-danger/40 text-danger hover:bg-danger/10"
+                  className="border-danger/30 text-danger hover:bg-danger/10"
                 >
                   <Trash2 size={13} />
                   Delete permanently
@@ -1016,7 +1021,7 @@ function UserEditor({
           )}
 
           {err && (
-            <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+            <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger">
               {err}
             </p>
           )}
@@ -1027,11 +1032,7 @@ function UserEditor({
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            disabled={disabled}
-            className="bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
-          >
+          <Button type="submit" disabled={disabled}>
             {busy ? (
               <>
                 <Loader2 size={15} className="animate-spin" />

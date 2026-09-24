@@ -117,7 +117,7 @@ export function PromptLibrary({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Prompt library" className="max-w-lg">
+    <Modal open={open} onClose={onClose} title="Saved prompts" className="max-w-lg">
       {showEditor ? (
         <div className="space-y-3">
           <div className="space-y-1">
@@ -129,7 +129,7 @@ export function PromptLibrary({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Weekly report summary"
-              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
           <div className="space-y-1">
@@ -142,7 +142,7 @@ export function PromptLibrary({
               onChange={(e) => setBody(e.target.value)}
               rows={7}
               placeholder="Write the prompt you want to reuse…"
-              className="w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -191,7 +191,7 @@ export function PromptLibrary({
                 <li
                   key={p.id}
                   className={cn(
-                    "group rounded-xl border border-border bg-surface p-3 transition-colors hover:border-accent/40"
+                    "group rounded-2xl border border-border bg-surface p-3.5 transition-colors hover:border-accent/40 hover:bg-accent-softer"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">

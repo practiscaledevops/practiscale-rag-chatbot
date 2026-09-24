@@ -2,10 +2,20 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/Button";
 import { Logo } from "@/components/Brand";
+import { BrainOrb } from "@/components/BrainOrb";
+import { cn } from "@/lib/utils";
+
+/** Shared text-field look (pill-soft rounded, green focus). Height set per field. */
+const fieldClass =
+  "w-full rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
+
+/** Inline error callout. */
+const alertClass =
+  "rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-sm text-danger";
 
 /**
  * Constrain the post-login redirect to a SAME-ORIGIN path. `redirectedFrom`
@@ -173,90 +183,99 @@ function LoginForm() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-      {/* Soft ambient brand wash behind the card — decorative, non-interactive. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="bg-brand-gradient absolute -top-32 left-1/2 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full opacity-[0.12] blur-3xl" />
-      </div>
+    <main className="flex min-h-screen flex-col items-center justify-center bg-background bg-[radial-gradient(1200px_600px_at_50%_-10%,rgb(var(--accent-soft)),transparent_60%)] px-4 py-10">
+      <div className="w-full max-w-[420px] rounded-3xl border border-border bg-surface p-8 shadow-float">
+        {/* Dark wordmark on the white card. */}
+        <Logo className="h-6" />
 
-      <div className="relative w-full max-w-sm">
-        <div className="rounded-2xl border border-border bg-surface p-8 shadow-soft-lg">
-          <div className="mb-8 flex flex-col items-center text-center">
-            {/* Dark wordmark on the light surface; white wordmark in dark mode. */}
-            <Logo variant="light" className="h-8 dark:hidden" />
-            <Logo variant="dark" className="hidden h-8 dark:block" />
-            <p className="mt-4 text-sm text-muted-foreground">
-              {mfa
-                ? "Enter the 6-digit code from your authenticator app."
-                : demo
-                  ? "Demo mode — any credentials work. Just press Sign in."
-                  : "Sign in to continue to your workspace."}
-            </p>
-          </div>
+        <div className="mt-6 flex flex-col items-center text-center">
+          <BrainOrb size={104} active={pending} />
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight">
+            {mfa ? "Two-step verification" : "Welcome back"}
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {mfa
+              ? "Enter the 6-digit code from your authenticator app."
+              : demo
+                ? "Demo mode — any credentials work. Just press Sign in."
+                : "Sign in to continue to your workspace."}
+          </p>
+        </div>
 
-          {deactivated && !mfa && (
-            <p role="status" className="mb-4 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+        {deactivated && !mfa && (
+          <p
+            role="status"
+            className="mt-6 flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm text-foreground"
+          >
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" aria-hidden />
+            <span>
               Your account has been deactivated. Contact your workspace admin to regain access.
-            </p>
-          )}
+            </span>
+          </p>
+        )}
 
-          {mfa ? (
-            <form onSubmit={onSubmitMfa} className="space-y-4" noValidate>
-              <div className="space-y-1.5">
-                <label htmlFor="mfa-code" className="flex items-center gap-1.5 text-sm font-medium">
-                  <ShieldCheck size={14} className="text-accent" />
-                  Verification code
-                </label>
-                <input
-                  id="mfa-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  required
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="123456"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-center font-mono text-lg tracking-[0.4em] outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40"
-                />
-              </div>
-
-              {error && (
-                <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-                  {error}
-                </p>
-              )}
-
-              <Button
-                type="submit"
-                disabled={pending || mfaCode.length < 6}
-                className="w-full bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
-              >
-                {pending ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Verifying…
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck size={16} />
-                    Verify
-                  </>
-                )}
-              </Button>
-
-              <button
-                type="button"
-                onClick={cancelMfa}
-                disabled={pending}
-                className="w-full text-center text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline disabled:opacity-50"
-              >
-                Use a different account
-              </button>
-            </form>
-          ) : (
-          <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        {mfa ? (
+          <form onSubmit={onSubmitMfa} className="mt-7 space-y-4" noValidate>
             <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-sm font-medium">
+              <label
+                htmlFor="mfa-code"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                <ShieldCheck size={14} className="text-accent" />
+                Verification code
+              </label>
+              <input
+                id="mfa-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                required
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="123456"
+                className={cn(fieldClass, "h-12 text-center font-mono text-lg tracking-[0.4em]")}
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className={alertClass}>
+                {error}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              size="lg"
+              disabled={pending || mfaCode.length < 6}
+              className="w-full"
+            >
+              {pending ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Verifying…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={16} />
+                  Verify
+                </>
+              )}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={cancelMfa}
+              disabled={pending}
+              className="w-full text-muted-foreground hover:text-foreground"
+            >
+              Use a different account
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={onSubmit} className="mt-7 space-y-4" noValidate>
+            <div className="space-y-1.5">
+              <label htmlFor="email" className="block text-xs font-medium text-muted-foreground">
                 Email
               </label>
               <input
@@ -266,12 +285,12 @@ function LoginForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40"
+                className={cn(fieldClass, "h-11")}
               />
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="block text-sm font-medium">
+              <label htmlFor="password" className="block text-xs font-medium text-muted-foreground">
                 Password
               </label>
               <input
@@ -281,24 +300,17 @@ function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40"
+                className={cn(fieldClass, "h-11")}
               />
             </div>
 
             {error && (
-              <p
-                role="alert"
-                className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger"
-              >
+              <p role="alert" className={alertClass}>
                 {error}
               </p>
             )}
 
-            <Button
-              type="submit"
-              disabled={pending}
-              className="w-full bg-accent text-accent-foreground hover:bg-accent-hover dark:bg-accent dark:text-accent-foreground dark:hover:bg-accent-hover"
-            >
+            <Button type="submit" size="lg" disabled={pending} className="mt-2 w-full">
               {pending ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
@@ -312,8 +324,7 @@ function LoginForm() {
               )}
             </Button>
           </form>
-          )}
-        </div>
+        )}
       </div>
     </main>
   );

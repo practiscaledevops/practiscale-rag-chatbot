@@ -203,14 +203,15 @@ export const LEARNING_TYPE_LABEL: Record<string, string> = {
 
 /** Chip colour per lifecycle stage (Tailwind classes must appear literally). */
 export const LEARNING_TYPE_TONE: Record<string, string> = {
-  decision: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  implementation: "border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-  experiment: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  result: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  learning: "border-accent/30 bg-accent/10 text-accent",
-  adaptation: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
-  standard: "border-private/30 bg-private/10 text-private",
-  postmortem: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  // Kit colors (cyan / tea / pink / dark) + PractiScale greens + semantic tints.
+  decision: "border-folder-1/70 bg-folder-1/25 text-[#0b5563]",
+  implementation: "border-accent/30 bg-accent-soft text-accent-strong",
+  experiment: "border-warning/30 bg-warning/10 text-warning",
+  result: "border-success/30 bg-success/10 text-success",
+  learning: "border-tea-foreground/15 bg-tea text-tea-foreground",
+  adaptation: "border-folder-3/70 bg-folder-3/20 text-[#8a2c66]",
+  standard: "border-transparent bg-[#262626] text-white",
+  postmortem: "border-danger/30 bg-danger/10 text-danger",
 };
 
 export const LEARNING_STATUSES = [

@@ -8,6 +8,7 @@
 import * as React from "react";
 import { Loader2, Copy, Check, X } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import { Button } from "@/components/Button";
 import { Markdown } from "./Markdown";
 import { cn } from "@/lib/utils";
 
@@ -98,33 +99,35 @@ function Pane({ open, messages, mode, pane }: { open: boolean; messages: ChatMes
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-border bg-surface">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border pl-4 pr-2.5">
         <span className="truncate text-sm font-semibold">{pane.label}</span>
         {state === "loading" ? (
-          <Loader2 size={14} className="animate-spin text-muted-foreground" />
+          <Loader2 size={14} className="mr-1.5 animate-spin text-muted-foreground" />
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={copy}
             disabled={!text.trim()}
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground disabled:opacity-40"
+            className="h-7 gap-1 px-2.5 text-muted-foreground hover:text-foreground"
           >
             {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
             Copy
-          </button>
+          </Button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 text-sm">
         {state === "error" ? (
-          <p className="text-danger">This model failed to respond. It may be unavailable.</p>
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-danger">This model failed to respond. It may be unavailable.</p>
         ) : text.trim() ? (
           <Markdown content={text} />
         ) : (
           <div className="space-y-2" aria-hidden>
-            <div className="h-3 w-11/12 animate-pulse rounded bg-surface-muted" />
-            <div className="h-3 w-4/5 animate-pulse rounded bg-surface-muted" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-surface-muted" />
+            <div className="h-3 w-11/12 animate-pulse rounded-full bg-surface-muted" />
+            <div className="h-3 w-4/5 animate-pulse rounded-full bg-surface-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded-full bg-surface-muted" />
           </div>
         )}
       </div>
@@ -147,22 +150,18 @@ export function CompareDrafts({
 }) {
   return (
     <Modal open={open} onClose={onClose} title="Compare drafts" className="max-w-4xl">
-      <p className="mb-3 text-xs text-muted-foreground">
+      <p className="-mt-1 mb-4 text-sm text-muted-foreground">
         The same question, answered by two models. Nothing here is saved — copy the draft you prefer.
       </p>
-      <div className={cn("flex min-h-0 gap-3", "h-[60vh] flex-col sm:flex-row")}>
+      <div className={cn("flex min-h-0 gap-4", "h-[60vh] flex-col sm:flex-row")}>
         <Pane open={open} messages={messages} mode={mode} pane={panes[0]} />
         <Pane open={open} messages={messages} mode={mode} pane={panes[1]} />
       </div>
-      <div className="mt-3 flex justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
-        >
+      <div className="mt-5 flex justify-end">
+        <Button type="button" variant="secondary" onClick={onClose}>
           <X size={14} />
           Close
-        </button>
+        </Button>
       </div>
     </Modal>
   );

@@ -2,19 +2,17 @@
 // (e.g. opening a thread reads its messages). Keeps navigation from flashing an
 // empty screen.
 
-import { Sparkles } from "lucide-react";
+import { OrbAvatar } from "@/components/OrbAvatar";
 
 export default function AppLoading() {
   return (
-    <div className="flex h-full min-h-[50vh] items-center justify-center">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-soft">
-          <Sparkles size={15} />
-        </span>
+    <div className="flex h-full min-h-[50vh] items-center justify-center bg-background">
+      <div className="flex items-center gap-3 rounded-full bg-surface-muted py-1.5 pl-1.5 pr-4 text-sm text-muted-foreground">
+        <OrbAvatar size={28} active />
         <span className="flex gap-1" aria-hidden>
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
         </span>
       </div>
     </div>

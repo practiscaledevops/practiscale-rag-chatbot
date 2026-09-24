@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, LogOut, Pencil, X } from "lucide-react";
 import { Button } from "@/components/Button";
+import { IconButton } from "@/components/IconButton";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { cn } from "@/lib/utils";
 import { updateDisplayName } from "./actions";
 
 /** First two initials for the avatar, from the display name or email. */
@@ -87,7 +87,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
   }
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-5 shadow-soft sm:p-6">
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft sm:p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <span
@@ -119,7 +119,7 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                     autoFocus
                     maxLength={120}
                     disabled={saving}
-                    className="w-full max-w-xs rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-ring/40 disabled:opacity-60"
+                    className="h-10 w-full max-w-xs rounded-xl border border-border bg-surface px-3.5 text-sm outline-none transition-colors placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <Button
                     type="button"
@@ -158,22 +158,18 @@ export function AccountClient({ displayName, email, roleLabel }: AccountClientPr
                   <h2 className="truncate text-lg font-semibold tracking-tight">
                     {name}
                   </h2>
-                  <button
+                  <IconButton
                     type="button"
+                    size="sm"
                     onClick={startEdit}
                     aria-label="Edit display name"
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="shrink-0"
                   >
                     <Pencil size={14} />
-                  </button>
+                  </IconButton>
                 </div>
                 <p className="truncate text-sm text-muted-foreground">{email}</p>
-                <span
-                  className={cn(
-                    "mt-2 inline-flex items-center rounded-full border border-border bg-surface-muted px-2 py-0.5 text-xs font-medium",
-                    "text-accent"
-                  )}
-                >
+                <span className="mt-2 inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
                   {roleLabel}
                 </span>
               </>

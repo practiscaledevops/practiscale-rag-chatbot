@@ -1,6 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import { PwaRegister } from "@/components/PwaRegister";
 import "./globals.css";
+
+// Inter across the whole product (Light → Bold), self-hosted by next/font and
+// exposed as --font-inter for the --font-sans token (see globals.css).
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 // Absolute base for resolving OG/icon URLs. Override in production via
 // NEXT_PUBLIC_SITE_URL; the fallback keeps local + preview builds happy.
@@ -24,7 +34,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0B1512",
+  themeColor: "#161616",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -32,7 +42,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       {/* Theme surfaces come from the shared design tokens (see globals.css). */}
       <body className="min-h-screen bg-background text-foreground antialiased">
         <PwaRegister />

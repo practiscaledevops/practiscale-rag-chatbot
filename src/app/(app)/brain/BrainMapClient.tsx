@@ -179,15 +179,17 @@ export function BrainMapClient() {
                 aria-pressed={active}
                 onClick={() => setCls(active ? null : c.id)}
                 className={cn(
-                  "flex flex-col rounded-xl border bg-surface p-3.5 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  active ? "border-accent ring-1 ring-accent/40" : "border-border hover:border-accent/40"
+                  "flex flex-col rounded-2xl border p-4 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-soft-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "border-accent bg-accent-softer ring-1 ring-accent/30"
+                    : "border-border bg-surface hover:border-accent/40"
                 )}
               >
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   {c.label}
                 </span>
                 <span className="mt-1 text-sm font-medium text-foreground">{c.question}</span>
-                <span className="mt-2 text-2xl font-semibold tabular-nums text-accent">
+                <span className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-accent-strong">
                   {hero ? n.toLocaleString() : "—"}
                 </span>
                 <span className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{c.description}</span>
@@ -208,10 +210,10 @@ export function BrainMapClient() {
                   aria-pressed={active}
                   onClick={() => setDomain(active ? null : id)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active
-                      ? "border-accent bg-accent/10 text-accent"
-                      : "border-border bg-surface text-foreground/90 hover:border-accent/40 hover:bg-surface-muted"
+                      ? "border-accent/30 bg-accent-soft text-accent-strong"
+                      : "border-border bg-surface text-foreground/90 hover:bg-surface-muted"
                   )}
                 >
                   {domainLabel(id)}
@@ -232,7 +234,7 @@ export function BrainMapClient() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search objects by name, ref or summary…"
               aria-label="Search the Brain"
-              className="w-full rounded-xl border border-border bg-surface py-2.5 pl-9 pr-3 text-sm text-foreground shadow-soft placeholder:text-muted-foreground focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="h-11 w-full rounded-xl border border-border bg-surface pl-9 pr-3.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           </div>
           {filtered && (
@@ -261,7 +263,7 @@ export function BrainMapClient() {
           </div>
 
           {error && (
-            <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-sm text-danger">
+            <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
               <p>{error}</p>
               <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReload((n) => n + 1)}>
                 <RefreshCw size={13} />
@@ -273,22 +275,34 @@ export function BrainMapClient() {
           {loading && !error ? (
             <ul className="space-y-2" aria-hidden>
               {Array.from({ length: 5 }).map((_, i) => (
-                <li key={i} className="h-20 animate-pulse rounded-xl bg-surface-muted" />
+                <li key={i} className="h-20 animate-pulse rounded-2xl bg-surface-muted" />
               ))}
             </ul>
           ) : !error && objects.length === 0 ? (
-            <div className="rounded-xl border border-border bg-surface px-4 py-12 text-center text-sm text-muted-foreground">
-              {filtered ? (
-                <>
-                  No objects match these filters.{" "}
-                  <button type="button" onClick={clearFilters} className="text-accent hover:underline">
-                    Clear them
-                  </button>
-                  .
-                </>
-              ) : (
-                "The Brain has no knowledge objects yet. Ingest sources in the Brain's back office to see them here."
-              )}
+            <div className="flex flex-col items-center rounded-2xl border border-border bg-surface px-6 py-12 text-center text-sm text-muted-foreground">
+              <span
+                aria-hidden
+                className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+              >
+                <Brain size={20} />
+              </span>
+              <p className="max-w-md">
+                {filtered ? (
+                  <>
+                    No objects match these filters.{" "}
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="font-medium text-accent-strong hover:underline"
+                    >
+                      Clear them
+                    </button>
+                    .
+                  </>
+                ) : (
+                  "The Brain has no knowledge objects yet. Ingest sources in the Brain's back office to see them here."
+                )}
+              </p>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -299,7 +313,7 @@ export function BrainMapClient() {
           )}
 
           {hasMore && !loading && !error && (
-            <div className="mt-3 flex justify-center">
+            <div className="mt-4 flex justify-center">
               <Button variant="secondary" size="sm" onClick={loadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 size={13} className="animate-spin" /> : null}
                 Load more
@@ -316,9 +330,9 @@ export function BrainMapClient() {
 
 function Stat({ label, value, hint }: { label: string; value: number | undefined; hint?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface px-3.5 py-3 shadow-soft">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">
+    <div className="rounded-2xl border border-border bg-surface px-4 py-3.5 shadow-soft">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-foreground">
         {typeof value === "number" ? value.toLocaleString() : "—"}
       </p>
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
@@ -338,15 +352,15 @@ function ObjectRow({
 }) {
   const fresh = freshness(o.updated_at);
   return (
-    <li className="rounded-xl border border-border bg-surface shadow-soft transition-colors hover:border-accent/40">
-      <div className="flex items-start gap-2 p-3">
+    <li className="rounded-2xl border border-border bg-surface shadow-soft transition-colors hover:border-accent/40">
+      <div className="flex items-start gap-2 p-4">
         <button
           type="button"
           onClick={onOpen}
-          className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 flex-1 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="font-mono text-xs text-accent">{o.ref}</span>
+            <span className="font-mono text-xs text-accent-strong">{o.ref}</span>
             <span className="text-sm font-medium text-foreground">{o.name}</span>
             {o.current === false && (
               <Chip tone="warning">{o.status === "historical" ? "Historical" : "Expired"}</Chip>

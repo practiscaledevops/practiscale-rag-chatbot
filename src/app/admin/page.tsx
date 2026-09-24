@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/Button";
 
 /**
  * Admin Overview — the landing page of the control panel. Reads fleet-wide 30d
@@ -91,26 +92,27 @@ export default function AdminOverviewPage() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Overview</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Overview</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Workspace activity over the last {data?.range.days ?? 30} days.
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => void load()}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-surface-muted disabled:pointer-events-none disabled:opacity-60"
         >
           <RefreshCw size={14} className={cn(loading && "animate-spin")} aria-hidden />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {error ? (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
+          className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
         >
           <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden />
           <div>
@@ -194,16 +196,16 @@ function StatCard({
   title?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-soft">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/10 text-accent">
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
+      <div className="flex items-center gap-2.5 text-muted-foreground">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent">
           <Icon size={16} aria-hidden />
         </span>
         <span className="text-sm font-medium">{label}</span>
       </div>
-      <div className="mt-3">
+      <div className="mt-4">
         {value === null ? (
-          <div className="h-8 w-24 animate-pulse rounded-md bg-surface-muted" aria-hidden />
+          <div className="h-8 w-24 animate-pulse rounded-lg bg-surface-muted" aria-hidden />
         ) : (
           <p className="text-2xl font-semibold tabular-nums tracking-tight" title={title}>
             {value}
@@ -228,66 +230,69 @@ function TopModels({
   return (
     <section
       aria-label="Top models"
-      className="rounded-xl border border-border bg-surface shadow-soft"
+      className="overflow-hidden rounded-2xl border border-border bg-surface shadow-soft"
     >
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold">Top models (30d)</h3>
+      <div className="border-b border-border px-5 py-4">
+        <h3 className="text-base font-semibold">Top models (30d)</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">By token volume.</p>
       </div>
 
       {loading ? (
         <div className="divide-y divide-border">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="h-4 w-40 animate-pulse rounded bg-surface-muted" aria-hidden />
-              <div className="h-4 w-16 animate-pulse rounded bg-surface-muted" aria-hidden />
+            <div key={i} className="flex items-center justify-between gap-4 px-5 py-3.5">
+              <div className="h-4 w-40 animate-pulse rounded-full bg-surface-muted" aria-hidden />
+              <div className="h-4 w-16 animate-pulse rounded-full bg-surface-muted" aria-hidden />
             </div>
           ))}
         </div>
       ) : models.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+        <p className="px-5 py-10 text-center text-sm text-muted-foreground">
           No usage recorded in this window yet.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-4 py-2 font-medium">
+              <tr className="text-left text-xs font-medium text-muted-foreground">
+                <th scope="col" className="px-5 py-2.5 font-medium">
                   Model
                 </th>
-                <th scope="col" className="px-4 py-2 text-right font-medium">
+                <th scope="col" className="px-5 py-2.5 text-right font-medium">
                   Tokens
                 </th>
-                <th scope="col" className="hidden px-4 py-2 text-right font-medium sm:table-cell">
+                <th scope="col" className="hidden px-5 py-2.5 text-right font-medium sm:table-cell">
                   Calls
                 </th>
-                <th scope="col" className="px-4 py-2 text-right font-medium">
+                <th scope="col" className="px-5 py-2.5 text-right font-medium">
                   Est. cost
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {models.map((m) => (
-                <tr key={m.model} className="hover:bg-surface-muted/60">
-                  <td className="px-4 py-3">
+                <tr
+                  key={m.model}
+                  className="border-t border-border transition-colors hover:bg-surface-muted/60"
+                >
+                  <td className="px-5 py-3">
                     <span className="font-medium">{m.model}</span>
                     {m.provider && (
-                      <span className="ml-2 rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="ml-2 rounded-full bg-surface-muted px-2.5 py-0.5 text-xs text-muted-foreground">
                         {m.provider}
                       </span>
                     )}
                   </td>
                   <td
-                    className="px-4 py-3 text-right tabular-nums"
+                    className="px-5 py-3 text-right tabular-nums"
                     title={`${numberFmt.format(m.tokens)} tokens`}
                   >
                     {compact(m.tokens)}
                   </td>
-                  <td className="hidden px-4 py-3 text-right tabular-nums text-muted-foreground sm:table-cell">
+                  <td className="hidden px-5 py-3 text-right tabular-nums text-muted-foreground sm:table-cell">
                     {numberFmt.format(m.events)}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
+                  <td className="px-5 py-3 text-right tabular-nums">
                     {currencyFmt.format(m.costUsd)}
                   </td>
                 </tr>

@@ -37,7 +37,7 @@ function relTime(iso: string): string {
 }
 
 const selectCls =
-  "h-9 rounded-lg border border-border bg-surface px-2.5 text-sm text-foreground shadow-soft focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+  "h-10 rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
 
 export function LearningClient() {
   const [status, setStatus] = useState("");
@@ -141,7 +141,7 @@ export function LearningClient() {
         </div>
 
         {error && (
-          <div role="alert" className="mb-3 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-sm text-danger">
+          <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
             <p>{error}</p>
             <Button variant="secondary" size="sm" className="mt-2" onClick={() => setReload((n) => n + 1)}>
               <RefreshCw size={13} />
@@ -151,18 +151,24 @@ export function LearningClient() {
         )}
 
         {loading && !error ? (
-          <ul className="space-y-2" aria-hidden>
+          <ul className="space-y-3" aria-hidden>
             {Array.from({ length: 4 }).map((_, i) => (
-              <li key={i} className="h-24 animate-pulse rounded-xl bg-surface-muted" />
+              <li key={i} className="h-24 animate-pulse rounded-2xl bg-surface-muted" />
             ))}
           </ul>
         ) : !error && records.length === 0 ? (
-          <div className="rounded-xl border border-border bg-surface px-4 py-12 text-center text-sm text-muted-foreground">
+          <div className="flex flex-col items-center rounded-2xl border border-border bg-surface px-6 py-12 text-center text-sm text-muted-foreground">
+            <span
+              aria-hidden
+              className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+            >
+              <Lightbulb size={20} />
+            </span>
             {filtered ? (
               "No learnings match these filters."
             ) : (
               <>
-                <p className="font-medium text-foreground">No learnings yet.</p>
+                <p className="text-sm font-medium text-foreground">No learnings yet.</p>
                 <p className="mx-auto mt-1 max-w-md">
                   When the assistant spots a decision, experiment or result in a conversation, it
                   offers <span className="font-medium text-foreground">“Save as learning”</span> under
@@ -173,7 +179,7 @@ export function LearningClient() {
             )}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {records.map((r) => (
               <LearningRow key={r.id} r={r} onOpenRef={setDrawerRef} />
             ))}
@@ -181,7 +187,7 @@ export function LearningClient() {
         )}
 
         {hasMore && !loading && !error && (
-          <div className="mt-3 flex justify-center">
+          <div className="mt-4 flex justify-center">
             <Button variant="secondary" size="sm" onClick={loadMore} disabled={loadingMore}>
               {loadingMore ? <Loader2 size={13} className="animate-spin" /> : null}
               Load more
@@ -199,12 +205,12 @@ function LearningRow({ r, onOpenRef }: { r: LearningRecord; onOpenRef: (ref: str
   const missing = Array.isArray(r.missing_evidence) ? r.missing_evidence : [];
   const playbooks = Array.isArray(r.playbooks) ? r.playbooks : [];
   return (
-    <li className="rounded-xl border border-border bg-surface p-3 shadow-soft">
+    <li className="rounded-2xl border border-border bg-surface p-4 shadow-soft">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-mono text-xs text-accent">{r.ref}</span>
+        <span className="font-mono text-xs text-accent-strong">{r.ref}</span>
         <span
           className={cn(
-            "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            "rounded-full border px-2.5 py-0.5 text-xs font-medium",
             LEARNING_TYPE_TONE[r.record_type] ?? "border-border text-muted-foreground"
           )}
         >
@@ -226,7 +232,7 @@ function LearningRow({ r, onOpenRef }: { r: LearningRecord; onOpenRef: (ref: str
               type="button"
               onClick={() => onOpenRef(p.ref)}
               title={p.name}
-              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[11px] text-accent transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-0.5 font-mono text-[11px] text-accent-strong transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {p.ref}
             </button>

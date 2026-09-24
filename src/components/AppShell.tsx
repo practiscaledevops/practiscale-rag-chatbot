@@ -15,6 +15,8 @@ import { allowedModeDefs, DEFAULT_MODE, type WorkMode, type WorkModeDef } from "
 import { Sidebar, type SidebarProps } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { CommandPalette } from "@/components/CommandPalette";
+import { DEFAULT_OUTPUT_TYPE, isOutputType, type OutputType } from "@/lib/output-types";
+import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
 
 // ---------------------------------------------------------------------------
 // Model selection
@@ -188,6 +190,9 @@ interface AppShellContextValue {
   addUsage: (tokens: { promptTokens?: number; completionTokens?: number }) => void;
   /** The signed-in user's first name, for the greeting. */
   firstName: string;
+  /** Display name + email (profile card, settings). */
+  fullName: string;
+  email: string;
   /** Whether the user may see the Admin link. */
   isAdmin: boolean;
   /** Active work mode (persona), forwarded to /api/chat. */
@@ -195,6 +200,9 @@ interface AppShellContextValue {
   setMode: (m: WorkMode) => void;
   /** Work modes this user is allowed to select (restricted ones need admin). */
   modeDefs: WorkModeDef[];
+  /** Response format for the next message (Settings default, composer override). */
+  outputType: OutputType;
+  setOutputType: (o: OutputType) => void;
 }
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -241,6 +249,9 @@ export interface AppShellProps
   /** Conversation title shown in the top bar. */
   title?: string | null;
   firstName?: string;
+  /** Display name + email, for the sidebar profile card. */
+  fullName?: string;
+  email?: string;
   isAdmin?: boolean;
   /** Granted feature permissions, for gating which work modes appear. */
   features?: string[];
@@ -265,6 +276,8 @@ export function AppShell({
   initialModel = null,
   title = null,
   firstName = "",
+  fullName = "",
+  email = "",
   isAdmin = false,
   features = [],
   initialTokens = 0,
@@ -318,6 +331,24 @@ export function AppShell({
     [isAdmin, features]
   );
   const [mode, setMode] = useState<WorkMode>(DEFAULT_MODE);
+  const [outputType, setOutputType] = useState<OutputType>(DEFAULT_OUTPUT_TYPE);
+
+  // Apply the user's saved defaults (Settings page) on load, and again whenever
+  // they change them. Only values this user may actually use are applied.
+  useEffect(() => {
+    function apply(p: ChatPrefs) {
+      if (p.model) {
+        const opt = options.find((o) => o.value === p.model && o.available);
+        if (opt) setSelection(opt);
+      }
+      if (p.mode && modeDefs.some((m) => m.id === p.mode)) setMode(p.mode);
+      if (isOutputType(p.outputType)) setOutputType(p.outputType);
+    }
+    apply(readPrefs());
+    const onChange = (e: Event) => apply((e as CustomEvent<ChatPrefs>).detail ?? {});
+    window.addEventListener(PREFS_EVENT, onChange);
+    return () => window.removeEventListener(PREFS_EVENT, onChange);
+  }, [options, modeDefs]);
 
   // Responsive sidebar: a drawer on mobile, collapsible on desktop.
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -337,17 +368,17 @@ export function AppShell({
   }, []);
 
   const value = useMemo<AppShellContextValue>(
-    () => ({ selection, setSelection, options, usage, addUsage, firstName, isAdmin, mode, setMode, modeDefs }),
-    [selection, options, usage, addUsage, firstName, isAdmin, mode, modeDefs]
+    () => ({ selection, setSelection, options, usage, addUsage, firstName, fullName, email, isAdmin, mode, setMode, modeDefs, outputType, setOutputType }),
+    [selection, options, usage, addUsage, firstName, fullName, email, isAdmin, mode, modeDefs, outputType]
   );
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="flex h-screen overflow-hidden bg-background">
+      <div className="flex h-screen overflow-hidden bg-sidebar">
         {/* Mobile scrim */}
         {mobileOpen && (
           <div
-            className="fixed inset-0 z-30 bg-foreground/40 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px] lg:hidden"
             aria-hidden
             onClick={() => setMobileOpen(false)}
           />
@@ -358,6 +389,8 @@ export function AppShell({
           conversations={conversations}
           activeConversationId={activeConversationId}
           isAdmin={isAdmin}
+          fullName={fullName}
+          email={email}
           mobileOpen={mobileOpen}
           collapsed={collapsed}
           onCloseMobile={() => setMobileOpen(false)}
@@ -375,7 +408,7 @@ export function AppShell({
           onDeleteConversation={onDeleteConversation}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col bg-background">
           <TopBar
             title={title}
             usage={usage}

@@ -4,7 +4,7 @@
 // this branded recovery screen instead of Next's default crash page.
 
 import { useEffect } from "react";
-import { RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/Button";
 
 export default function AppError({
@@ -20,24 +20,31 @@ export default function AppError({
   }, [error]);
 
   return (
-    <div className="flex h-full min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="max-w-md space-y-2">
-        <h1 className="text-lg font-semibold text-foreground">Something broke on this page</h1>
-        <p className="text-sm text-muted-foreground">
-          The assistant is still running. You can retry this view, or head back to a new chat.
-        </p>
-        {error.digest ? (
-          <p className="text-xs text-muted-foreground/70">Reference: {error.digest}</p>
-        ) : null}
-      </div>
-      <div className="flex gap-2">
-        <Button variant="primary" size="sm" onClick={reset}>
-          <RotateCcw size={14} />
-          Try again
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => (window.location.href = "/")}>
-          New chat
-        </Button>
+    <div className="flex h-full min-h-[60vh] items-center justify-center bg-background px-4 py-10">
+      <div className="flex w-full max-w-md flex-col items-center gap-5 rounded-3xl border border-border bg-surface p-8 text-center shadow-soft">
+        <span className="grid h-12 w-12 place-items-center rounded-full bg-danger/10 text-danger">
+          <AlertTriangle size={20} aria-hidden />
+        </span>
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Something broke on this page
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The assistant is still running. You can retry this view, or head back to a new chat.
+          </p>
+          {error.digest ? (
+            <p className="pt-1 text-xs text-subtle-foreground">Reference: {error.digest}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button variant="primary" onClick={reset}>
+            <RotateCcw size={15} />
+            Try again
+          </Button>
+          <Button variant="secondary" onClick={() => (window.location.href = "/")}>
+            New chat
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -117,6 +117,8 @@ export default async function AppLayout({
       initialTier={initialTier}
       initialModel={initialModel}
       firstName={firstName}
+      fullName={profile.displayName?.trim() || firstName}
+      email={profile.email ?? ""}
       isAdmin={isAdmin}
       features={profile.permissions?.features ?? []}
       initialTokens={monthTokens}

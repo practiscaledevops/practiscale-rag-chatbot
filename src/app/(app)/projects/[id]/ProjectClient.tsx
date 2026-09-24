@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/Button";
 import { IconButton } from "@/components/IconButton";
-import { cn } from "@/lib/utils";
 
 interface ChatItem {
   id: string;
@@ -196,13 +195,13 @@ export function ProjectClient({
   }, []);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto px-4 py-6 sm:px-6">
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-6">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <Link
             href="/"
-            className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft size={13} /> Back to chat
           </Link>
@@ -220,10 +219,10 @@ export function ProjectClient({
                 }
               }}
               maxLength={120}
-              className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xl font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-xl font-semibold tracking-tight outline-none focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             />
           ) : (
-            <h1 className="flex items-center gap-2 text-xl font-semibold">
+            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <span className="truncate">{name}</span>
               <IconButton
                 aria-label="Rename project"
@@ -237,7 +236,7 @@ export function ProjectClient({
               </IconButton>
             </h1>
           )}
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             {chats.length} {chats.length === 1 ? "chat" : "chats"}
             {filesAvailable && files.length > 0 ? ` · ${files.length} files` : ""}
           </p>
@@ -249,18 +248,18 @@ export function ProjectClient({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+        <p role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </p>
       )}
 
       {/* Instructions */}
-      <section className="rounded-2xl border border-border bg-surface p-4">
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Instructions</h2>
           <div className="flex items-center gap-2">
             {instrSaved && (
-              <span className="inline-flex items-center gap-1 text-xs text-accent">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong">
                 <Check size={13} /> Saved
               </span>
             )}
@@ -275,7 +274,7 @@ export function ProjectClient({
             </Button>
           </div>
         </div>
-        <p className="mb-2 text-xs text-muted-foreground">
+        <p className="mb-3 text-xs text-muted-foreground">
           Added to every chat in this project — tone, role, rules, what to focus on.
         </p>
         <textarea
@@ -285,12 +284,12 @@ export function ProjectClient({
           rows={4}
           maxLength={8000}
           placeholder="e.g. You are helping the sales team. Always ground answers in call data and cite sources."
-          className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none placeholder:text-subtle-foreground focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         />
       </section>
 
       {/* Project knowledge (files) */}
-      <section className="rounded-2xl border border-border bg-surface p-4">
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Project knowledge</h2>
           {filesAvailable && (
@@ -318,19 +317,19 @@ export function ProjectClient({
         </p>
 
         {!filesAvailable ? (
-          <div className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
             Project files need a one-time database setup. Run the migration{" "}
-            <code className="rounded bg-background px-1">supabase/migrations/0012_project_files.sql</code>{" "}
+            <code className="rounded-md bg-surface-muted px-1">supabase/migrations/0012_project_files.sql</code>{" "}
             in Supabase, then reload. Everything else in the project works now.
           </div>
         ) : files.length === 0 ? (
           <p className="text-sm text-muted-foreground">No files yet.</p>
         ) : (
-          <ul className="space-y-1.5">
+          <ul className="space-y-2">
             {files.map((f) => (
               <li
                 key={f.id}
-                className="group flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2"
+                className="group flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5 transition-colors hover:bg-surface-muted/60"
               >
                 <FileText size={15} className="shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
@@ -342,7 +341,7 @@ export function ProjectClient({
                 <IconButton
                   aria-label={`Remove ${f.name}`}
                   size="sm"
-                  className="opacity-0 group-hover:opacity-100"
+                  className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
                   onClick={() => removeFile(f.id)}
                 >
                   <Trash2 size={14} />
@@ -354,11 +353,17 @@ export function ProjectClient({
       </section>
 
       {/* Chats in this project */}
-      <section className="rounded-2xl border border-border bg-surface p-4">
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-soft">
         <h2 className="mb-2 text-sm font-semibold">Chats in this project</h2>
         {chats.length === 0 ? (
-          <div className="flex flex-col items-start gap-2 py-2">
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <span
+              aria-hidden
+              className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-accent"
+            >
+              <MessageSquarePlus size={20} />
+            </span>
+            <p className="max-w-sm text-sm text-muted-foreground">
               No chats yet. Start one — it will use this project&apos;s instructions and files.
             </p>
             <Button onClick={newChat} disabled={creating} size="sm">
@@ -367,15 +372,12 @@ export function ProjectClient({
             </Button>
           </div>
         ) : (
-          <ul className="space-y-1">
+          <ul className="-mx-2 space-y-0.5">
             {chats.map((c) => (
               <li key={c.id}>
                 <Link
                   href={`/c/${c.id}`}
-                  className={cn(
-                    "flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    "hover:bg-background"
-                  )}
+                  className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-surface-muted"
                 >
                   <span className="truncate">{c.title || "New chat"}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{relTime(c.updatedAt)}</span>
