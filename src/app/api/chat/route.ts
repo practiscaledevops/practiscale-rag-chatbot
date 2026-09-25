@@ -58,6 +58,10 @@ import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
 import { demoChatStreamResponse } from "@/lib/demo/stream";
 import { isoOrUndefined, rowTimestamps } from "@/lib/message-times";
+import { previousTurnIndex, storedAnswerIndex, storedLeadsTo, turnAlreadySaved, type StoredTurnRow } from "@/lib/turn-capture";
+import { replaceConversationMessages } from "@/lib/replace-messages";
+import { DEMO_USER_ID } from "@/lib/demo/fixtures";
+import { timeZoneOrUndefined } from "@/lib/timezone";
 
 export const runtime = "nodejs";
 // Co-locate with the Brain + this app's Supabase (all Singapore) so auth, the
@@ -117,6 +121,9 @@ const chatBodySchema = z.object({
     .max(CHAT_LIMIT_BOUNDS.maxFiles.max)
     .optional(),
   conversationId: z.string().uuid().nullish(),
+  // The asker's IANA time zone ("today" / call dates resolve in it); an invalid
+  // value is dropped (never a 400) and the Brain's default applies.
+  timeZone: z.unknown().optional().transform(timeZoneOrUndefined),
   conversation_id: z.string().uuid().nullish(),
 });
 
@@ -129,40 +136,92 @@ function asUuid(v: unknown): string | null {
 }
 
 /**
- * The conversation id to attribute this turn to — only if it belongs to the
+ * The caller's conversation this turn belongs to, and its updated_at as this
+ * request starts: the version captureAndSaveTurn writes against (every save of
+ * the thread changes it).
+ */
+interface OwnedConversation {
+  id: string;
+  version: string;
+}
+
+function toOwned(data: { id?: unknown; updated_at?: unknown } | null): OwnedConversation | null {
+  return data?.id ? { id: String(data.id), version: data.updated_at ? String(data.updated_at) : "" } : null;
+}
+
+/**
+ * The conversation to attribute this turn to — only if it belongs to the
  * caller. The RLS client returns solely the user's own rows, so a foreign or
  * fabricated id (the body is client-controlled) resolves to null rather than
  * being written into usage_events / the audit log.
  */
-async function ownedConversationId(id: string | null): Promise<string | null> {
+async function ownedConversation(id: string | null): Promise<OwnedConversation | null> {
   if (!id) return null;
   try {
     const supabase = await createSupabaseServerClient();
     const { data } = await supabase
       .from("conversations")
-      .select("id")
+      .select("id, updated_at")
       .eq("id", id)
       .maybeSingle();
-    return data?.id ? String(data.id) : null;
+    return toOwned(data);
   } catch {
     return null;
   }
 }
 
+/** DEMO MODE: the demo user's conversation (demo rows aren't all UUIDs), or null. */
+async function ownedDemoConversation(id: unknown): Promise<OwnedConversation | null> {
+  if (typeof id !== "string" || id.length === 0 || id.length > 64) return null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, updated_at")
+      .eq("id", id)
+      .eq("user_id", DEMO_USER_ID)
+      .maybeSingle();
+    return toOwned(data);
+  } catch {
+    return null;
+  }
+}
+
+type ServerSupabase = Awaited<ReturnType<typeof createSupabaseServerClient>>;
+
 /**
- * Persist the COMPLETED assistant turn server-side, so a long answer is not
- * lost when the user navigates away mid-stream: the browser aborts the client
- * stream, but this after() keeps reading the upstream (an independent tee) to
- * completion and writes the turn. Guarded by a short delay + a stored-count and
- * last-message check so it doesn't double-write the client's own onFinish save,
- * yet still recovers a turn the client failed to save.
+ * Claim the thread for this save: bump updated_at only while it still equals
+ * `version`. One conditional UPDATE checks and claims at once, so of two late
+ * copies holding the same version only one can pass.
+ */
+async function claimThread(supabase: ServerSupabase, conversationId: string, version: string): Promise<boolean> {
+  if (!version) return false;
+  const { data } = await supabase
+    .from("conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", conversationId)
+    .eq("updated_at", version)
+    .select("id");
+  return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * Persist the COMPLETED assistant turn server-side, so an answer is not lost
+ * when no chat view is left to save it: the user navigated away mid-stream, or
+ * a queued turn was sent and finished in the background. This after() reads its
+ * own tee of the upstream to completion and writes the turn — after a short
+ * grace for the client's own onFinish save, and only when the stored thread
+ * doesn't already hold THIS turn and hasn't moved on since the request started
+ * (lib/turn-capture). Reads the rows' roles, then the content of just the
+ * answer's row and the message before it.
  */
 async function captureAndSaveTurn(
   stream: ReadableStream<Uint8Array>,
-  conversationId: string,
-  priorMessages: { role: string; content: string }[],
+  conversation: OwnedConversation,
+  priorMessages: { role: string; content: string; createdAt?: string }[],
   userId: string
 ): Promise<void> {
+  const conversationId = conversation.id;
   let text = "";
   try {
     const reader = stream.getReader();
@@ -190,27 +249,60 @@ async function captureAndSaveTurn(
   await new Promise((r) => setTimeout(r, 2500));
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: lastRows, count } = await supabase
+    const { data: roleRows, error: rolesErr } = await supabase
       .from("messages")
-      .select("role, content", { count: "exact" })
+      .select("id, role")
       .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    const lastRow = (Array.isArray(lastRows) ? lastRows[0] : null) as { role?: string; content?: string } | null;
-    // The client already saved THIS turn: every posted message + the answer is
-    // stored and ends on an answer. Anything less (the client save failed, or
-    // the user navigated away mid-stream) is written from the posted history.
-    const clientSaved =
-      (count ?? 0) >= priorMessages.length + 1 &&
-      lastRow?.role === "assistant" &&
-      !!(lastRow.content ?? "").trim();
-    if (clientSaved) return;
+      .order("created_at", { ascending: true });
+    if (rolesErr) return;
+    const stored = (Array.isArray(roleRows) ? roleRows : []) as { id: string; role: string }[];
+    // Already stored (the client saved this turn, or later turns on top of it):
+    // leave the thread alone. Anything else — nothing saved yet, or an older
+    // answer / another branch where this one belongs — is written from the
+    // posted history, if the thread hasn't moved on since (below). Only the
+    // answer's row and the one before it are read here.
+    const roles = stored.map((r) => r.role);
+    const idx = storedAnswerIndex(
+      roles,
+      priorMessages.map((m) => m.role)
+    );
+    if (idx >= 0) {
+      const prev = previousTurnIndex(roles, idx);
+      const ids = prev >= 0 ? [stored[idx].id, stored[prev].id] : [stored[idx].id];
+      const { data: contentRows } = await supabase.from("messages").select("id, content").in("id", ids);
+      const content = new Map(
+        ((contentRows ?? []) as { id: string; content: string | null }[]).map((r) => [r.id, r.content])
+      );
+      const rows: StoredTurnRow[] = stored.map((r) => ({ role: r.role, content: content.get(r.id) ?? null }));
+      if (turnAlreadySaved(rows, priorMessages, text)) return;
+    }
+    // Write only if nothing was saved to this thread since this request
+    // started. A later save means someone else owns the thread: the client's
+    // save of this turn or of a Stop's partial answer, a newer regenerate, edit
+    // or turn, or another tab — this copy (which reads on after Stop) is older.
+    if (!(await claimThread(supabase, conversationId, conversation.version))) {
+      // …unless that save only brought the thread up to (a start of) the
+      // history this request was built on: the previous turn's own save
+      // landing after this one was sent (queued turns answered back to back).
+      // Writing then only adds to it. Claimed against the version read here,
+      // so a save landing in between still wins.
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("updated_at")
+        .eq("id", conversationId)
+        .maybeSingle();
+      const version = conv?.updated_at ? String(conv.updated_at) : "";
+      const { data: current, error: currentErr } = await supabase
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+      if (!version || currentErr || !storedLeadsTo((current ?? []) as StoredTurnRow[], priorMessages)) return;
+      if (!(await claimThread(supabase, conversationId, version))) return;
+    }
     const all = [...priorMessages, { role: "assistant", content: text }];
-    await supabase.from("messages").delete().eq("conversation_id", conversationId).eq("user_id", userId);
     const times = rowTimestamps(all as { createdAt?: unknown }[]);
     const rows = all.map((m, i) => ({
-      conversation_id: conversationId,
-      user_id: userId,
       role: m.role,
       content: m.content,
       citations: [],
@@ -218,7 +310,8 @@ async function captureAndSaveTurn(
       output_tokens: 0,
       created_at: times[i],
     }));
-    await supabase.from("messages").insert(rows);
+    // One step (lib/replace-messages): a concurrent client save can't interleave.
+    if (await replaceConversationMessages(supabase, conversationId, userId, rows)) return;
     await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
   } catch {
     /* best-effort */
@@ -236,7 +329,15 @@ export async function POST(req: Request) {
           .map((a: any) => (typeof a?.name === "string" ? a.name : ""))
           .filter(Boolean)
       : [];
-    return demoChatStreamResponse(last?.content ?? "", attachmentNames);
+    const demo = demoChatStreamResponse(last?.content ?? "", attachmentNames);
+    // Save the finished answer server-side like the real path does, so a chat
+    // that finishes in the background (navigated away, queued turns) is kept.
+    const demoConversation = await ownedDemoConversation(body?.conversationId);
+    const prior = z.array(chatMessageSchema).max(2000).safeParse(demoMessages);
+    if (!demoConversation || !prior.success || !demo.body) return demo;
+    const [demoClient, demoText] = demo.body.tee();
+    after(() => captureAndSaveTurn(demoText, demoConversation, prior.data, DEMO_USER_ID));
+    return new Response(demoClient, { status: demo.status, headers: demo.headers });
   }
 
   // 1. Identity + permissions, resolved SERVER-SIDE from the session — BEFORE
@@ -287,12 +388,14 @@ export async function POST(req: Request) {
   // 2. Enforce the user's model/tier permission BEFORE hitting the Brain. The
   //    catalog resolves tier aliases (so an alias can't bypass a model
   //    allowlist) and the workspace settings supply the admin denylist +
-  //    pricing overrides; the conversation id is verified as the caller's own.
-  const [catalog, { settings }, conversationId] = await Promise.all([
+  //    pricing overrides; the conversation id is verified as the caller's own
+  //    (and its version as of now kept for the server-side save).
+  const [catalog, { settings }, owned] = await Promise.all([
     fetchBrainModels(),
     loadWorkspaceSettings(),
-    ownedConversationId(asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
+    ownedConversation(asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
   ]);
+  const conversationId = owned?.id ?? null;
   const allowed = isSelectionAllowed(
     selection,
     profile.permissions,
@@ -444,7 +547,8 @@ export async function POST(req: Request) {
     parsed.data.outputType,
     combinedAttachments.length ? combinedAttachments : undefined,
     allowedModes(access),
-    capabilities
+    capabilities,
+    parsed.data.timeZone
   );
 
   if (!upstream.ok || !upstream.body) {
@@ -483,7 +587,7 @@ export async function POST(req: Request) {
   // delaying the response; meterStreamAndRecord never throws.
   after(() => meterStreamAndRecord(meterStream, ctx));
   // Persist the completed answer server-side so it survives client navigation.
-  if (conversationId) after(() => captureAndSaveTurn(textStream, conversationId, safeMessages, profile.userId));
+  if (owned) after(() => captureAndSaveTurn(textStream, owned, safeMessages, profile.userId));
   else after(() => { void textStream.cancel().catch(() => {}); });
 
   // Pass the Brain's data-stream response straight through to the client.

@@ -6,7 +6,9 @@
 //   model, work mode, response format and "Search in" knowledge scope (+ an
 //   optional collection narrowing).
 // Defaults are stored per browser (lib/prefs) and applied to new chats; the
-// composer can still override any of them per message.
+// composer can still override any of them per message. Appearance also holds
+// the time zone answers use for "today", "yesterday" and call dates
+// (lib/timezone): Auto = this device's zone.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +17,7 @@ import {
   Check,
   ChevronRight,
   ChevronsUpDown,
+  Globe,
   Loader2,
   Monitor,
   Moon,
@@ -36,6 +39,7 @@ import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
 import { readPrefs, writePrefs, type ChatPrefs } from "@/lib/prefs";
 import { DEFAULT_KNOWLEDGE_SCOPE, isKnowledgeScopeId, type KnowledgeScope } from "@/lib/knowledge-scopes";
 import { useTheme, type ThemePref } from "@/lib/theme";
+import { browserTimeZone, TIME_ZONE_AUTO, timeZonePickerOptions, timeZonePrefValue } from "@/lib/timezone";
 import type { WorkMode } from "@/lib/work-modes";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +57,7 @@ export function SettingsClient() {
     knowledgeScope: DEFAULT_KNOWLEDGE_SCOPE,
     collectionIds: [],
     responseFont: "serif",
+    timeZone: TIME_ZONE_AUTO,
   }));
   // The "Narrow to collections" list starts open only when some are chosen.
   const [collectionsOpen, setCollectionsOpen] = useState(false);
@@ -68,6 +73,7 @@ export function SettingsClient() {
       knowledgeScope: isKnowledgeScopeId(p.knowledgeScope) ? p.knowledgeScope : DEFAULT_KNOWLEDGE_SCOPE,
       collectionIds: Array.isArray(p.collectionIds) ? p.collectionIds : [],
       responseFont: p.responseFont === "sans" ? "sans" : "serif",
+      timeZone: timeZonePrefValue(p.timeZone),
     };
     setDraft(next);
     setSaved(next);
@@ -96,6 +102,22 @@ export function SettingsClient() {
     setSaved((sv) => (sv ? { ...sv, responseFont: font } : sv));
     writePrefs({ ...readPrefs(), responseFont: font });
   }, []);
+  const setTimeZonePref = useCallback((zone: string) => {
+    setDraft((d) => ({ ...d, timeZone: zone }));
+    setSaved((sv) => (sv ? { ...sv, timeZone: zone } : sv));
+    writePrefs({ ...readPrefs(), timeZone: zone });
+  }, []);
+  // The device's zone and the offsets are read after mount only, so the
+  // server render and the first client render agree. deviceZone is null when
+  // this device's zone can't be read (the picker then shows plain "Auto").
+  const [zoneNow, setZoneNow] = useState<{ deviceZone: string | null; at: Date } | null>(null);
+  useEffect(() => {
+    setZoneNow({ deviceZone: browserTimeZone() ?? null, at: new Date() });
+  }, []);
+  const timeZoneOptions = useMemo(
+    () => timeZonePickerOptions({ current: draft.timeZone, deviceZone: zoneNow?.deviceZone, at: zoneNow?.at }),
+    [draft.timeZone, zoneNow]
+  );
 
   // --- Saved prompts -----------------------------------------------------
   const [prompts, setPrompts] = useState<UserPrompt[] | null>(null);
@@ -223,6 +245,25 @@ export function SettingsClient() {
                     ]}
                   />
                 </div>
+                <label className="block sm:col-span-2">
+                  <span className="block text-[13px] font-medium leading-5">Time zone</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Used for ‘today’, ‘yesterday’ and call dates in answers.
+                  </span>
+                  <span className="mt-2 block max-w-sm">
+                    <Select
+                      value={draft.timeZone}
+                      onChange={setTimeZonePref}
+                      icon={<Globe size={16} className="text-muted-foreground" aria-hidden />}
+                    >
+                      {timeZoneOptions.map((z) => (
+                        <option key={z.id} value={z.id}>
+                          {z.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </span>
+                </label>
               </div>
             </section>
 

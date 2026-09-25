@@ -1,8 +1,11 @@
 // POST /api/compact — summarize a long conversation so the chat can carry it
 // forward as one "[Conversation summary]" system turn instead of every message.
 //
-// Body:     { messages: { role: "user" | "assistant" | "system", content }[] }
-//           (1–200 turns, each ≤ 40,000 characters)
+// Body:     { messages: { role: "user" | "assistant" | "system", content }[],
+//             timeZone?: string }
+//           (1–200 turns, each ≤ 40,000 characters; `timeZone` is the user's
+//           IANA zone from lib/timezone effectiveTimeZone, so dates in the recap
+//           are read in the user's day; an unusable zone is dropped)
 // Response: { summary: string }
 //
 // Signed-in users holding the "chat.compaction" capability only (else 403);
@@ -18,6 +21,7 @@ import { brainCompact, BrainRequestError, safeBrainError } from "@/lib/brain";
 import { audit } from "@/lib/audit";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
+import { timeZoneOrUndefined } from "@/lib/timezone";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -37,6 +41,8 @@ const compactBodySchema = z.object({
     )
     .min(1)
     .max(200),
+  // A valid IANA zone (canonical casing), else undefined: never a 400.
+  timeZone: z.unknown().optional().transform(timeZoneOrUndefined),
 });
 
 type CompactMessage = z.infer<typeof compactBodySchema>["messages"][number];
@@ -101,7 +107,7 @@ export async function POST(req: Request) {
   void audit(profile.userId, "compact", { messages: messages.length });
 
   try {
-    const summary = await brainCompact(messages);
+    const summary = await brainCompact(messages, parsed.data.timeZone);
     return Response.json({ summary });
   } catch (e) {
     if (e instanceof BrainRequestError) {

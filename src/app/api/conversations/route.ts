@@ -8,7 +8,10 @@
 //              • the history "New chat" action (no messages → an empty thread),
 //              • the chat view, which on every settled turn re-sends the whole
 //                thread (create-on-first-message when conversationId is null).
-//            Always replies with { conversationId, conversation }.
+//            A create may carry the chat's own new `id` (uuid) for the row;
+//            it's only ever inserted as the caller's row, and a taken id falls
+//            back to a generated one. Always replies with
+//            { conversationId, conversation } — the id actually used.
 //   PATCH  — rename / pin / re-tier / re-parent a conversation, or bulk
 //            archive/unarchive: { ids: uuid[1..200], archived }
 //   DELETE — remove a conversation (its messages cascade), or bulk: { ids }
@@ -30,6 +33,7 @@ import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { loadConversations } from "@/lib/conversations-read";
 import { rowTimestamps } from "@/lib/message-times";
+import { replaceConversationMessages } from "@/lib/replace-messages";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -42,6 +46,9 @@ const CONVERSATION_COLUMNS =
 
 const modelTier = z.enum(["fast", "recommended", "max"]);
 
+/** Postgres unique_violation (a client-supplied conversation id already exists). */
+const UNIQUE_VIOLATION = "23505";
+
 const messageInput = z.object({
   role: z.enum(["user", "assistant", "system"]),
   content: z.string().max(100_000),
@@ -49,6 +56,11 @@ const messageInput = z.object({
 
 const postSchema = z.object({
   conversationId: z.string().uuid().nullish(),
+  // Create only: the id the chat view minted for a brand-new chat, so the row
+  // gets the SAME id as the chat's in-browser stream (lets the view re-attach
+  // to it after navigating away). Only ever used to INSERT the caller's own
+  // row; if the id is taken, a server-generated id is used instead.
+  id: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(200).optional(),
   projectId: z.string().uuid().nullish(),
   // The chat view sends `tier`; accept `modelTier` too for symmetry with PATCH.
@@ -161,7 +173,8 @@ function extractCitations(text: string): { id: string }[] {
 
 /**
  * Sync a conversation's stored turns to exactly the provided list. The chat view
- * re-sends the full thread on every save, so we replace rather than append. Rows
+ * re-sends the full thread on every save, so we replace rather than append — in
+ * one step (lib/replace-messages), so concurrent saves never interleave. Rows
  * get strictly increasing timestamps so the /c/[id] loader (ordered by
  * created_at) always reconstructs them in order.
  */
@@ -171,19 +184,8 @@ async function replaceMessages(
   userId: string,
   messages: MessageInput[]
 ) {
-  const del = await supabase
-    .from("messages")
-    .delete()
-    .eq("conversation_id", conversationId)
-    .eq("user_id", userId);
-  if (del.error) return del.error;
-
-  if (messages.length === 0) return null;
-
   const times = rowTimestamps(messages as { createdAt?: unknown }[]);
   const rows = messages.map((m, i) => ({
-    conversation_id: conversationId,
-    user_id: userId,
     role: m.role,
     content: m.content,
     // Citations are only meaningful on assistant turns; tokens are estimated
@@ -193,8 +195,7 @@ async function replaceMessages(
     output_tokens: m.role === "assistant" ? estimateTokens(m.content) : 0,
     created_at: times[i],
   }));
-  const ins = await supabase.from("messages").insert(rows);
-  return ins.error ?? null;
+  return replaceConversationMessages(supabase, conversationId, userId, rows);
 }
 
 // GET /api/conversations?projectId=… — list the user's conversations.
@@ -280,16 +281,23 @@ export async function POST(req: Request) {
   }
 
   // --- Create a fresh conversation ----------------------------------------
-  const { data: created, error: createErr } = await supabase
-    .from("conversations")
-    .insert({
-      user_id: user.id, // RLS insert policy requires user_id = auth.uid()
-      title: title ?? deriveTitle(messages),
-      project_id: projectId ?? null,
-      ...(tier ? { model_tier: tier } : {}),
-    })
-    .select(CONVERSATION_COLUMNS)
-    .single();
+  const newRow = {
+    user_id: user.id, // RLS insert policy requires user_id = auth.uid()
+    title: title ?? deriveTitle(messages),
+    project_id: projectId ?? null,
+    ...(tier ? { model_tier: tier } : {}),
+  };
+  const insertRow = (row: Record<string, unknown>) =>
+    supabase.from("conversations").insert(row).select(CONVERSATION_COLUMNS).single();
+  // The client's id (a new chat's) when given. A taken id — a retried create,
+  // or any existing row, whoever owns it — is never touched: fall back to a
+  // generated id and keep going (the reply carries the id actually used).
+  let { data: created, error: createErr } = await insertRow(
+    parsed.data.id ? { id: parsed.data.id, ...newRow } : newRow
+  );
+  if (parsed.data.id && createErr?.code === UNIQUE_VIOLATION) {
+    ({ data: created, error: createErr } = await insertRow(newRow));
+  }
 
   if (createErr || !created) {
     return NextResponse.json(

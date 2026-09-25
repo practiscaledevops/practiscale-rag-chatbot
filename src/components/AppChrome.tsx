@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { BackgroundChats } from "@/components/BackgroundChats";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
+import { discardChat } from "@/lib/chat-sessions";
 import type { ModelTier } from "@/lib/brain";
 import type { BrainModel } from "@/lib/models";
 
@@ -342,6 +344,8 @@ export function AppChrome({
         router.refresh();
         throw err;
       }
+      // A deleted chat must not keep generating (or sending queued turns).
+      for (const id of ids) discardChat(id);
       if (activeConversationId && idSet.has(activeConversationId)) router.push("/");
     },
     [conversations, activeConversationId, router]
@@ -372,6 +376,12 @@ export function AppChrome({
   const sidebarProjects = useMemo(
     () => projects.map((p) => ({ id: p.id, name: p.name })),
     [projects]
+  );
+
+  // Titles by id, for the "Answer ready in …" notices of background chats.
+  const titles = useMemo(
+    () => new Map(conversations.map((c) => [c.id, c.title ?? "New chat"])),
+    [conversations]
   );
 
   // The open conversation's title for the top bar.
@@ -422,6 +432,13 @@ export function AppChrome({
         }
         onBulkArchive={handleBulkArchive}
         onBulkDelete={handleBulkDelete}
+        background={
+          <BackgroundChats
+            owner={email || fullName}
+            titles={titles}
+            onOpen={handleSelectConversation}
+          />
+        }
       >
         {children}
       </AppShell>
@@ -441,6 +458,7 @@ export function AppChrome({
         onClose={() => setDeleteTarget(null)}
         onDeleted={(id) => {
           setConversations((prev) => prev.filter((c) => c.id !== id));
+          discardChat(id);
           if (activeConversationId === id) router.push("/");
         }}
       />

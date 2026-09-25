@@ -11,6 +11,7 @@ import { Modal } from "@/components/Modal";
 import { Button } from "@/components/Button";
 import { Markdown } from "./Markdown";
 import { cn } from "@/lib/utils";
+import { effectiveTimeZone, readPrefs, type ChatPrefs } from "@/lib/prefs";
 
 export interface ComparePane {
   label: string;
@@ -48,6 +49,22 @@ async function readDataStreamText(res: Response, onText: (t: string) => void): P
   }
 }
 
+/**
+ * The /api/chat body for one pane. It carries the user's time zone (Settings →
+ * Time zone, else this device's) so "today's calls" resolve on the same
+ * calendar as the main chat; an unreadable zone is omitted and the Brain's
+ * default applies. Read `prefs` at request time, in the browser.
+ */
+export function compareRequestBody(
+  messages: ChatMessage[],
+  model: string,
+  mode: string,
+  prefs: ChatPrefs = readPrefs()
+): { messages: ChatMessage[]; model: string; tier: string; mode: string; timeZone?: string } {
+  const timeZone = effectiveTimeZone(prefs);
+  return { messages, model, tier: model, mode, ...(timeZone ? { timeZone } : {}) };
+}
+
 function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pane: ComparePane) {
   const [text, setText] = React.useState("");
   const [state, setState] = React.useState<"idle" | "loading" | "done" | "error">("idle");
@@ -63,7 +80,7 @@ function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pan
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages, model: pane.model, tier: pane.model, mode }),
+          body: JSON.stringify(compareRequestBody(messages, pane.model, mode)),
           signal: ctrl.signal,
         });
         if (!res.ok) {

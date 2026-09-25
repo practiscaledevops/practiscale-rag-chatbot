@@ -26,7 +26,12 @@ vi.mock("@/lib/supabase-server", () => ({
       },
       then: (r: (v: unknown) => unknown) => r({ error: null }),
     });
-    return { from: () => builder };
+    // The thread is replaced in one step (lib/replace-messages → replace_conversation_messages).
+    const rpc = async (_fn: string, args: { p_rows: Record<string, unknown>[] }) => {
+      m.inserted.push(args.p_rows);
+      return { data: null, error: null };
+    };
+    return { from: () => builder, rpc };
   },
 }));
 

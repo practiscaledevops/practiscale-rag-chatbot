@@ -1,8 +1,42 @@
 // Canned grounded answer for DEMO MODE, in the Vercel AI SDK v4 data-stream
 // protocol so useChat() renders it token-by-token with a citation chip.
+//
+// A query containing "long" streams a slow, long answer (~210 tokens at 40 ms
+// each, about 9 s), so background generation and queued follow-ups can be
+// tried locally: ask it, switch chats or queue another message, come back.
+
+/** Delay between streamed tokens: the normal answers vs the slow "long" one. */
+const TOKEN_MS = 22;
+const LONG_TOKEN_MS = 40;
+
+function isLongQuery(query: string): boolean {
+  return /\blong\b/i.test(query || "");
+}
+
+const LONG_ANSWER = [
+  "## Where the team loses deals, and what to change",
+  "",
+  "Across the latest scored calls the pattern is consistent: reps are strong at the end of the call and weak at the start. Closing averages 84/100 while discovery sits at 61/100, and the gap is widest on first calls with new facility coordinators. [demo-chunk-1]",
+  "",
+  "### What the top closers do differently",
+  "",
+  "- They restate the customer's stated priority in the first five minutes, in the customer's own words, before any pitch.",
+  "- They ask two follow-up questions per answer instead of moving straight to the next item on the script.",
+  "- They quantify the cost of the current problem (missed rides, late pickups, rebooked appointments) with the customer. [demo-chunk-2]",
+  "",
+  "### A four-week plan",
+  "",
+  "1. **Week 1:** run a 45-minute discovery workshop using two recorded calls, one strong and one weak.",
+  "2. **Week 2:** every rep role-plays the opening ten minutes with a manager, twice.",
+  "3. **Week 3:** managers score discovery only, with one written comment per call.",
+  "4. **Week 4:** compare discovery scores and close rates against the baseline and keep what moved.",
+  "",
+  "**Bottom line:** tightening discovery is the single biggest lever. The data suggests roughly a 23% higher close rate when the priority is mirrored early, so start there before changing pricing or the pitch deck. [demo-chunk-3]",
+].join("\n");
 
 function pickAnswer(query: string): string {
   const q = (query || "").toLowerCase();
+  if (isLongQuery(q)) return LONG_ANSWER;
   if (q.includes("table") || q.includes("compare")) {
     return [
       "## Close rates by consultant",
@@ -36,13 +70,14 @@ export function demoChatStreamResponse(query: string, attachmentNames: string[] 
       pickAnswer(query)
     : pickAnswer(query);
   const tokens = text.match(/\S+\s*/g) ?? [text];
+  const delay = isLongQuery(query) ? LONG_TOKEN_MS : TOKEN_MS;
   const enc = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       for (const tok of tokens) {
         controller.enqueue(enc.encode(`0:${JSON.stringify(tok)}\n`));
-        await new Promise((r) => setTimeout(r, 22));
+        await new Promise((r) => setTimeout(r, delay));
       }
       controller.enqueue(
         enc.encode(`d:${JSON.stringify({ finishReason: "stop", usage: { promptTokens: 1180, completionTokens: tokens.length } })}\n`)

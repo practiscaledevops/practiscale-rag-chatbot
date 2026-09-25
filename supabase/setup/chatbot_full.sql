@@ -710,3 +710,39 @@ drop trigger if exists user_prompts_touch_updated_at on public.user_prompts;
 create trigger user_prompts_touch_updated_at
   before update on public.user_prompts
   for each row execute function public.touch_user_prompts_updated_at();
+
+-- ===========================================================================
+--  ATOMIC THREAD SAVES (from migration 0014)
+-- ===========================================================================
+-- Replace a conversation's messages in ONE transaction, serialized per
+-- conversation, so concurrent saves never interleave into a duplicated thread.
+-- SECURITY INVOKER: RLS on messages still applies. Idempotent.
+create or replace function public.replace_conversation_messages(p_conversation_id uuid, p_rows jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_conversation_id::text, 0));
+  delete from public.messages where conversation_id = p_conversation_id;
+  insert into public.messages
+    (conversation_id, user_id, role, content, citations, input_tokens, output_tokens, created_at)
+  select p_conversation_id,
+         auth.uid(),
+         r.role,
+         coalesce(r.content, ''),
+         coalesce(r.citations, '[]'::jsonb),
+         coalesce(r.input_tokens, 0),
+         coalesce(r.output_tokens, 0),
+         coalesce(r.created_at, now())
+    from jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb))
+      as r(role text, content text, citations jsonb, input_tokens int, output_tokens int, created_at timestamptz);
+end;
+$$;
+
+revoke all on function public.replace_conversation_messages(uuid, jsonb) from public, anon;
+grant execute on function public.replace_conversation_messages(uuid, jsonb) to authenticated;
+
+comment on function public.replace_conversation_messages(uuid, jsonb) is
+  'SECURITY INVOKER: replace a conversation''s messages with p_rows in one transaction, serialized per conversation (advisory lock). RLS applies; user_id = auth.uid().';

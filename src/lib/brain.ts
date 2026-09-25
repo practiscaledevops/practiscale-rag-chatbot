@@ -21,6 +21,7 @@ import {
 } from "@/lib/knowledge-scopes";
 import { isCapabilityId } from "@/lib/capabilities-shared";
 import { BRAIN_MAX_ATTACHMENTS } from "@/lib/attachments-shared";
+import { timeZoneOrUndefined } from "@/lib/timezone";
 
 const BRAIN_URL = resolveBrainUrl();
 const BRAIN_KEY = process.env.BRAIN_API_KEY ?? "";
@@ -239,6 +240,17 @@ function authHeaders(): Record<string, string> {
   return { authorization: `Bearer ${BRAIN_KEY}`, "content-type": "application/json" };
 }
 
+/**
+ * The `timeZone` body field: the asking user's IANA zone (lib/timezone), which
+ * the Brain resolves "today", "yesterday", "Sep 24"… and call dates in
+ * (DST-aware). Re-checked here, so an unusable value is dropped rather than
+ * failing the request; when it's omitted the Brain uses its business zone.
+ */
+function timeZoneField(timeZone: string | undefined): { timeZone?: string } {
+  const zone = timeZoneOrUndefined(timeZone);
+  return zone ? { timeZone: zone } : {};
+}
+
 /** A background job's live progress (deep audit). */
 export interface JobProgress {
   job: {
@@ -261,10 +273,14 @@ export interface JobProgress {
  *                by the caller) so the Brain can resolve follow-ups like "audit
  *                those calls" — sent as `history` only when non-empty. The Brain
  *                treats them as data, never instructions.
+ * @param timeZone the requester's IANA zone (see timeZoneField). The Brain
+ *                stores it on the job, so a long audit keeps the requester's
+ *                "today" / "last week" while the worker runs.
  */
 export async function brainStartAudit(
   query: string,
-  history?: BrainMessage[]
+  history?: BrainMessage[],
+  timeZone?: string
 ): Promise<{ id: string; title: string; status: string; total_tasks: number }> {
   const res = await fetch(`${BRAIN_URL}/api/v1/jobs`, {
     method: "POST",
@@ -280,6 +296,7 @@ export async function brainStartAudit(
             })),
           }
         : {}),
+      ...timeZoneField(timeZone),
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -315,17 +332,21 @@ export const COMPACT_TIMEOUT_MS = 110_000;
  * only (scoped key). The caller validates + bounds `messages`; the Brain treats
  * their content as data, never instructions.
  *
+ * @param timeZone the user's IANA zone (see timeZoneField), so dates the recap
+ *                 mentions ("today's calls") are read in the user's day
  * @returns the summary text (trimmed, non-empty)
  * @throws  {BrainRequestError} on a non-2xx answer or an empty summary
  */
 export async function brainCompact(
-  messages: { role: "user" | "assistant" | "system"; content: string }[]
+  messages: { role: "user" | "assistant" | "system"; content: string }[],
+  timeZone?: string
 ): Promise<string> {
   const res = await fetch(`${BRAIN_URL}/api/v1/compact`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      ...timeZoneField(timeZone),
     }),
     cache: "no-store",
     signal: AbortSignal.timeout(COMPACT_TIMEOUT_MS),
@@ -399,7 +420,14 @@ export async function brainChat(
    * "knowledge.performance" — never to widen the key's scope. Omitted = no
    * narrowing (sent as-is when given, even when empty).
    */
-  capabilities?: readonly string[]
+  capabilities?: readonly string[],
+  /**
+   * The asking user's IANA time zone (e.g. "America/New_York"; see
+   * timeZoneField): the CURRENT DATE, "today's calls", "yesterday", "this
+   * week", "Sep 24" and the call dates shown are all in this zone. Omitted or
+   * unusable = the Brain's business zone.
+   */
+  timeZone?: string
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -423,6 +451,8 @@ export async function brainChat(
       ...(attachments && attachments.length ? { attachments } : {}),
       // The user's capabilities (narrow-only; see the parameter doc).
       ...(capabilities ? { capabilities: capabilityList(capabilities) } : {}),
+      // The user's time zone for every date in the answer (see the parameter doc).
+      ...timeZoneField(timeZone),
     }),
   });
 }

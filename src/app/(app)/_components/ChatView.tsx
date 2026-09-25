@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Clock,
   Columns2,
   Copy,
   Crown,
@@ -30,6 +31,7 @@ import {
   MoreHorizontal,
   PanelRight,
   Paperclip,
+  Pause,
   Pencil,
   PieChart,
   RefreshCw,
@@ -68,12 +70,44 @@ import { PromptLibrary } from "./PromptLibrary";
 import { BrainOrb } from "@/components/BrainOrb";
 import { OrbAvatar } from "@/components/OrbAvatar";
 import { PopoverMenu } from "@/components/PopoverMenu";
-import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
+import { PREFS_EVENT, effectiveTimeZone, readPrefs, type ChatPrefs } from "@/lib/prefs";
 import { UserAvatar } from "@/components/UserAvatar";
 import { copyMarkdown } from "@/lib/copy-format";
 import { cleanClipboard, type CopyNode } from "@/lib/clean-copy";
 import { isoOrUndefined } from "@/lib/message-times";
 import { useChatLimits } from "@/lib/chat-limits";
+import {
+  QUEUE_SETTLE_MS,
+  abortChat,
+  bindConversation,
+  chatKeyFor,
+  claimChat,
+  clearQueue,
+  dequeueTurn,
+  enqueueTurn,
+  finishedContent,
+  getChatSession,
+  handoffChat,
+  hasUnsavedLocalWork,
+  isKnownThread,
+  leaveChat,
+  markDone,
+  markInflight,
+  newChatId,
+  noteSavedThread,
+  queuedTurnBody,
+  recordFinished,
+  removeQueuedTurn,
+  setChatTitle,
+  setPreparing,
+  setQueuePaused,
+  takeComposerFocus,
+  touchChat,
+  trackedFetch,
+  turnUsage,
+  useChatSession,
+  type QueuedTurn,
+} from "@/lib/chat-sessions";
 import { prepareUpload } from "@/lib/image-compress";
 import {
   BRAIN_MODEL_TURNS,
@@ -369,6 +403,12 @@ function titleCase(name: string): string {
  * streaming, and auto-scroll. Streaming goes through this app's /api/chat (which
  * forwards to the Brain server-side). The selected model flows to /api/chat as
  * `body.model`; the token meter is fed by the usage the Brain reports on finish.
+ *
+ * Chats run independently (lib/chat-sessions): each has its own key in
+ * useChat's cache, so several can generate at once and leaving a chat never
+ * stops its answer — a background runner (components/BackgroundChats) carries
+ * it on, and re-opening the chat re-attaches to the live stream. Messages sent
+ * while an answer streams are queued and sent in order after it.
  */
 export function ChatView({
   conversationId = null,
@@ -406,9 +446,16 @@ export function ChatView({
   }, [limits]);
 
   // Answer typeface (Settings → Appearance): a Claude-style serif by default.
+  // Time zone (Settings → Appearance, default this device's): the Brain resolves
+  // "today", "yesterday" and call dates in it — the CEO in the US and the team in
+  // Pakistan each get their own calendar day. Undefined = the Brain's default.
   const [responseFont, setResponseFont] = useState<"serif" | "sans">("serif");
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined);
   useEffect(() => {
-    const apply = (p: ChatPrefs) => setResponseFont(p.responseFont === "sans" ? "sans" : "serif");
+    const apply = (p: ChatPrefs) => {
+      setResponseFont(p.responseFont === "sans" ? "sans" : "serif");
+      setTimeZone(effectiveTimeZone(p));
+    };
     apply(readPrefs());
     const onPrefs = (e: Event) => apply((e as CustomEvent<ChatPrefs>).detail ?? readPrefs());
     window.addEventListener(PREFS_EVENT, onPrefs);
@@ -602,15 +649,24 @@ export function ChatView({
       conversationId: activeConversationId,
       outputType,
       ...scopeBody,
+      ...(timeZone ? { timeZone } : {}),
     }),
-    [selection.value, mode, activeConversationId, scopeBody, outputType]
+    [selection.value, mode, activeConversationId, scopeBody, outputType, timeZone]
   );
+
+  // The chat's key for useChat's cache and the session store (lib/chat-sessions):
+  // the saved thread's id, or — a brand-new chat — an id minted for this mount,
+  // which the pre-create in submit() asks the server to give the new row. A
+  // stream keeps writing under this key after navigation, so re-opening the
+  // chat re-attaches to it live (same message, still streaming, Stop works).
+  const [chatId] = useState(() => (conversationId ? chatKeyFor(conversationId) : newChatId()));
 
   // useChat throttles message-state updates (experimental_throttle below) but
   // flips `status` synchronously, so the last rendered assistant turn can lag
-  // the finished one by a chunk. onFinish hands us the COMPLETE message; keep it
-  // so persistence never saves a truncated answer.
-  const finishedRef = useRef<{ id: string; content: string } | null>(null);
+  // the finished one by a chunk. onFinish hands over the COMPLETE message; it's
+  // kept per chat (recordFinished) so persistence never saves a truncated
+  // answer — whichever instance (this view, an earlier one, a background
+  // runner) started the request.
 
   const {
     messages,
@@ -627,7 +683,11 @@ export function ChatView({
     data,
     setData,
   } = useChat({
+    id: chatId,
     api: "/api/chat",
+    // Registers each request's abort handle under the chat, so Stop works on a
+    // stream this view re-attached to (started by an earlier view or a runner).
+    fetch: trackedFetch(chatId),
     body: chatBody,
     initialMessages: initialMessages ?? [],
     // Seeded from `/?prompt=` (only read on mount; a later prompt on the same
@@ -637,22 +697,13 @@ export function ChatView({
     // deliver 60+ chunks/s and each one re-rendered this whole view. The reveal
     // effect below smooths the visible text between updates anyway.
     experimental_throttle: 50,
+    // Captured when a request starts, so it runs (once) even if this view has
+    // unmounted by the time the answer finishes: usage is metered exactly once.
     onFinish: (message, { usage: u }) => {
-      finishedRef.current = { id: message.id, content: message.content ?? "" };
+      recordFinished(chatId, message.id, message.content ?? "");
       // Prefer the exact token counts from the stream's finish part; fall back
       // to a rough estimate only when the stream omitted usage.
-      const prompt = u?.promptTokens;
-      const completion = u?.completionTokens;
-      if (Number.isFinite(prompt) || Number.isFinite(completion)) {
-        addUsage({
-          promptTokens: Number.isFinite(prompt) ? prompt : 0,
-          completionTokens: Number.isFinite(completion) ? completion : 0,
-        });
-      } else {
-        addUsage({
-          completionTokens: Math.ceil((message.content?.length ?? 0) / 4),
-        });
-      }
+      addUsage(turnUsage(message.content, u));
     },
   });
 
@@ -670,6 +721,75 @@ export function ChatView({
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // --- Ownership (lib/chat-sessions) ---------------------------------------
+  // On screen, this view owns the chat: a background runner for it steps aside
+  // (the live stream keeps writing to the same cache entry, so nothing is lost).
+  // Leaving with work pending — an answer streaming, a send being prepared,
+  // turns queued — hands the chat to a runner that finishes it off screen.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    claimChat(chatId);
+    return () => {
+      mountedRef.current = false;
+      leaveChat(chatId);
+    };
+  }, [chatId]);
+
+  // Re-opened while this tab still holds the chat in useChat's cache (it was
+  // generating, or sending queued turns, in the background). Which copy wins:
+  //   - saved rows this tab has already seen (loaded before, or saved itself)
+  //     aren't news — e.g. a back/forward navigation renders the page from
+  //     Next's router cache — so the cached thread stays;
+  //   - while this tab may hold turns the server doesn't have yet (generating,
+  //     or inside the server-save window), the cached thread stays unless the
+  //     saved one has more turns;
+  //   - otherwise the saved rows win whenever they differ: another tab or
+  //     device regenerated, edited or added turns.
+  // Never mid-answer.
+  useEffect(() => {
+    const s = getChatSession(chatId);
+    const saved = initialMessages ?? [];
+    const savedRows = saved.map((m) => ({ role: m.role, content: m.content }));
+    const news = !isKnownThread(chatId, savedRows);
+    noteSavedThread(chatId, savedRows);
+    if (!news || busyRef.current || s.inflight || s.preparing) return;
+    const cur = messagesRef.current;
+    if (hasUnsavedLocalWork(chatId)) {
+      if (cur.length < saved.length) setMessages(saved);
+      return;
+    }
+    const mine = cur.filter((m) => ROLES_TO_PERSIST.has(m.role));
+    const same =
+      mine.length === saved.length &&
+      mine.every((m, i) => m.role === saved[i].role && m.content === saved[i].content);
+    if (!same) setMessages(saved);
+    // Mount-only: a later server render never overwrites the live thread.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The chat's saved id + title, for the sidebar spinner and the "answer
+  // ready" notice when it finishes off screen.
+  useEffect(() => {
+    if (conversationId) bindConversation(chatId, conversationId);
+  }, [chatId, conversationId]);
+  const firstUserText = useMemo(() => messages.find((m) => m.role === "user")?.content ?? null, [messages]);
+  useEffect(() => {
+    setChatTitle(chatId, title ?? firstUserText);
+  }, [chatId, title, firstUserText]);
+
+  // Re-opened mid-answer: that answer continues on screen from where it is
+  // (StreamingMarkdown `resume`) instead of re-typing from the start.
+  const [resumedId] = useState<string | null>(() => {
+    const last = messages[messages.length - 1];
+    return busy && last?.role === "assistant" ? last.id : null;
+  });
+
+  // Turns the user sent while an answer was streaming (sent in order after it).
+  const session = useChatSession(chatId);
+  const queue = session.queue;
+  const queuePaused = session.paused;
 
   // Live activity from the Brain's status/sources data events (see /api/v1/chat).
   // `data` is reset at the start of each send, so it only reflects the current turn.
@@ -819,16 +939,21 @@ export function ChatView({
   }, [initialTier, selection.tier, options, setSelection]);
 
   /** A message's full text — the finished copy when the throttled state lags it. */
-  const fullContent = useCallback((m: Message): string => {
-    const fin = finishedRef.current;
-    return fin && fin.id === m.id && fin.content.length > m.content.length ? fin.content : m.content;
-  }, []);
+  const fullContent = useCallback(
+    (m: Message): string => {
+      const fin = finishedContent(chatId, m.id);
+      return fin !== null && fin.length > m.content.length ? fin : m.content;
+    },
+    [chatId]
+  );
 
   // --- Persist a turn once streaming settles -----------------------------
   // Saves are chained, so a compaction save can't race (or be dropped by) the
   // end-of-turn save; each writes the full list it was handed. A failed save is
   // shown (never swallowed); the next save retries with the full list.
   const [saveError, setSaveError] = useState<string | null>(null);
+  // A deep audit that couldn't start while an answer was streaming.
+  const [auditError, setAuditError] = useState<string | null>(null);
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   const persistMessages = useCallback(
     (list: Message[]) => {
@@ -846,24 +971,28 @@ export function ChatView({
     if (toSave.length === 0) return;
 
     const wasNew = conversationIdRef.current === null;
+    const rows = toSave.map((m) => ({
+      role: m.role as "user" | "assistant" | "system",
+      content: fullContent(m),
+      createdAt: isoOrUndefined(m.createdAt),
+    }));
     try {
       const result = await saveConversationTurn({
         conversationId: conversationIdRef.current,
         // Persist the tier bucket (a checked enum), derived from the selection.
         tier: selection.tier,
-        messages: toSave.map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: fullContent(m),
-          createdAt: isoOrUndefined(m.createdAt),
-        })),
+        messages: rows,
       });
       if (!result.ok) {
         setSaveError("This conversation couldn't be saved. Your latest messages may be missing if you reload.");
         return;
       }
+      // What the server now holds: not news when this chat is re-opened.
+      noteSavedThread(chatId, rows);
       setSaveError(null);
       conversationIdRef.current = result.conversationId;
       setActiveConversationId(result.conversationId);
+      bindConversation(chatId, result.conversationId);
       // Tell the shell to add (or re-title) this thread in the sidebar now,
       // without a router refresh that would remount and flash the stream.
       if (typeof window !== "undefined") {
@@ -873,7 +1002,9 @@ export function ChatView({
           })
         );
       }
-      if (wasNew) {
+      // (Only while this view is on screen: a save that resolves after the
+      // user navigated away must not rewrite the URL of the page they're on.)
+      if (wasNew && mountedRef.current) {
         // Reflect the new thread in the URL WITHOUT a router refresh/navigation.
         // A router.refresh() here reconciles to the new /c/[id] URL and remounts
         // ChatView from a server DB read — any timing gap there flashes an empty
@@ -887,6 +1018,9 @@ export function ChatView({
       // The conversation still works if persistence fails, but say so (e.g. a
       // body over the Server Action limit) instead of losing turns silently.
       setSaveError("This conversation couldn't be saved. Your latest messages may be missing if you reload.");
+    } finally {
+      // Starts the window in which this tab's copy may be ahead of the saved rows.
+      touchChat(chatId);
     }
   }
 
@@ -924,6 +1058,7 @@ export function ChatView({
           // Bounded well under the ~4.5 MB request limit: at most 200 turns
           // (an earlier summary always kept), each clipped head + tail.
           body: JSON.stringify({
+            timeZone: effectiveTimeZone(readPrefs()),
             messages: boundForCompaction(plan.summarize).map((m) => ({
               role: m.role,
               content: clipMiddle(fullContent(m), 12_000),
@@ -936,8 +1071,11 @@ export function ChatView({
         // Sending is blocked while compacting, so the list should be unchanged;
         // if it moved anyway (e.g. a regenerate), or an answer is streaming (its
         // next chunk would drop the summary), don't splice into a stale copy.
+        // Nor once this view has left: its refs stopped following the chat, and
+        // a runner may have sent queued turns on the shared cache entry since.
         const cur = messagesRef.current;
         if (
+          !mountedRef.current ||
           busyRef.current ||
           cur.length !== list.length ||
           cur[plan.insertAt - 1]?.id !== list[plan.insertAt - 1]?.id
@@ -975,14 +1113,28 @@ export function ChatView({
     return () => window.clearTimeout(t);
   }, [compactNote]);
 
-  // Fire persistence on the streaming -> ready transition (covers Stop too).
+  // An answer settled (streaming -> ready / error; covers Stop too): mirror it
+  // into the session store, persist a real answer, and hold the queue after a
+  // failure. "Was in flight" also comes from the store: a queued send can fail
+  // before it ever renders as busy, and an answer can settle while no view
+  // was mounted (this chat re-opened right after).
   const prevStatus = useRef(status);
   useEffect(() => {
     const was = prevStatus.current;
     prevStatus.current = status;
-    const justFinished =
-      (was === "streaming" || was === "submitted") && status === "ready";
-    if (!justFinished) return;
+    const wasInflight = getChatSession(chatId).inflight;
+    if (busy) {
+      markInflight(chatId);
+      return;
+    }
+    markDone(chatId);
+    if (!(was === "streaming" || was === "submitted" || wasInflight)) return;
+    if (status === "error") {
+      // The queued turns wait for the user ("Send now" / "Clear").
+      setQueuePaused(chatId, true);
+      return;
+    }
+    if (status !== "ready") return;
     const last = messages[messages.length - 1];
     // Only persist a real answer. An empty assistant turn (upstream 200 that
     // errored mid-stream and yielded no tokens) must NOT be saved, or the thread
@@ -1039,6 +1191,10 @@ export function ChatView({
 
   // --- Composer ----------------------------------------------------------
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // For controls that unmount (or disable) themselves when pressed — Queue,
+  // Stop, the paused bar, a chip: focus moves on to the composer instead of
+  // falling to <body>.
+  const focusComposer = useCallback(() => requestAnimationFrame(() => taRef.current?.focus()), []);
 
   // Auto-grow the textarea up to a max height.
   useEffect(() => {
@@ -1052,8 +1208,11 @@ export function ChatView({
     const hasText = input.trim().length > 0;
     const ready = attachmentsRef.current.filter((a) => a.status === "ready" && a.text);
     const uploading = attachmentsRef.current.some((a) => a.status === "uploading");
-    if (busy || uploading || compactingRef.current) return;
+    // Attachments finish uploading first; compaction splices the list, so
+    // nothing is sent (or queued) under it.
+    if (uploading || compactingRef.current) return;
     if (!hasText && ready.length === 0) return;
+    setAuditError(null);
     const t = input.trim().toLowerCase();
     // An audit phrase starts a background job only for users with
     // "jobs.deep_audit"; anyone else's message is sent as a normal chat turn.
@@ -1068,9 +1227,20 @@ export function ChatView({
         t.includes("audit every") ||
         t.includes("audit each") ||
         ((t.includes("all") || t.includes("every")) && t.includes("read") && t.includes("transcript")));
+    // Deep-audit phrases start their background job right away — never queued,
+    // even while an answer streams.
     if (isDeepAudit) {
       const query = input.trim();
       setInput("");
+      const auditFailed = (text: string) => {
+        // Never from a view that has left: its hook's messages are stale and
+        // share the chat's cache entry (an append would overwrite the thread).
+        if (!mountedRef.current) return;
+        // Mid-answer, an assistant note appended now would start a second
+        // request in this chat; say it beside the composer instead.
+        if (busyRef.current) setAuditError(text);
+        else void append({ role: "assistant", content: text }, { body: chatBody });
+      };
       void (async () => {
         try {
           const res = await fetch("/api/jobs", {
@@ -1078,26 +1248,48 @@ export function ChatView({
             headers: { "content-type": "application/json" },
             // Recent turns (and any compaction summary) so "audit them" inherits
             // the filters discussed earlier, e.g. "yesterday's calls".
-            body: JSON.stringify({ query, history: recentHistory(messagesRef.current) }),
+            body: JSON.stringify({
+              query,
+              history: recentHistory(messagesRef.current),
+              timeZone: effectiveTimeZone(readPrefs()),
+            }),
           });
           const json = (await res.json().catch(() => ({}))) as { job?: { id: string; title: string }; error?: string };
           const jb = json.job;
           if (res.ok && jb) setAudits((prev) => [{ id: jb.id, title: jb.title, startedAt: Date.now() }, ...prev]);
-          else void append({ role: "assistant", content: json.error ? `I couldn't start that audit: ${json.error}` : "I couldn't start that audit." }, { body: chatBody });
+          else auditFailed(json.error ? `I couldn't start that audit: ${json.error}` : "I couldn't start that audit.");
         } catch {
-          void append({ role: "assistant", content: "I couldn't start that audit (network error)." }, { body: chatBody });
+          auditFailed("I couldn't start that audit (network error).");
         }
       })();
       return;
     }
-    stickRef.current = true;
-    setData(undefined); // clear last turn's status/sources so `activity` is per-turn
     const payload: ChatAttachment[] = ready.map((a) => ({ name: a.name, text: a.text as string }));
     // The user message this turn sends (a default naming the files when there's
     // no question), reused as the title/first turn when pre-creating a new thread.
     const firstText = hasText
       ? input.trim()
       : `Please review the attached file${ready.length > 1 ? "s" : ""}: ${ready.map((a) => a.name).join(", ")}`;
+
+    // An answer is streaming: queue this turn (with the settings chosen now and
+    // its uploaded attachments). It's sent, in order, once the current answer
+    // finishes — by this view, or by a background runner if the user has left
+    // the chat by then. Likewise while earlier queued turns are still waiting
+    // to go out (the settle gap between answers), so turns keep the order they
+    // were typed in. (A queue held after Stop or an error keeps waiting for
+    // "Send now"; a message typed then is sent right away.)
+    const pending = getChatSession(chatId);
+    if (busy || (pending.queue.length > 0 && !pending.paused)) {
+      enqueueTurn(chatId, { text: firstText, attachments: payload, body: chatBody });
+      setInput("");
+      setAttachments([]);
+      attachStartedRef.current.clear();
+      stickRef.current = true;
+      focusComposer(); // the Queue button disables once the input clears
+      return;
+    }
+    stickRef.current = true;
+    setData(undefined); // clear last turn's status/sources so `activity` is per-turn
 
     // For a BRAND-NEW thread, create the conversation row (persisting the user's
     // message) BEFORE streaming, so its id rides along in the request body. That
@@ -1110,15 +1302,21 @@ export function ChatView({
     // saveConversationTurn Server Action. A Server Action resolving right as we
     // replaceState to /c/[id] makes Next.js re-render that route, which remounts
     // this view mid-stream and the in-progress answer vanishes from the screen.
+    //
+    // The row is created with THIS chat's id (chatId), so the saved thread and
+    // the in-browser stream share one key: /c/[id] re-attaches to the stream.
+    // The server may answer with another id (the requested one was taken); the
+    // chat keeps working under its key and the store maps the two.
     let convId = conversationIdRef.current;
     if (convId === null) {
       if (preCreatingRef.current) return; // a create is already in flight
       preCreatingRef.current = true;
+      setPreparing(chatId, true);
       try {
         const res = await fetch("/api/conversations", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ tier: selection.tier, messages: [{ role: "user", content: firstText }] }),
+          body: JSON.stringify({ id: chatId, tier: selection.tier, messages: [{ role: "user", content: firstText }] }),
         });
         const json = (await res.json().catch(() => ({}))) as {
           conversationId?: string;
@@ -1129,12 +1327,15 @@ export function ChatView({
           convId = id;
           conversationIdRef.current = id;
           setActiveConversationId(id);
+          bindConversation(chatId, id);
+          noteSavedThread(chatId, [{ role: "user", content: firstText }]);
           window.dispatchEvent(
             new CustomEvent("chat:saved", {
               detail: { id, title: json.conversation?.title ?? firstText.slice(0, 80), created: true },
             })
           );
-          window.history.replaceState(null, "", `/c/${id}`);
+          // Not after the user navigated away: that page's URL isn't ours.
+          if (mountedRef.current) window.history.replaceState(null, "", `/c/${id}`);
         }
       } catch {
         // Pre-create failed — fall back to an unscoped turn. The client's own
@@ -1142,10 +1343,26 @@ export function ChatView({
       } finally {
         preCreatingRef.current = false;
       }
+      if (!mountedRef.current) {
+        // The user left while the thread was being created: the background
+        // runner sends this first turn (ahead of anything queued since).
+        enqueueTurn(
+          chatId,
+          { text: firstText, attachments: payload, body: { ...chatBody, conversationId: convId } },
+          { front: true }
+        );
+        handoffChat(chatId);
+        setPreparing(chatId, false);
+        return;
+      }
     }
 
     const withId = convId === chatBody.conversationId ? chatBody : { ...chatBody, conversationId: convId };
     const body = payload.length ? { ...withId, attachments: payload } : withId;
+    // In flight from now (the sidebar spinner, and a hand-off if the user
+    // leaves before useChat reports the request as submitted).
+    markInflight(chatId);
+    setPreparing(chatId, false);
     if (hasText) {
       handleSubmit(undefined, { body });
     } else {
@@ -1153,7 +1370,34 @@ export function ChatView({
     }
     setAttachments([]);
     attachStartedRef.current.clear();
-  }, [input, busy, handleSubmit, append, chatBody, setData, setInput, selection.tier, canDeepAudit]);
+  }, [input, busy, handleSubmit, append, chatBody, setData, setInput, selection.tier, canDeepAudit, chatId, focusComposer]);
+
+  // --- Queued turns -----------------------------------------------------------
+  // useChat's callbacks change identity every render; the flush timer reads these.
+  const appendRef = useRef(append);
+  useEffect(() => {
+    appendRef.current = append;
+  }, [append]);
+
+  /** Send the next queued turn, if this chat is idle and the queue isn't held. */
+  const flushNext = useCallback(() => {
+    if (busyRef.current || compactingRef.current || preCreatingRef.current) return;
+    const s = getChatSession(chatId);
+    if (s.paused || s.inflight || s.preparing) return;
+    const turn = dequeueTurn(chatId);
+    if (!turn) return;
+    markInflight(chatId);
+    stickRef.current = true;
+    setData(undefined);
+    void appendRef.current(
+      { role: "user", content: turn.text },
+      { body: queuedTurnBody(turn, conversationIdRef.current) }
+    );
+  }, [chatId, setData]);
+  const flushNextRef = useRef(flushNext);
+  useEffect(() => {
+    flushNextRef.current = flushNext;
+  }, [flushNext]);
 
   // The reload/resend paths below wait for a running compaction: a new stream
   // started now would race its splice (and drop the summary).
@@ -1173,9 +1417,9 @@ export function ChatView({
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value, mode, ...scopeBody } });
+      reload({ body: { model: value, tier: value, mode, ...scopeBody, ...(timeZone ? { timeZone } : {}) } });
     },
-    [options, setSelection, reload, setData, mode, scopeBody]
+    [options, setSelection, reload, setData, mode, scopeBody, timeZone]
   );
 
   // Branch: fork a NEW conversation containing everything up to and including a
@@ -1240,8 +1484,8 @@ export function ChatView({
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value, mode, ...scopeBody } });
-  }, [setSelection, reload, setData, mode, scopeBody]);
+    reload({ body: { model: rec.value, tier: rec.value, mode, ...scopeBody, ...(timeZone ? { timeZone } : {}) } });
+  }, [setSelection, reload, setData, mode, scopeBody, timeZone]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
@@ -1284,6 +1528,48 @@ export function ChatView({
     setPendingSend(null);
     void append({ role: "user", content }, { body: chatBody });
   }, [pendingSend, status, compacting, append, chatBody]);
+
+  // Send the next queued turn once the chat is idle: the answer settled (and
+  // its save started), no compaction or edit-resend is pending, and the queue
+  // isn't held. The settle delay lets useChat's last throttled update land
+  // first, so the next request carries the full answer.
+  useEffect(() => {
+    if (busy || compacting || pendingSend != null || queuePaused || queue.length === 0) return;
+    if (session.inflight || session.preparing) return;
+    const timer = window.setTimeout(() => flushNextRef.current(), QUEUE_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [busy, compacting, pendingSend, queuePaused, queue.length, session.inflight, session.preparing]);
+
+  // Stop the answer — whichever instance started it (this view, an earlier
+  // one, or a background runner) — and hold any queued turns for the user.
+  const stopAnswer = useCallback(() => {
+    stop();
+    abortChat(chatId);
+    setQueuePaused(chatId, true);
+    focusComposer(); // Stop unmounts once the answer settles
+  }, [stop, chatId, focusComposer]);
+  // Each of these unmounts the control it was pressed on (the paused bar, a
+  // chip), so focus moves on to the composer (focusComposer).
+  const sendQueuedNow = useCallback(() => {
+    setQueuePaused(chatId, false);
+    focusComposer();
+  }, [chatId, focusComposer]);
+  const clearQueued = useCallback(() => {
+    clearQueue(chatId);
+    focusComposer();
+  }, [chatId, focusComposer]);
+  const removeQueued = useCallback(
+    (turnId: string) => {
+      removeQueuedTurn(chatId, turnId);
+      focusComposer();
+    },
+    [chatId, focusComposer]
+  );
+  // Opened from an "Answer ready" notice: its button unmounted, so focus lands
+  // in this chat's composer.
+  useEffect(() => {
+    if (takeComposerFocus(conversationId)) focusComposer();
+  }, [conversationId, focusComposer]);
 
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1611,7 +1897,7 @@ export function ChatView({
     onKeyDown,
     onSubmit: onFormSubmit,
     busy,
-    onStop: stop,
+    onStop: stopAnswer,
     onSlashSelect: prefill,
     attachments,
     onAttachFiles: addFiles,
@@ -1880,7 +2166,7 @@ export function ChatView({
                                 responseFont === "sans" ? "font-sans" : "font-serif"
                               )}
                             >
-                              <StreamingMarkdown content={text} animate={streamingThis} />
+                              <StreamingMarkdown content={text} animate={streamingThis} resume={m.id === resumedId} />
                               {idx === lastIndex && !busy && choices.length > 0 && (
                                 <div className="font-sans text-sm leading-6">
                                   <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
@@ -2150,6 +2436,11 @@ export function ChatView({
                     {saveError}
                   </p>
                 )}
+                {auditError && (
+                  <p role="alert" className="mb-2 px-1 text-[12px] text-danger">
+                    {auditError}
+                  </p>
+                )}
                 {compactNote && (
                   <p
                     role={compactNote.tone === "error" ? "alert" : "status"}
@@ -2162,6 +2453,13 @@ export function ChatView({
                   </p>
                 )}
                 {toolbar}
+                <QueuedTurns
+                  items={queue}
+                  paused={queuePaused}
+                  onRemove={removeQueued}
+                  onSendNow={sendQueuedNow}
+                  onClear={clearQueued}
+                />
                 <Composer {...composerCore} variant="dock" />
                 <p className="mt-1.5 hidden text-center text-[11px] text-subtle-foreground sm:block">
                   Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
@@ -2430,6 +2728,10 @@ function speakableText(md: string): string {
  *    button, the textarea, saved prompts, mic and a tea-green send button.
  * The attach controls and the mic only render when the user's capabilities
  * allow them (see `attachAccept` / `onDictate`).
+ *
+ * While an answer streams (`busy`) the composer stays usable: Stop appears to
+ * the left of the send button, which keeps its rightmost slot and queues the
+ * message for when the answer finishes (disabled until there's text).
  */
 function Composer({
   variant,
@@ -2627,10 +2929,15 @@ function Composer({
     </>
   );
 
+  // Mid-answer, Send queues the message (it goes out when the answer finishes).
+  const sendLabel = busy ? "Queue message" : "Send message";
+  const sendTitle = busy ? "Queue: sends when the current answer finishes" : undefined;
+
   const stopButton = (className: string) => (
     <button
       type="button"
       aria-label="Stop generating"
+      title="Stop generating"
       onClick={onStop}
       className={cn(
         "flex shrink-0 items-center justify-center rounded-full bg-ink text-ink-foreground transition-transform duration-100 hover:bg-ink-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -2667,18 +2974,17 @@ function Composer({
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               {rightTools}
               {mic}
-              {busy ? (
-                stopButton("ml-1 h-8 w-8")
-              ) : (
-                <button
-                  type="submit"
-                  aria-label="Send message"
-                  disabled={!canSend}
-                  className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_4px_12px_-4px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_6px_16px_-4px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              )}
+              {/* Stop sits LEFT of Send/Queue, which keeps the rightmost slot. */}
+              {busy && stopButton("ml-1 mr-1.5 h-8 w-8")}
+              <button
+                type="submit"
+                aria-label={sendLabel}
+                title={sendTitle}
+                disabled={!canSend}
+                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_4px_12px_-4px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_6px_16px_-4px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <ArrowUp size={16} />
+              </button>
             </div>
           </div>
           <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-border bg-accent-softer px-2.5 py-1.5">
@@ -2735,7 +3041,7 @@ function Composer({
           </button>
         )}
         {textarea(
-          "Type your prompt here…",
+          busy ? "Queue a follow-up…" : "Type your prompt here…",
           "block max-h-[200px] min-h-[32px] flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
         )}
         <div className="flex h-8 shrink-0 items-center gap-0.5">
@@ -2749,21 +3055,111 @@ function Composer({
             <Sparkles size={16} />
           </IconButton>
           {mic}
-          {busy ? (
-            stopButton("ml-0.5 h-8 w-8")
-          ) : (
-            <button
-              type="submit"
-              aria-label="Send message"
-              disabled={!canSend}
-              className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <ArrowRight size={16} />
-            </button>
-          )}
+          {/* Stable slots: Send (Queue while an answer streams) always holds the
+              rightmost spot, so typing never moves it; Stop sits to its left. */}
+          {busy && stopButton("ml-0.5 mr-1.5 h-8 w-8")}
+          <button
+            type="submit"
+            aria-label={sendLabel}
+            title={sendTitle}
+            disabled={!canSend}
+            className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ArrowRight size={16} />
+          </button>
         </div>
       </div>
     </form>
+  );
+}
+
+/**
+ * Turns queued while an answer streams, above the docked composer: a compact
+ * chip each ("Queued · text", × drops it) and a count, sent in order once the
+ * answer finishes. After a failed or stopped answer the queue is held until
+ * "Send now" resumes it or "Clear" drops it.
+ */
+function QueuedTurns({
+  items,
+  paused,
+  onRemove,
+  onSendNow,
+  onClear,
+}: {
+  items: readonly QueuedTurn[];
+  paused: boolean;
+  onRemove: (turnId: string) => void;
+  onSendNow: () => void;
+  onClear: () => void;
+}) {
+  const count = items.length;
+  const announcement =
+    count === 0 ? "" : `${count} message${count === 1 ? "" : "s"} queued${paused ? ", paused" : ""}`;
+  return (
+    <>
+      {/* The chips aren't a live region; this line announces the queue as it changes. */}
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
+      {count > 0 && (
+        <div className="mb-2 space-y-1.5 px-1">
+          {paused && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-foreground">
+              <Pause size={14} className="shrink-0 text-warning" aria-hidden />
+              <span className="min-w-0 flex-1">Queued messages paused</span>
+              <span className="flex shrink-0 items-center gap-1">
+                <Button size="sm" onClick={onSendNow}>
+                  Send now
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onClear}>
+                  Clear
+                </Button>
+              </span>
+            </div>
+          )}
+          {/* At most two rows of chips (2 × h-7 + gap), scrolling beyond. */}
+          <ul aria-label="Queued messages" className="flex max-h-[62px] flex-wrap items-center gap-1.5 overflow-y-auto">
+            {/* Visual only: the live line above announces the count, and the
+                list's item count stays the number of queued messages. */}
+            {count > 1 && (
+              <li
+                aria-hidden="true"
+                className="inline-flex h-7 items-center px-1 text-xs font-medium tabular-nums text-muted-foreground"
+              >
+                {count} queued
+              </li>
+            )}
+            {items.map((q) => (
+              <li
+                key={q.id}
+                title={q.text}
+                className="flex h-7 max-w-[280px] items-center gap-1.5 rounded-full border border-border bg-surface pl-2.5 pr-1 text-xs text-foreground shadow-soft"
+              >
+                <Clock size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+                <span className="shrink-0 text-muted-foreground">Queued ·</span>
+                <span className="min-w-0 truncate font-medium">{q.text}</span>
+                {q.attachments.length > 0 && (
+                  <>
+                    <Paperclip size={12} className="shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="sr-only">
+                      with {q.attachments.length} attachment{q.attachments.length === 1 ? "" : "s"}
+                    </span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onRemove(q.id)}
+                  aria-label={`Remove queued message: ${q.text.length > 60 ? `${q.text.slice(0, 60)}…` : q.text}`}
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -3593,8 +3989,13 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
 // out of memory.
 const REVEAL_INTERVAL_MS = 40;
 
-/** Progressive character reveal for a smooth typewriter effect while streaming. */
-function useSmoothText(text: string, active: boolean): string {
+/**
+ * Progressive character reveal for a smooth typewriter effect while streaming.
+ * `resume`: the answer was already under way when the view mounted (a chat
+ * re-opened mid-answer) — keep what's there and glide on from it, rather than
+ * re-typing it from the start.
+ */
+function useSmoothText(text: string, active: boolean, resume = false): string {
   const textRef = useRef(text);
   textRef.current = text;
   const [shown, setShown] = useState(text);
@@ -3607,7 +4008,8 @@ function useSmoothText(text: string, active: boolean): string {
       setShown(textRef.current);
       return;
     }
-    posRef.current = 0; // reveal this turn from the start
+    // Reveal this turn from the start (or, resumed, from what's already shown).
+    posRef.current = resume ? textRef.current.length : 0;
     let raf = 0;
     let lastCommit = 0;
     const tick = (now: number) => {
@@ -3643,6 +4045,8 @@ function useSmoothText(text: string, active: boolean): string {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // `resume` only matters when streaming starts (it's fixed per message).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   return active ? shown : text;
@@ -3653,8 +4057,17 @@ function useSmoothText(text: string, active: boolean): string {
 const MemoMarkdown = memo(Markdown);
 
 /** Markdown that reveals smoothly while streaming, then renders in full. */
-function StreamingMarkdown({ content, animate }: { content: string; animate: boolean }) {
-  const shown = useSmoothText(content, animate);
+function StreamingMarkdown({
+  content,
+  animate,
+  resume = false,
+}: {
+  content: string;
+  animate: boolean;
+  /** Already streaming when the view mounted: continue, don't re-type (see useSmoothText). */
+  resume?: boolean;
+}) {
+  const shown = useSmoothText(content, animate, resume);
   return (
     <>
       <MemoMarkdown content={shown} />

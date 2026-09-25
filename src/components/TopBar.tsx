@@ -18,6 +18,8 @@ export interface TopBarProps {
 
   /** Sidebar controls. */
   collapsed?: boolean;
+  /** Chats generating off screen: a dot on the sidebar toggle (whose spinners are hidden then). */
+  backgroundGenerating?: number;
   onOpenMobile?: () => void;
   onExpand?: () => void;
 
@@ -29,9 +31,27 @@ export interface TopBarProps {
  * left (with the open conversation's title), and pills on the right — a
  * tea-green usage pill, notifications, and the dark Settings pill.
  */
-export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand, className }: TopBarProps) {
+export function TopBar({
+  title,
+  usage,
+  collapsed = false,
+  backgroundGenerating = 0,
+  onOpenMobile,
+  onExpand,
+  className,
+}: TopBarProps) {
   const pathname = usePathname();
   const onSettings = pathname.startsWith("/settings");
+  // Both toggles only show while the rail is hidden (Menu below lg, Expand
+  // when collapsed), exactly when the sidebar's row spinners can't be seen.
+  // The count goes in the label (an aria-label overrides the button's text).
+  const generating =
+    backgroundGenerating > 0
+      ? `, ${backgroundGenerating} chat${backgroundGenerating === 1 ? "" : "s"} generating`
+      : "";
+  const generatingDot = backgroundGenerating > 0 && (
+    <span aria-hidden className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse" />
+  );
   return (
     <header
       className={cn(
@@ -40,12 +60,14 @@ export function TopBar({ title, usage, collapsed = false, onOpenMobile, onExpand
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <IconButton aria-label="Open sidebar" className="lg:hidden" onClick={onOpenMobile}>
+        <IconButton aria-label={`Open sidebar${generating}`} className="relative lg:hidden" onClick={onOpenMobile}>
           <Menu size={18} />
+          {generatingDot}
         </IconButton>
         {collapsed && (
-          <IconButton aria-label="Expand sidebar" className="hidden lg:inline-flex" onClick={onExpand}>
+          <IconButton aria-label={`Expand sidebar${generating}`} className="relative hidden lg:inline-flex" onClick={onExpand}>
             <PanelLeftOpen size={16} />
+            {generatingDot}
           </IconButton>
         )}
         {/* Product mark: brain icon + "Practiscale" (dark green) + "Intelligent

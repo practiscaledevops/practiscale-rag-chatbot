@@ -116,10 +116,38 @@ const fakeAuth = {
   signOut: async () => ({ error: null }),
 };
 
+/**
+ * public.replace_conversation_messages (migration 0014): swap a thread's rows
+ * in one step. The owner stands in for auth.uid() (RLS lets only them write).
+ */
+function replaceConversationMessages(args: Row): { data: null; error: null } {
+  const store = demoStore();
+  const id = args.p_conversation_id;
+  const owner = (store.conversations || []).find((c: Row) => c.id === id)?.user_id ?? DEMO_USER.id;
+  const kept = (store.messages || []).filter((r: Row) => r.conversation_id !== id);
+  const now = new Date().toISOString();
+  const rows = (Array.isArray(args.p_rows) ? args.p_rows : []).map((r: Row) => ({
+    id: genId(),
+    conversation_id: id,
+    user_id: owner,
+    role: r.role,
+    content: r.content ?? "",
+    citations: r.citations ?? [],
+    input_tokens: r.input_tokens ?? 0,
+    output_tokens: r.output_tokens ?? 0,
+    created_at: r.created_at ?? now,
+  }));
+  store.messages = [...kept, ...rows];
+  return { data: null, error: null };
+}
+
 export function fakeSupabase(): any {
   return {
     from(table: string) { return new Query(table); },
-    async rpc() { return { data: [], error: null }; },
+    async rpc(fn: string, args: Row = {}) {
+      if (fn === "replace_conversation_messages") return replaceConversationMessages(args);
+      return { data: [], error: null };
+    },
     auth: fakeAuth,
   };
 }

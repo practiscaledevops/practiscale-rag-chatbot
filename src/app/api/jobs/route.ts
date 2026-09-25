@@ -3,9 +3,12 @@
 // signed-in user holding the "jobs.deep_audit" capability (else 403); demo
 // returns a fake running job so the card is visible.
 //
-// Body: { query: string, history?: { role, content }[] }. `history` is the
-// recent conversation (bounded below) so the Brain can resolve a follow-up like
-// "audit those calls"; it is forwarded as data, never as instructions.
+// Body: { query: string, history?: { role, content }[], timeZone?: string }.
+// `history` is the recent conversation (bounded below) so the Brain can resolve
+// a follow-up like "audit those calls"; it is forwarded as data, never as
+// instructions. `timeZone` is the requester's IANA zone (lib/timezone
+// effectiveTimeZone): the Brain resolves "today" / "last week" in it and keeps
+// it on the job. An unusable zone is dropped (the Brain's business zone applies).
 
 import { z } from "zod";
 import { getSessionProfile } from "@/lib/admin";
@@ -14,6 +17,7 @@ import { brainStartAudit, BrainRequestError } from "@/lib/brain";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
 import { isoOrUndefined } from "@/lib/message-times";
+import { timeZoneOrUndefined } from "@/lib/timezone";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["sin1"];
@@ -38,6 +42,8 @@ const jobBodySchema = z.object({
     )
     .max(MAX_HISTORY)
     .optional(),
+  // A valid IANA zone (canonical casing), else undefined: never a 400.
+  timeZone: z.unknown().optional().transform(timeZoneOrUndefined),
 });
 
 export async function POST(req: Request) {
@@ -72,10 +78,13 @@ export async function POST(req: Request) {
     );
   }
   // Drop empty turns; forward only { role, content }.
-  const history = (parsed.data.history ?? []).filter((m) => m.content.trim());
+  const nonEmpty = (parsed.data.history ?? []).filter((m) => m.content.trim());
+  const history = nonEmpty.length ? nonEmpty : undefined;
+  const { query, timeZone } = parsed.data;
 
   try {
-    const job = await brainStartAudit(parsed.data.query, history.length ? history : undefined);
+    // The zone is passed only when there is one (else the Brain's default applies).
+    const job = timeZone ? await brainStartAudit(query, history, timeZone) : await brainStartAudit(query, history);
     return Response.json({ job }, { status: 201 });
   } catch (e) {
     if (e instanceof BrainRequestError) {

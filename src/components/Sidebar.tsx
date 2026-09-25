@@ -14,6 +14,7 @@ import {
   Folder,
   Lightbulb,
   ListChecks,
+  Loader2,
   LogOut,
   MessageSquare,
   Moon,
@@ -35,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { Logo } from "@/components/Brand";
 import { UserAvatar } from "@/components/UserAvatar";
 import { resetAvatarUrl } from "@/lib/avatar-client";
+import { resetChatSessions } from "@/lib/chat-sessions";
 import { resolveTheme, useTheme } from "@/lib/theme";
 
 export interface ProjectItem {
@@ -57,6 +59,8 @@ export interface SidebarProps {
   conversations?: ConversationItem[];
   /** Currently open conversation, for highlight. */
   activeConversationId?: string | null;
+  /** Conversations generating an answer right now (on screen or in the background): a spinner. */
+  generatingIds?: ReadonlySet<string>;
   /** Show the Admin link (role admin/super_admin, resolved server-side). */
   isAdmin?: boolean;
   /**
@@ -180,6 +184,7 @@ export function Sidebar({
   projects = [],
   conversations = [],
   activeConversationId = null,
+  generatingIds,
   isAdmin = false,
   capabilities,
   fullName = "",
@@ -463,6 +468,8 @@ export function Sidebar({
     // The avatar store outlives a client-side sign-out; never show this
     // user's picture to whoever signs in next on the same tab.
     resetAvatarUrl();
+    // Likewise background chats: stop their streams and drop queued turns.
+    resetChatSessions();
     try {
       // Loaded on demand so supabase-js stays out of every page's shell bundle.
       const { createSupabaseBrowserClient } = await import("@/lib/supabase-browser");
@@ -476,6 +483,7 @@ export function Sidebar({
   }, [router]);
 
   const rowProps = {
+    generatingIds,
     onSelect: onSelectConversation,
     onRename: onRenameConversation,
     onPin: onPinConversation,
@@ -945,6 +953,7 @@ function ConversationRow({
   conversation: c,
   active,
   snippet,
+  generatingIds,
   onSelect,
   onRename,
   onPin,
@@ -957,6 +966,8 @@ function ConversationRow({
   conversation: ConversationItem;
   active: boolean;
   snippet?: string;
+  /** Conversations generating an answer: the row's icon becomes a spinner. */
+  generatingIds?: ReadonlySet<string>;
   onSelect?: (id: string) => void;
   onRename?: (id: string) => void;
   onPin?: (id: string, pinned: boolean) => void;
@@ -985,6 +996,7 @@ function ConversationRow({
   // While selecting, the highlight follows the selection (not the open chat)
   // and the per-row ••• menu steps aside.
   const highlighted = selecting ? selected : active;
+  const generating = !selecting && !!generatingIds?.has(c.id);
   return (
     <li className={cn("group relative flex items-center rounded-lg transition-colors", highlighted ? ROW_ACTIVE : ROW_IDLE)}>
       <button
@@ -1001,9 +1013,14 @@ function ConversationRow({
           selecting && "select-none pr-2"
         )}
       >
-        <span className={cn(ICON_BOX, snippet && "self-start pt-0.5", !selecting && (active || c.pinned) && "text-accent")}>
+        <span
+          className={cn(ICON_BOX, snippet && "self-start pt-0.5", !selecting && (active || c.pinned || generating) && "text-accent")}
+          title={generating ? "Generating an answer" : undefined}
+        >
           {selecting ? (
             <SelectBox checked={selected} />
+          ) : generating ? (
+            <Loader2 size={16} strokeWidth={1.75} className="animate-spin motion-reduce:animate-none" aria-hidden />
           ) : c.pinned ? (
             <Pin size={16} strokeWidth={1.75} aria-hidden />
           ) : (
@@ -1013,6 +1030,7 @@ function ConversationRow({
         <span className="min-w-0 flex-1">
           <span className="fade-truncate block">{c.title || "Untitled"}</span>
           {snippet && <span className="mt-0.5 block truncate text-[11px] text-sidebar-muted">{snippet}</span>}
+          {generating && <span className="sr-only">(generating)</span>}
         </span>
       </button>
       {!selecting && (

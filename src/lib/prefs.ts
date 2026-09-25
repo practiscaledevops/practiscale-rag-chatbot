@@ -1,8 +1,9 @@
 // Per-user chat defaults set on the Settings page: which model, work mode,
-// response format and knowledge scope a NEW message starts with. A per-viewer
+// response format and knowledge scope a NEW message starts with, plus the
+// appearance choices and the time zone dates are answered in. A per-viewer
 // convenience, so it lives in this browser's localStorage (every read/write is
 // guarded — storage can be unavailable in private windows). The composer can
-// still override any of these per message.
+// still override any of the chat defaults per message.
 
 import type { OutputType } from "@/lib/output-types";
 import type { WorkMode } from "@/lib/work-modes";
@@ -18,7 +19,16 @@ export interface ChatPrefs {
   collectionIds?: string[];
   /** Answer typeface: a Claude-style serif (default) or the UI sans. */
   responseFont?: "serif" | "sans";
+  /**
+   * Time zone for dates in answers ("today", "yesterday", call dates): "auto"
+   * (or absent) = this device's zone, else an IANA id. Send
+   * `effectiveTimeZone(readPrefs())` (lib/timezone), never this raw value.
+   */
+  timeZone?: string;
 }
+
+// The zone to send with a chat / audit / compaction request (see lib/timezone).
+export { effectiveTimeZone } from "@/lib/timezone";
 
 const KEY = "practiscale:prefs";
 export const PREFS_EVENT = "prefs:changed";

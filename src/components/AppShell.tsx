@@ -18,6 +18,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { DEFAULT_OUTPUT_TYPE, isOutputType, type OutputType } from "@/lib/output-types";
 import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
 import { capabilitySet } from "@/lib/capabilities-client";
+import { useBackgroundGeneratingCount, useInflightChats } from "@/lib/chat-sessions";
 
 // ---------------------------------------------------------------------------
 // Model selection
@@ -288,6 +289,12 @@ export interface AppShellProps
   features?: string[];
   /** Tokens already spent this month (persisted), used to seed the meter. */
   initialTokens?: number;
+  /**
+   * Rendered inside the shell's context, outside the page: the background
+   * chat runners and their "answer ready" notices (they meter usage through
+   * {@link useAppShell}, and must outlive page navigation).
+   */
+  background?: React.ReactNode;
 }
 
 /**
@@ -326,8 +333,13 @@ export function AppShell({
   onDeleteConversation,
   onBulkArchive,
   onBulkDelete,
+  background = null,
 }: AppShellProps) {
   const router = useRouter();
+  // Chats generating right now (in view or in the background): row spinners.
+  const generatingIds = useInflightChats();
+  // …and those off screen, for a dot on the sidebar toggle while the rail is hidden.
+  const backgroundGenerating = useBackgroundGeneratingCount();
 
   const options = useMemo(
     () => buildModelOptions(models, { presets: !restrictedToModels }),
@@ -433,6 +445,7 @@ export function AppShell({
           projects={projects}
           conversations={conversations}
           activeConversationId={activeConversationId}
+          generatingIds={generatingIds}
           isAdmin={isAdmin}
           capabilities={capabilities}
           fullName={fullName}
@@ -462,6 +475,7 @@ export function AppShell({
             title={title}
             usage={usage}
             collapsed={collapsed}
+            backgroundGenerating={backgroundGenerating}
             onOpenMobile={() => setMobileOpen(true)}
             onExpand={() => setCollapsed(false)}
           />
@@ -482,6 +496,7 @@ export function AppShell({
         onNewChat={onNewChat ?? (() => router.push("/"))}
         onSelectConversation={onSelectConversation}
       />
+      {background}
     </AppShellContext.Provider>
   );
 }

@@ -17,6 +17,7 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { rowTimestamps } from "@/lib/message-times";
+import { replaceConversationMessages } from "@/lib/replace-messages";
 import type { ModelTier } from "@/lib/brain";
 
 const TIERS = ["fast", "recommended", "max"] as const;
@@ -117,29 +118,24 @@ export async function saveConversationTurn(
     created = true;
   }
 
-  // Replace stored turns with the current client state (idempotent per save).
-  await supabase.from("messages").delete().eq("conversation_id", conversationId);
-
-  if (messages.length > 0) {
-    // Each row keeps the time its message was sent, strictly increasing: a
-    // multi-row insert would otherwise stamp every row with the same now(), and
-    // the /c/[id] loader (ordered by created_at) could rebuild the thread — and
-    // the summary's position in it — out of order. The real send times also let
-    // the Brain resolve "yesterday" in a reopened chat (lib/message-times).
-    const times = rowTimestamps(messages);
-    const rows = messages.map((m, i) => ({
-      conversation_id: conversationId,
-      user_id: user.id,
-      role: m.role,
-      content: m.content,
-      citations: m.role === "assistant" ? extractCitations(m.content) : [],
-      input_tokens: m.role === "user" ? estimateTokens(m.content) : 0,
-      output_tokens: m.role === "assistant" ? estimateTokens(m.content) : 0,
-      created_at: times[i],
-    }));
-    const { error } = await supabase.from("messages").insert(rows);
-    if (error) return { ok: false, error: "save_failed" };
-  }
+  // Replace stored turns with the current client state (idempotent per save),
+  // in one step: a concurrent server-side save can't interleave with it.
+  // Each row keeps the time its message was sent, strictly increasing: a
+  // multi-row insert would otherwise stamp every row with the same now(), and
+  // the /c/[id] loader (ordered by created_at) could rebuild the thread — and
+  // the summary's position in it — out of order. The real send times also let
+  // the Brain resolve "yesterday" in a reopened chat (lib/message-times).
+  const times = rowTimestamps(messages);
+  const rows = messages.map((m, i) => ({
+    role: m.role,
+    content: m.content,
+    citations: m.role === "assistant" ? extractCitations(m.content) : [],
+    input_tokens: m.role === "user" ? estimateTokens(m.content) : 0,
+    output_tokens: m.role === "assistant" ? estimateTokens(m.content) : 0,
+    created_at: times[i],
+  }));
+  const error = await replaceConversationMessages(supabase, conversationId, user.id, rows);
+  if (error) return { ok: false, error: "save_failed" };
 
   return { ok: true, conversationId, created, title };
 }
