@@ -415,7 +415,11 @@ export function AppShell({
 
   return (
     <AppShellContext.Provider value={value}>
-      <div className="flex h-app overflow-hidden bg-sidebar">
+      {/* relative: the frame is the containing block for absolutely positioned
+          descendants (sr-only labels, popovers). Without it they resolve against
+          the page, and one deep in a long scrolled page makes the whole document
+          taller than the window — the page then scrolls, leaving a blank strip. */}
+      <div className="relative flex h-app overflow-hidden bg-sidebar">
         {/* Mobile scrim */}
         {mobileOpen && (
           <div
@@ -461,7 +465,7 @@ export function AppShell({
             onOpenMobile={() => setMobileOpen(true)}
             onExpand={() => setCollapsed(false)}
           />
-          <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+          <main className="relative min-h-0 flex-1 overflow-hidden">{children}</main>
         </div>
       </div>
 

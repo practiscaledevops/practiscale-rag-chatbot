@@ -95,8 +95,12 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
     }
   }
 
+  // relative: the frame is the containing block for absolutely positioned
+  // descendants (sr-only labels, popovers). Without it they resolve against the
+  // page, and one deep in a long scrolled page makes the whole document taller
+  // than the window — the page then scrolls, leaving a blank strip.
   return (
-    <div className="flex h-app overflow-hidden bg-sidebar text-foreground">
+    <div className="relative flex h-app overflow-hidden bg-sidebar text-foreground">
       {/* --- Desktop rail (static) -------------------------------------- */}
       <aside className="hidden w-64 shrink-0 bg-sidebar lg:block">
         <SidebarContent pathname={pathname} roleLabel={roleLabel} />
@@ -169,7 +173,7 @@ export function AdminShell({ email, role, children }: AdminShellProps) {
         </header>
 
         {/* Light content area — consistent container for every admin page. */}
-        <main className="min-h-0 flex-1 overflow-y-auto bg-background">
+        <main className="relative min-h-0 flex-1 overflow-y-auto bg-background">
           <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">{children}</div>
         </main>
       </div>
