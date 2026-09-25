@@ -41,6 +41,11 @@ const config: Config = {
         "danger-solid": "rgb(var(--danger-solid) / <alpha-value>)",
         "danger-solid-hover": "rgb(var(--danger-solid-hover) / <alpha-value>)",
         info: "rgb(var(--info) / <alpha-value>)",
+        // Status text on its own /10 tint (AA): chips, banners.
+        "success-ink": "rgb(var(--success-ink) / <alpha-value>)",
+        "warning-ink": "rgb(var(--warning-ink) / <alpha-value>)",
+        "danger-ink": "rgb(var(--danger-ink) / <alpha-value>)",
+        "info-ink": "rgb(var(--info-ink) / <alpha-value>)",
         private: "rgb(var(--private) / <alpha-value>)",
         // Dark navigation rail (constant).
         sidebar: "rgb(var(--sidebar) / <alpha-value>)",

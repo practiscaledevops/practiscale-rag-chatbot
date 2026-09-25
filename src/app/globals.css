@@ -28,7 +28,7 @@
   --surface-sunken: 239 241 240;    /* #EFF1F0 — pressed / tracks */
   --border: 234 236 236;            /* #EAECEC — hairlines */
   --muted: 245 246 246;
-  --muted-foreground: 110 115 117;  /* #6E7375 — secondary text */
+  --muted-foreground: 105 110 112;  /* #696E70 — secondary text (AA on surface-muted) */
   --subtle-foreground: 170 174 175; /* ~#BBBBBB kit Light Gray — placeholders, meta */
 
   /* ---- PractiScale green (replaces the kit's Vivid Violet #9747FF) ---- */
@@ -54,6 +54,11 @@
   --danger-solid: 220 38 38;        /* #DC2626 — 4.83:1 with white */
   --danger-solid-hover: 185 28 28;  /* #B91C1C — darkens, never lightens */
   --info: 37 99 235;
+  /* Status TEXT on its own /10 tint (chips, banners): darker ink for AA in light. */
+  --success-ink: 22 101 52;         /* #166534 — 6.23:1 on success/10 */
+  --warning-ink: 133 77 14;         /* #854D0E — 6.01:1 on warning/10 */
+  --danger-ink: 185 28 28;          /* #B91C1C — 5.54:1 on danger/10 */
+  --info-ink: 29 78 216;            /* #1D4ED8 — 5.83:1 on info/10 */
   --private: 4 120 87;              /* CEO / private — deep emerald */
 
   /* ---- Elevation (soft, green-tinted) ---- */
@@ -143,6 +148,11 @@
   --danger-solid: 185 28 28;        /* #B91C1C — 6.47:1 with white */
   --danger-solid-hover: 153 27 27;  /* #991B1B */
   --info: 96 165 250;
+  /* Dark already passes AA as text on the tints: the ink equals the base colour. */
+  --success-ink: 74 222 128;
+  --warning-ink: 251 191 36;
+  --danger-ink: 248 113 113;
+  --info-ink: 96 165 250;
   --private: 52 211 153;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 16px rgb(0 0 0 / 0.25);
