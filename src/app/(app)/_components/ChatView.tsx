@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { creativeSettingsSchema, DEFAULT_CREATIVE, type CreativeSettings } from "@/lib/creative";
+import { savedCallReportQuery } from "@/lib/saved-call-report";
 import { GenerationReceipt } from "./CreativeStudio";
 const CreativeStudio = dynamic(() => import("./CreativeStudio"));
 import {
@@ -2118,6 +2119,7 @@ export function ChatView({
                   {messages.map((m, idx) => {
                     const time = hydrated ? messageTime(m) : null;
                     const streamingThis = idx === lastIndex && busy;
+                    const refreshReport = !busy && (idx !== lastIndex || !generationReceipt) ? savedCallReportQuery(messages, idx, timeZone) : null;
 
                     if (isSummaryMessage(m)) {
                       let folded = 0;
@@ -2208,6 +2210,7 @@ export function ChatView({
                               <SourcesDisclosure count={activity.sourcesCount} sources={activity.sources} />
                             ) : null}
                             {idx === lastIndex && !busy && generationReceipt && <GenerationReceipt receipt={generationReceipt} />}
+                            {refreshReport && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground"><span>Saved report · refresh to fetch current statuses for the original date.</span><button type="button" onClick={() => pickOption(refreshReport)} title={refreshReport} className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 font-medium text-foreground"><RefreshCw size={13} aria-hidden /> Refresh this report</button></div>}
                             {idx === lastIndex && !busy && generationReceipt?.creative === true && <div className="mt-2 flex flex-wrap gap-2">{([['angle', 'Fresh angle'], ['format', 'New format'], ['example', 'Different example']] as const).map(([kind, label]) => <button type="button" key={kind} onClick={() => freshTake(kind)} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-surface-muted">{label}</button>)}</div>}
                             {idx === lastIndex &&
                             !busy &&

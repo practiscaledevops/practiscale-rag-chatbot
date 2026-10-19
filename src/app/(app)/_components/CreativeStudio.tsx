@@ -17,6 +17,8 @@ export default function CreativeStudio({ open, onClose, value, onChange, draft, 
   const [busy, setBusy] = useState(false);
   const [improvement, setImprovement] = useState<Improvement | null>(null);
   const [voiceName, setVoiceName] = useState("");
+  const [wordTarget, setWordTarget] = useState(value.targetWords?.toString() ?? "");
+  useEffect(() => { setWordTarget(value.targetWords?.toString() ?? ""); }, [value.targetWords]);
   const [tab, setTab] = useState<"brief" | "layers" | "improve" | "history">("brief");
   useEffect(() => {
     if (!open) return;
@@ -62,11 +64,11 @@ export default function CreativeStudio({ open, onClose, value, onChange, draft, 
       <label className="text-sm">Audience<input className={field} maxLength={300} value={value.audience} onChange={e => update({ audience: e.target.value })} placeholder="Who should this speak to?" /></label>
       <label className="text-sm">Goal<input className={field} maxLength={500} value={value.goal} onChange={e => update({ goal: e.target.value })} placeholder="What should the reader do or understand?" /></label>
       <label className="text-sm">Angle<select className={field} value={value.angle} onChange={e => update({ angle: e.target.value as CreativeSettings['angle'] })}>{['auto', 'practical', 'contrarian', 'story', 'diagnostic', 'comparison'].map(a => <option key={a}>{a}</option>)}</select></label>
-      <label className="text-sm">Word target (optional)<input className={field} type="number" min={50} max={3000} step={50} value={value.targetWords ?? ""} onChange={e => update({ targetWords: e.target.value ? Math.max(50, Math.min(3000, Number(e.target.value))) : undefined })} /></label>
+      <label className="text-sm">Word target (optional)<input className={field} type="number" min={50} max={3000} step={50} value={wordTarget} onChange={e => setWordTarget(e.target.value)} onBlur={() => { const n = Number(wordTarget); update({ targetWords: wordTarget && Number.isFinite(n) ? Math.round(Math.max(50, Math.min(3000, n))) : undefined }); }} /></label>
       <label className="text-sm">Saved voice<select className={field} defaultValue="" onChange={e => { const p = prompts.find(p => p.id === e.target.value); if (p) update({ voice: p.body.slice(0, 1000) }); }}><option value="">Choose a voice profile</option>{prompts.filter(p => p.title.startsWith("Voice: ")).map(p => <option key={p.id} value={p.id}>{p.title.slice(7)}</option>)}</select></label>
       <label className="text-sm">Avoid words or themes<input className={field} maxLength={500} value={value.avoid} onChange={e => update({ avoid: e.target.value })} /></label>
       <label className="text-sm sm:col-span-2">Voice and tone<textarea className={field} rows={3} maxLength={1000} value={value.voice} onChange={e => update({ voice: e.target.value })} placeholder="Plainspoken, specific, practical. Short paragraphs. No exaggerated claims." /></label>
-      <div className="flex gap-2 sm:col-span-2"><input aria-label="Voice profile name" className={field} maxLength={100} value={voiceName} onChange={e => setVoiceName(e.target.value)} placeholder="Name this voice" /><Button type="button" disabled={busy || !voiceName.trim() || !value.voice.trim()} onClick={saveVoice}>Save voice</Button></div>
+      <div className="flex gap-2 sm:col-span-2"><input aria-label="Voice profile name" className={`${field} min-w-0 flex-1`} maxLength={100} value={voiceName} onChange={e => setVoiceName(e.target.value)} placeholder="Name this voice" /><Button type="button" className="shrink-0 whitespace-nowrap" disabled={busy || !voiceName.trim() || !value.voice.trim()} onClick={saveVoice}>Save voice</Button></div>
       <label className="text-sm">Variation<select className={field} value={value.freshness} onChange={e => update({ freshness: e.target.value as CreativeSettings['freshness'] })}><option value="fresh">Fresh approach</option><option value="preserve">Preserve style for edits</option></select></label>
       <label className="text-sm">Saved history check<select className={field} value={value.memoryScope} onChange={e => update({ memoryScope: e.target.value as CreativeSettings['memoryScope'] })}><option value="account">My account</option><option value="thread">This chat</option><option value="off">Off</option></select></label>
       <p className="text-xs text-muted-foreground sm:col-span-2">Fresh drafts use up to 12 relevant answers from your 120 most recent saved answers. Current chat context remains available. History helps avoid recycled wording; it is never treated as verified business evidence.</p>
