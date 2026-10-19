@@ -10,6 +10,7 @@ import {
 } from "@/lib/copy-format";
 import { CopyCodeButton } from "./CopyCodeButton";
 import { TableBlock } from "./TableBlock";
+import { normalizeTableMarkdown } from "@/lib/table-markdown";
 
 // No "use client": this is a pure, hook-free renderer, so it stays a shared
 // component (rendered inside the client ChatView today, reusable server-side).
@@ -43,7 +44,7 @@ import { TableBlock } from "./TableBlock";
  * frame — quadratic work that froze the tab and crashed it out of memory.
  */
 export function Markdown({ content }: { content: string }) {
-  const text = content.includes("\r") ? content.replace(/\r\n?/g, "\n") : content;
+  const text = normalizeTableMarkdown(content);
   // Citation ordinals are global to the answer (the first-seen id is [1], …).
   // They are passed to blocks as one string so memoized blocks compare cheaply.
   const ids: string[] = [];

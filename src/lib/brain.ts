@@ -427,7 +427,8 @@ export async function brainChat(
    * week", "Sep 24" and the call dates shown are all in this zone. Omitted or
    * unusable = the Brain's business zone.
    */
-  timeZone?: string
+  timeZone?: string,
+  creative?: Record<string, unknown>
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -453,8 +454,14 @@ export async function brainChat(
       ...(capabilities ? { capabilities: capabilityList(capabilities) } : {}),
       // The user's time zone for every date in the answer (see the parameter doc).
       ...timeZoneField(timeZone),
+      ...(creative ? { creative } : {}),
     }),
   });
+}
+
+export async function brainImprovePrompt(prompt: string): Promise<Response> {
+  return fetch(`${BRAIN_URL}/api/v1/prompt-improve`, { method: "POST", headers: authHeaders(),
+    body: JSON.stringify({ prompt }), signal: AbortSignal.timeout(90_000), cache: "no-store" });
 }
 
 /** A confirmed piece of Organizational Learning to record in the Brain. */

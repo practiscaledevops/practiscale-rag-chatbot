@@ -62,6 +62,8 @@ import { previousTurnIndex, storedAnswerIndex, storedLeadsTo, turnAlreadySaved, 
 import { replaceConversationMessages } from "@/lib/replace-messages";
 import { DEMO_USER_ID } from "@/lib/demo/fixtures";
 import { timeZoneOrUndefined } from "@/lib/timezone";
+import { creativeSettingsSchema, composePromptLayers, isCreativeRequest } from "@/lib/creative";
+import { loadDraftMemory } from "@/lib/creative-memory";
 
 export const runtime = "nodejs";
 // Co-locate with the Brain + this app's Supabase (all Singapore) so auth, the
@@ -125,6 +127,8 @@ const chatBodySchema = z.object({
   // value is dropped (never a 400) and the Brain's default applies.
   timeZone: z.unknown().optional().transform(timeZoneOrUndefined),
   conversation_id: z.string().uuid().nullish(),
+  creative: creativeSettingsSchema.optional(),
+  persistTurn: z.boolean().optional(),
 });
 
 /** A UUID (with a light shape check) or null — for the optional conversation id. */
@@ -497,6 +501,24 @@ export async function POST(req: Request) {
     }
   }
 
+  const creativeSettings = creativeSettingsSchema.parse(parsed.data.creative ?? {});
+  const latestQuery = [...brainMessages].reverse().find(m => m.role === "user")?.content ?? "";
+  const sb = await createSupabaseServerClient();
+  const warnings: string[] = [];
+  let layers: { title: string; body: string }[] = [];
+  if (creativeSettings.promptIds.length) {
+    const ids = [...new Set(creativeSettings.promptIds)];
+    const { data, error } = await sb.from("user_prompts").select("id, title, body").eq("user_id", profile.userId).in("id", ids);
+    if (error) return Response.json({ error: "Could not load instruction layers." }, { status: 503 });
+    if (data?.length !== ids.length) return Response.json({ error: "A selected instruction layer is unavailable to your account." }, { status: 403 });
+    layers = ids.map(id => data!.find(p => p.id === id)!);
+  }
+  try { directives = composePromptLayers(directives, layers, creativeSettings.messageInstructions); }
+  catch (e) { return Response.json({ error: e instanceof Error ? e.message : "Instruction layers are too large." }, { status: 413 }); }
+  const memory = isCreativeRequest(latestQuery) ? await loadDraftMemory(sb, profile.userId, latestQuery, conversationId, creativeSettings.memoryScope) : { drafts: [], warning: null };
+  if (memory.warning) warnings.push(memory.warning);
+  const creativeContext = { ...creativeSettings, layerNames: [...layers.map(p => p.title), ...(creativeSettings.messageInstructions ? ["Per-message"] : [])], drafts: memory.drafts, priorSourceIds: "priorSourceIds" in memory ? memory.priorSourceIds : [], warnings };
+
   // Fit the attachments to the Brain's contract (count + per-turn characters):
   // the user's own files first, all project files folded into one entry that
   // fills the remaining slot. A turn the Brain would reject anyway (its 400 /
@@ -504,7 +526,7 @@ export async function POST(req: Request) {
   const fitted = fitAttachmentsForBrain(
     attachments ?? [],
     projectFiles,
-    attachmentCharBudget(brainMessages, directives, BRAIN_TURN_CHARS)
+    attachmentCharBudget(brainMessages, directives, BRAIN_TURN_CHARS - JSON.stringify(creativeContext).length)
   );
   if (fitted.tooLarge) {
     return Response.json(
@@ -549,7 +571,8 @@ export async function POST(req: Request) {
     combinedAttachments.length ? combinedAttachments : undefined,
     allowedModes(access),
     capabilities,
-    parsed.data.timeZone
+    parsed.data.timeZone,
+    creativeContext
   );
 
   if (!upstream.ok || !upstream.body) {
@@ -588,7 +611,7 @@ export async function POST(req: Request) {
   // delaying the response; meterStreamAndRecord never throws.
   after(() => meterStreamAndRecord(meterStream, ctx));
   // Persist the completed answer server-side so it survives client navigation.
-  if (owned) after(() => captureAndSaveTurn(textStream, owned, safeMessages, profile.userId));
+  if (owned && parsed.data.persistTurn !== false) after(() => captureAndSaveTurn(textStream, owned, safeMessages, profile.userId));
   else after(() => { void textStream.cancel().catch(() => {}); });
 
   // Pass the Brain's data-stream response straight through to the client.

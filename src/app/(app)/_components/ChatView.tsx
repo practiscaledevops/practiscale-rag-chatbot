@@ -3,6 +3,10 @@
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import { creativeSettingsSchema, DEFAULT_CREATIVE, type CreativeSettings } from "@/lib/creative";
+import { GenerationReceipt } from "./CreativeStudio";
+const CreativeStudio = dynamic(() => import("./CreativeStudio"));
 import {
   AlertTriangle,
   ArrowDown,
@@ -413,13 +417,24 @@ function titleCase(name: string): string {
 export function ChatView({
   conversationId = null,
   title = null,
-  initialTier,
   initialMessages,
   initialInput,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName, avatarUrl, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap } =
+  const { selection, setSelection, options, addUsage, firstName, avatarUrl, email, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap } =
     useAppShell();
   const router = useRouter();
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [creativeSettings, setCreativeSettings] = useState<CreativeSettings>(DEFAULT_CREATIVE);
+  useEffect(() => {
+    try {
+      const parsed = creativeSettingsSchema.safeParse(JSON.parse(localStorage.getItem(`practiscale:creative:v1:${email ?? "session"}`) ?? "{}"));
+      setCreativeSettings(parsed.success ? parsed.data : DEFAULT_CREATIVE);
+    } catch { setCreativeSettings(DEFAULT_CREATIVE); }
+  }, [email]);
+  const updateCreativeSettings = useCallback((value: CreativeSettings) => {
+    setCreativeSettings(value);
+    try { if (email) localStorage.setItem(`practiscale:creative:v1:${email}`, JSON.stringify(value)); } catch { /* preferences remain usable without storage */ }
+  }, [email]);
 
   // What this user's capabilities allow. A control for a capability they don't
   // hold is HIDDEN (not disabled); every route enforces the same checks.
@@ -648,10 +663,11 @@ export function ChatView({
       mode,
       conversationId: activeConversationId,
       outputType,
+      creative: creativeSettings,
       ...scopeBody,
       ...(timeZone ? { timeZone } : {}),
     }),
-    [selection.value, mode, activeConversationId, scopeBody, outputType, timeZone]
+    [selection.value, mode, activeConversationId, scopeBody, outputType, timeZone, creativeSettings]
   );
 
   // The chat's key for useChat's cache and the session store (lib/chat-sessions):
@@ -708,6 +724,10 @@ export function ChatView({
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const generationReceipt = useMemo(() => {
+    const events = (data ?? []) as unknown as Record<string, unknown>[];
+    return [...events].reverse().find(e => e && e.type === "generation_receipt") ?? null;
+  }, [data]);
   // `busy` for callbacks that must not go stale: compaction must never splice a
   // summary into a list while an answer streams (useChat's next chunk would
   // drop it). Declared before the status effect below so it's current there.
@@ -923,20 +943,8 @@ export function ChatView({
     if (title) document.title = `${title} · Practiscale`;
   }, [title]);
 
-  // Sync the model switcher to this conversation's saved tier — once, on open.
-  // (Only the tier bucket is persisted, so a concrete-model pick restores as its
-  // tier preset — or, for a user whose switcher has no presets, as the first
-  // usable concrete model in that tier.)
-  const tierSynced = useRef(false);
-  useEffect(() => {
-    if (!tierSynced.current && initialTier && initialTier !== selection.tier) {
-      const next =
-        options.find((o) => o.kind === "tier" && o.value === initialTier) ??
-        options.find((o) => o.kind === "model" && o.available && o.tier === initialTier);
-      if (next) setSelection(next);
-    }
-    tierSynced.current = true;
-  }, [initialTier, selection.tier, options, setSelection]);
+  // Keep the user's actual model selection across chats. Old conversations store
+  // only a tier bucket; restoring it can silently swap GPT-5 for costly Astra.
 
   /** A message's full text — the finished copy when the throttled state lags it. */
   const fullContent = useCallback(
@@ -1417,9 +1425,9 @@ export function ChatView({
       setSelection(opt);
       stickRef.current = true;
       setData(undefined);
-      reload({ body: { model: value, tier: value, mode, ...scopeBody, ...(timeZone ? { timeZone } : {}) } });
+      reload({ body: { ...chatBody, model: value, tier: value } });
     },
-    [options, setSelection, reload, setData, mode, scopeBody, timeZone]
+    [options, setSelection, reload, setData, chatBody]
   );
 
   // Branch: fork a NEW conversation containing everything up to and including a
@@ -1452,13 +1460,13 @@ export function ChatView({
   // isn't configured. And the conversation up to the last question, so both
   // models answer the same thing with the same context.
   const comparePanes = useMemo<[ComparePane, ComparePane]>(() => {
-    const openai = options.find((o) => o.kind === "model" && o.provider === "openai" && o.available);
-    const a: ComparePane = { label: "Claude · Balanced", model: "recommended" };
-    const b: ComparePane = openai
-      ? { label: openai.label, model: openai.value }
-      : { label: "Claude · Best quality", model: "max" };
+    const primary = options.find(o => o.kind === "model" && o.available && (o.value === selection.value || (selection.kind === "tier" && o.tier === selection.tier))) ?? options.find(o => o.value === "recommended");
+    const alternate = options.find(o => o.kind === "model" && o.available && o.value === "gpt-6-luna" && o.value !== primary?.value)
+      ?? options.find(o => o.kind === "model" && o.available && o.tier !== "max" && o.value !== primary?.value);
+    const a: ComparePane = { label: primary?.label ?? "Recommended", model: primary?.value ?? "recommended" };
+    const b: ComparePane = { label: alternate?.label ?? a.label, model: alternate?.value ?? a.model };
     return [a, b];
-  }, [options]);
+  }, [options, selection.value, selection.kind, selection.tier]);
 
   const compareMessages = useMemo(() => {
     let lastUser = -1;
@@ -1484,8 +1492,16 @@ export function ChatView({
     setSelection(rec);
     stickRef.current = true;
     setData(undefined);
-    reload({ body: { model: rec.value, tier: rec.value, mode, ...scopeBody, ...(timeZone ? { timeZone } : {}) } });
-  }, [setSelection, reload, setData, mode, scopeBody, timeZone]);
+    reload({ body: { ...chatBody, model: rec.value, tier: rec.value } });
+  }, [setSelection, reload, setData, chatBody]);
+  const freshTake = useCallback((kind: "angle" | "format" | "example") => {
+    if (busy || compactingRef.current) return;
+    const instruction = kind === "angle" ? "Choose a distinctly different angle and opening from the previous draft."
+      : kind === "format" ? "Use a distinctly different structure and format from the previous draft, while preserving the task."
+      : "Use a different verified example from the evidence if available. If none is available, say so and offer a clearly labelled hypothetical; never invent a real case.";
+    stickRef.current = true; setData(undefined);
+    reload({ body: { ...chatBody, ...(kind === "format" ? { outputType: "answer" } : {}), creative: { ...creativeSettings, freshness: "fresh", messageInstructions: `${creativeSettings.messageInstructions}\n${instruction}`.slice(-2000) } } });
+  }, [busy, reload, setData, chatBody, creativeSettings]);
 
   // Send a picked option (or an "Other" answer) as the next user message.
   const pickOption = useCallback(
@@ -1923,6 +1939,7 @@ export function ChatView({
           {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} />}
           <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} />
           <OutputFormatPicker value={outputType} onChange={setOutputType} iconOnly />
+          <button type="button" onClick={() => setStudioOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-2 text-xs font-medium"><Wand2 size={14} aria-hidden /> Writing studio</button>
         </>
       }
       rightTools={
@@ -1943,6 +1960,7 @@ export function ChatView({
         <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
         <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
         <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" iconOnly />
+        <button type="button" onClick={() => setStudioOpen(true)} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs font-medium"><Wand2 size={14} aria-hidden /> Writing studio</button>
         {canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} size="sm" iconOnly />}
         {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
         {selection.value === "smart" && activity.routedTier && (
@@ -2008,8 +2026,10 @@ export function ChatView({
         messages={compareMessages}
         mode={mode}
         panes={comparePanes}
+        requestContext={chatBody}
       />
       <PromptLibrary open={libraryOpen} onClose={() => setLibraryOpen(false)} onInsert={prefill} />
+      {studioOpen && <CreativeStudio open={studioOpen} onClose={() => setStudioOpen(false)} value={creativeSettings} onChange={updateCreativeSettings} draft={input} onApplyPrompt={setInput} />}
       <ObjectDrawer refId={drawerRef} onClose={() => setDrawerRef(null)} onAsk={askAbout} />
       {empty ? (
         // -------- New chat (reference "Cortex"): orb, greeting, composer card,
@@ -2187,6 +2207,8 @@ export function ChatView({
                             {idx === lastIndex && !busy && activity.sourcesCount ? (
                               <SourcesDisclosure count={activity.sourcesCount} sources={activity.sources} />
                             ) : null}
+                            {idx === lastIndex && !busy && generationReceipt && <GenerationReceipt receipt={generationReceipt} />}
+                            {idx === lastIndex && !busy && generationReceipt?.creative === true && <div className="mt-2 flex flex-wrap gap-2">{([['angle', 'Fresh angle'], ['format', 'New format'], ['example', 'Different example']] as const).map(([kind, label]) => <button type="button" key={kind} onClick={() => freshTake(kind)} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-surface-muted">{label}</button>)}</div>}
                             {idx === lastIndex &&
                             !busy &&
                             activity.learning &&
@@ -3475,7 +3497,7 @@ function SourcesDisclosure({ count, sources }: { count: number; sources: SourceI
             aria-hidden
           />
         )}
-        Grounded in {count} source{count === 1 ? "" : "s"}
+          Retrieved {count} evidence chunk{count === 1 ? "" : "s"}
       </button>
       {open && has && (
         <ul className="mt-1 space-y-1.5">

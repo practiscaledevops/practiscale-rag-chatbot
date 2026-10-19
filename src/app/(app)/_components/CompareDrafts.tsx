@@ -65,7 +65,7 @@ export function compareRequestBody(
   return { messages, model, tier: model, mode, ...(timeZone ? { timeZone } : {}) };
 }
 
-function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pane: ComparePane) {
+function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pane: ComparePane, requestContext?: Record<string, unknown>) {
   const [text, setText] = React.useState("");
   const [state, setState] = React.useState<"idle" | "loading" | "done" | "error">("idle");
 
@@ -80,7 +80,7 @@ function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pan
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(compareRequestBody(messages, pane.model, mode)),
+          body: JSON.stringify({ ...requestContext, ...compareRequestBody(messages, pane.model, mode), persistTurn: false }),
           signal: ctrl.signal,
         });
         if (!res.ok) {
@@ -99,13 +99,13 @@ function usePaneStream(open: boolean, messages: ChatMessage[], mode: string, pan
       cancelled = true;
       ctrl.abort();
     };
-  }, [open, messages, mode, pane.model]);
+  }, [open, messages, mode, pane.model, requestContext]);
 
   return { text, state };
 }
 
-function Pane({ open, messages, mode, pane }: { open: boolean; messages: ChatMessage[]; mode: string; pane: ComparePane }) {
-  const { text, state } = usePaneStream(open, messages, mode, pane);
+function Pane({ open, messages, mode, pane, requestContext }: { open: boolean; messages: ChatMessage[]; mode: string; pane: ComparePane; requestContext?: Record<string, unknown> }) {
+  const { text, state } = usePaneStream(open, messages, mode, pane, requestContext);
   const [copied, setCopied] = React.useState(false);
 
   function copy() {
@@ -158,12 +158,14 @@ export function CompareDrafts({
   messages,
   mode,
   panes,
+  requestContext,
 }: {
   open: boolean;
   onClose: () => void;
   messages: ChatMessage[];
   mode: string;
   panes: [ComparePane, ComparePane];
+  requestContext?: Record<string, unknown>;
 }) {
   return (
     <Modal open={open} onClose={onClose} title="Compare drafts" className="max-w-4xl">
@@ -171,8 +173,8 @@ export function CompareDrafts({
         The same question, answered by two models. Nothing here is saved — copy the draft you prefer.
       </p>
       <div className={cn("flex min-h-0 gap-3", "h-[60vh] flex-col sm:flex-row")}>
-        <Pane open={open} messages={messages} mode={mode} pane={panes[0]} />
-        <Pane open={open} messages={messages} mode={mode} pane={panes[1]} />
+        <Pane open={open} messages={messages} mode={mode} pane={panes[0]} requestContext={requestContext} />
+        <Pane open={open} messages={messages} mode={mode} pane={panes[1]} requestContext={requestContext} />
       </div>
       <div className="mt-4 flex justify-end">
         <Button type="button" variant="secondary" onClick={onClose}>

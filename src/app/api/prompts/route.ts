@@ -14,7 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getUser } from "@/lib/auth";
+import { getSessionProfile } from "@/lib/admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -41,8 +41,8 @@ const patchSchema = z
   });
 
 async function requireUser() {
-  const user = await getUser();
-  return user?.id ?? null;
+  const profile = await getSessionProfile();
+  return profile?.userId ?? null;
 }
 
 export async function GET() {

@@ -16,7 +16,7 @@ import { Sidebar, type SidebarProps } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { DEFAULT_OUTPUT_TYPE, isOutputType, type OutputType } from "@/lib/output-types";
-import { PREFS_EVENT, readPrefs, type ChatPrefs } from "@/lib/prefs";
+import { PREFS_EVENT, readPrefs, writePrefs, type ChatPrefs } from "@/lib/prefs";
 import { capabilitySet } from "@/lib/capabilities-client";
 import { useBackgroundGeneratingCount, useInflightChats } from "@/lib/chat-sessions";
 
@@ -390,11 +390,23 @@ export function AppShell({
       if (p.mode && modeDefs.some((m) => m.id === p.mode)) setMode(p.mode);
       if (isOutputType(p.outputType)) setOutputType(p.outputType);
     }
-    apply(readPrefs());
+    let saved = readPrefs();
+    // One-time migration of old Claude/GPT-5 defaults after the workspace's GPT
+    // upgrade. Later explicit choices remain respected.
+    try {
+      const key = `practiscale:model-default:v2:${email}`;
+      if (email && initialModel && !localStorage.getItem(key)) {
+        if (!saved.model || /^(?:claude-|gpt-[45])/.test(saved.model)) {
+          saved = { ...saved, model: initialModel }; writePrefs(saved);
+        }
+        localStorage.setItem(key, "1");
+      }
+    } catch { /* storage is optional */ }
+    apply(saved);
     const onChange = (e: Event) => apply((e as CustomEvent<ChatPrefs>).detail ?? {});
     window.addEventListener(PREFS_EVENT, onChange);
     return () => window.removeEventListener(PREFS_EVENT, onChange);
-  }, [options, modeDefs]);
+  }, [options, modeDefs, email, initialModel]);
 
   // Responsive sidebar: a drawer on mobile, collapsible on desktop.
   const [mobileOpen, setMobileOpen] = useState(false);
