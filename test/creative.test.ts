@@ -15,11 +15,24 @@ describe("creative settings and private memory", () => {
   });
   it("requires an explicit owner predicate and narrows thread memory", async () => {
     const eq = vi.fn(() => q);
-    const q = { select: () => q, eq, order: () => q, limit: () => q, then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
+    const q = { select: () => q, eq, order: () => q, or: () => q, limit: () => q, then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
     const sb = { from: () => q } as unknown as SupabaseClient;
     await loadDraftMemory(sb, "owner", "write a post", "thread", "thread");
     expect(eq).toHaveBeenCalledWith("user_id", "owner"); expect(eq).toHaveBeenCalledWith("conversation_id", "thread");
     eq.mockClear(); await loadDraftMemory(sb, "owner", "write a post", null, "off"); expect(eq).not.toHaveBeenCalled();
+  });
+  it("finds relevant answers outside the recent window through an owned full-history search", async () => {
+    const filters: unknown[][] = [];
+    const sb = { from: () => {
+      let search = false;
+      const q = { select: () => q, eq: (...args: unknown[]) => { filters.push(args); return q; }, order: () => q, limit: () => q,
+        or: (filter: string) => { search = filter.includes("content.ilike.%nemt%"); return q; },
+        then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: search ? [{ id: "old", content: `NEMT ${"old case details ".repeat(30)}`, created_at: "2020-01-01" }] : [], error: null }).then(resolve) };
+      return q;
+    } } as unknown as SupabaseClient;
+    const result = await loadDraftMemory(sb, "owner", "write a NEMT post", null, "account");
+    expect(result.drafts[0].id).toBe("old");
+    expect(filters.filter(f => f[0] === "user_id")).toEqual([["user_id", "owner"], ["user_id", "owner"]]);
   });
 });
 describe("table repair", () => {
