@@ -78,8 +78,8 @@ export interface WorkspaceSettings {
 /** Code-side defaults — the source of truth when a jsonb key is absent. */
 export const DEFAULT_SETTINGS: WorkspaceSettings = {
   disabledModels: [],
-  defaultModel: "recommended",
-  defaultModelKind: "tier",
+  defaultModel: "gpt-6.1-sol",
+  defaultModelKind: "model",
   ragDefaultOn: true,
   pricingOverrides: {},
   chat: { ...DEFAULT_CHAT_LIMITS },

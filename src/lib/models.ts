@@ -77,6 +77,9 @@ const ROUTED_CAPABILITY: Record<string, string> = {
 // response always wins when reachable.
 // ---------------------------------------------------------------------------
 const FALLBACK_MODELS: ReadonlyArray<BrainModel> = [
+  { id: "gpt-6-luna", provider: "openai", label: "GPT-6 Luna", tier: "fast", available: false, reason: "fallback catalog" },
+  { id: "gpt-6.1-sol", provider: "openai", label: "GPT-6.1 Sol", tier: "recommended", available: false, reason: "fallback catalog" },
+  { id: "gpt-6-astra", provider: "openai", label: "GPT-6 Astra", tier: "max", available: false, reason: "fallback catalog" },
   { id: "claude-opus-4-8", provider: "anthropic", label: "Claude Opus 4.8", tier: "max", available: false, reason: "fallback catalog" },
   { id: "claude-3-5-sonnet", provider: "anthropic", label: "Claude Sonnet", tier: "recommended", available: false, reason: "fallback catalog" },
   { id: "claude-3-5-haiku", provider: "anthropic", label: "Claude Haiku", tier: "fast", available: false, reason: "fallback catalog" },

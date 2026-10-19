@@ -30,6 +30,9 @@ const RATES: ReadonlyArray<{ readonly test: RegExp; readonly rate: Rate }> = [
   { test: /haiku/, rate: { input: 1, output: 5 } }, // claude-haiku $1 / $5
 
   // --- OpenAI (GPT) ---------------------------------------------------------
+  { test: /gpt-6-astra/, rate: { input: 10, output: 50 } },
+  { test: /gpt-6\.1-sol/, rate: { input: 2, output: 10 } },
+  { test: /gpt-6-luna/, rate: { input: 0.1, output: 0.5 } },
   // gpt-5 first (distinct family), then mini BEFORE the broader 4o match.
   { test: /gpt-5/, rate: { input: 5, output: 30 } }, // gpt-5     ~$5 / $30
   { test: /(4o-mini|gpt-4o-mini)/, rate: { input: 0.15, output: 0.6 } }, // gpt-4o-mini $0.15 / $0.6

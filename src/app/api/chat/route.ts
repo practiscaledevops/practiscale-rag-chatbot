@@ -380,10 +380,10 @@ export async function POST(req: Request) {
 
   // The client requests a tier ("fast"|"recommended"|"max") or a concrete model
   // id; prefer an explicit model, else the tier, else the default tier.
-  const selection: ModelSelection =
+  const requestedSelection: ModelSelection =
     (parsed.data.model && parsed.data.model.trim()) ||
     (parsed.data.tier && parsed.data.tier.trim()) ||
-    "recommended";
+    "";
 
   // 2. Enforce the user's model/tier permission BEFORE hitting the Brain. The
   //    catalog resolves tier aliases (so an alias can't bypass a model
@@ -396,6 +396,7 @@ export async function POST(req: Request) {
     ownedConversation(asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
   ]);
   const conversationId = owned?.id ?? null;
+  const selection: ModelSelection = requestedSelection || settings.defaultModel || "gpt-6.1-sol";
   const allowed = isSelectionAllowed(
     selection,
     profile.permissions,
@@ -597,6 +598,8 @@ export async function POST(req: Request) {
       "content-type":
         upstream.headers.get("content-type") ?? "text/plain; charset=utf-8",
       "x-vercel-ai-data-stream": upstream.headers.get("x-vercel-ai-data-stream") ?? "v1",
+      ...(resolvedModel ? { "x-model": resolvedModel } : {}),
+      ...(provider ? { "x-provider": provider } : {}),
     },
   });
 }
