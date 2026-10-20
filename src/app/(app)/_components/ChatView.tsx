@@ -5,6 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { creativeSettingsSchema, DEFAULT_CREATIVE, type CreativeSettings } from "@/lib/creative";
+import { useLiveCallReport } from "@/lib/use-live-call-report";
 import { savedCallReportQuery } from "@/lib/saved-call-report";
 import { GenerationReceipt } from "./CreativeStudio";
 const CreativeStudio = dynamic(() => import("./CreativeStudio"));
@@ -725,6 +726,12 @@ export function ChatView({
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const liveTarget = !busy && hasCap("chat.call_review") ? messages[messages.length - 1] : null;
+  const liveQuery = liveTarget ? savedCallReportQuery(messages, messages.length - 1, timeZone) : null;
+  const liveReport = useLiveCallReport(liveQuery && liveTarget ? activeConversationId + ":" + liveTarget.id : null, liveQuery, timeZone, scopeBody);
+  const liveMessageId = liveQuery && liveTarget ? liveTarget.id : null;
+  const displayedContent = useCallback((m: Message) => m.id === liveMessageId && liveReport?.content ? liveReport.content : m.content, [liveMessageId, liveReport?.content]);
+
   const generationReceipt = useMemo(() => {
     const events = (data ?? []) as unknown as Record<string, unknown>[];
     return [...events].reverse().find(e => e && e.type === "generation_receipt") ?? null;
@@ -1726,7 +1733,7 @@ export function ChatView({
   const exportAs = useCallback(
     async (fmt: ExportFormat) => {
       if (messages.length === 0 || exporting) return;
-      const turns = messages.filter((m) => !isSummaryMessage(m)) as unknown as ExportMessage[];
+      const turns = messages.filter((m) => !isSummaryMessage(m)).map(m => ({ ...m, content: displayedContent(m) })) as unknown as ExportMessage[];
       setExporting(fmt);
       try {
         if (fmt === "md") exportMarkdown(title, turns);
@@ -1740,7 +1747,7 @@ export function ChatView({
         setExporting(null);
       }
     },
-    [messages, title, exporting]
+    [messages, title, exporting, displayedContent]
   );
   // Whether the current conversation contains any table (enables CSV/Excel of
   // the actual data rather than a plain transcript).
@@ -2174,7 +2181,8 @@ export function ChatView({
                       );
                     }
 
-                    const { text, options: choices } = parseOptions(m.content);
+                    const shownContent = displayedContent(m);
+                    const { text, options: choices } = parseOptions(shownContent);
                     const approved = approvedIds.has(m.id);
                     // Answers read as plain, full-width text (no bubble), in the
                     // chosen answer typeface; tables/code bring their own sans/mono.
@@ -2210,7 +2218,8 @@ export function ChatView({
                               <SourcesDisclosure count={activity.sourcesCount} sources={activity.sources} />
                             ) : null}
                             {idx === lastIndex && !busy && generationReceipt && <GenerationReceipt receipt={generationReceipt} />}
-                            {refreshReport && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground"><span>Saved report · refresh to fetch current statuses for the original date.</span><button type="button" onClick={() => pickOption(refreshReport)} title={refreshReport} className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 font-medium text-foreground"><RefreshCw size={13} aria-hidden /> Refresh this report</button></div>}
+                            {m.id === liveMessageId && liveReport && <div data-live-call-report data-version={liveReport.version} data-updated-at={liveReport.updatedAt ?? ""} data-state={liveReport.state} className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground" role="status"><span className={liveReport.state === "live" ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-amber-500"} aria-hidden /><span>{liveReport.state === "live" ? "Live call report · updates automatically" : liveReport.state === "connecting" ? "Connecting to live call data…" : liveReport.state === "paused" ? "Live updates resume when this tab is active" : liveReport.state === "unavailable" ? "Live updates unavailable for this scope · saved report is historical" : "Live updates reconnecting · showing last available report"}</span>{liveReport.updatedAt && <time dateTime={liveReport.updatedAt}>Updated {new Intl.DateTimeFormat(undefined, { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(liveReport.updatedAt))}</time>}</div>}
+                            {refreshReport && m.id !== liveMessageId && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground"><span>Saved report · refresh to fetch current statuses for the original date.</span><button type="button" onClick={() => pickOption(refreshReport)} title={refreshReport} className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 font-medium text-foreground"><RefreshCw size={13} aria-hidden /> Refresh this report</button></div>}
                             {idx === lastIndex && !busy && generationReceipt?.creative === true && <div className="mt-2 flex flex-wrap gap-2">{([['angle', 'Fresh angle'], ['format', 'New format'], ['example', 'Different example']] as const).map(([kind, label]) => <button type="button" key={kind} onClick={() => freshTake(kind)} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-surface-muted">{label}</button>)}</div>}
                             {idx === lastIndex &&
                             !busy &&
@@ -2258,7 +2267,7 @@ export function ChatView({
                                     aria-label={speakingId === m.id ? "Stop reading aloud" : "Read aloud"}
                                     title={speakingId === m.id ? "Stop reading aloud" : "Read aloud"}
                                     size="sm"
-                                    onClick={() => speak(m.id, m.content)}
+                                    onClick={() => speak(m.id, shownContent)}
                                     className={
                                       speakingId === m.id
                                         ? "bg-accent-soft text-accent-strong hover:bg-accent-soft hover:text-accent-strong"
@@ -2272,7 +2281,7 @@ export function ChatView({
                                   aria-label={copiedId === m.id ? "Copied" : "Copy message"}
                                   title="Copy"
                                   size="sm"
-                                  onClick={() => copy(m.id, fullContent(m), true)}
+                                  onClick={() => copy(m.id, liveReport?.content && m.id === liveMessageId ? shownContent : fullContent(m), true)}
                                 >
                                   {copiedId === m.id ? <Check size={14} className="text-success" /> : <Copy size={14} />}
                                 </IconButton>

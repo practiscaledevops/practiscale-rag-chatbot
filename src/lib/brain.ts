@@ -240,6 +240,15 @@ function authHeaders(): Record<string, string> {
   return { authorization: `Bearer ${BRAIN_KEY}`, "content-type": "application/json" };
 }
 
+/** Metadata-only report subscription. No model tokens or conversation writes. */
+export function brainCallReport(body: {
+  query: string; version?: string; waitMs: number; timeZone?: string;
+  capabilities: string[]; sourceTypes?: string[]; knowledgeScope: string; collectionIds?: string[];
+}, signal: AbortSignal): Promise<Response> {
+  return fetch(`${BRAIN_URL}/api/v1/call-reports`, { method: "POST", headers: authHeaders(),
+    body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(27_000)]) });
+}
+
 /**
  * The `timeZone` body field: the asking user's IANA zone (lib/timezone), which
  * the Brain resolves "today", "yesterday", "Sep 24"… and call dates in
