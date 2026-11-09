@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const m=vi.hoisted(()=>({effect:null as null|(()=>void|(()=>void)),state:null as any}));
 vi.mock("react",()=>({useEffect:(fn:()=>void)=>{m.effect=fn;},useState:()=>[m.state,(value:any)=>{m.state=typeof value==="function"?value(m.state):value;}]}));
-import { useLiveCallReport } from "@/lib/use-live-call-report";
+import { useLiveCallReport, liveCallReportLabel } from "@/lib/use-live-call-report";
 let cleanup:(()=>void)|void;
 let documentEvents:EventTarget;
 let windowEvents:EventTarget;
@@ -15,6 +15,14 @@ beforeEach(()=>{
 });
 afterEach(()=>{cleanup?.();vi.useRealTimers();vi.unstubAllGlobals();});
 describe("automatic live reports",()=>{
+  it.each([[400,"query"],[401,"session"],[403,"access"]])("distinguishes HTTP %i without falsely blaming scope",async(status,reason)=>{
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(null,{status:Number(status)})));start();await flush();expect(m.state.unavailableReason).toBe(reason);
+    const label=liveCallReportLabel(m.state);if(reason==="query")expect(label).toContain("interpret");if(reason==="session")expect(label).toContain("Sign in again");if(reason==="access")expect(label).toContain("Search in");
+  });
+  it("replaces removed rows and totals, including deletion of the final call, without a reload",async()=>{
+    const fetcher=vi.fn().mockResolvedValueOnce(Response.json({version:"one",content:"Disposable call; Total 1"})).mockResolvedValueOnce(Response.json({version:"empty",content:"No matching calls; Total 0",updatedAt:null})).mockImplementation(()=>new Promise(()=>{}));
+    vi.stubGlobal("fetch",fetcher);start();await flush();expect(m.state.content).toContain("Total 1");await vi.advanceTimersByTimeAsync(250);await flush();expect(m.state).toMatchObject({state:"live",version:"empty",content:"No matching calls; Total 0"});expect(m.state.content).not.toContain("Disposable");
+  });
   it("keeps one long poll in flight, updates both table and summary, and aborts on unmount",async()=>{
     let secondResolve:(r:Response)=>void=()=>{};
     const fetcher=vi.fn().mockResolvedValueOnce(Response.json({version:"v1",content:"table + summary: Pending",updatedAt:"t1"})).mockImplementationOnce(()=>new Promise<Response>(r=>{secondResolve=r;})).mockImplementation(()=>new Promise(()=>{}));
