@@ -15,6 +15,7 @@ const schema = z.object({
   timeZone: z.unknown().optional().transform(timeZoneOrUndefined),
   knowledgeScope: z.string().trim().regex(KNOWLEDGE_SCOPE_ID_RE).optional(),
   collectionIds: z.array(z.string().uuid()).max(50).optional(),
+  history: z.array(z.object({role:z.literal("user"),content:z.string().max(4000),createdAt:z.string().datetime({offset:true}).optional()})).max(40).optional(),
 });
 const headers = { "cache-control": "private, no-store" };
 
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
   const knowledgeScope = resolveKnowledgeScope(requestedScope, { allowedSourceTypes: sourceTypes, sensitiveSourceTypes: SENSITIVE_SOURCE_TYPES,
     available: requestedScope && !isKnownKnowledgeScope(requestedScope) ? await fetchBrainKnowledgeScopes() : null });
   try {
-    const response = await brainCallReport({ query: body.query, version: body.version, waitMs: body.waitMs, timeZone: body.timeZone,
+    const response = await brainCallReport({ query: body.query, history:body.history, version: body.version, waitMs: body.waitMs, timeZone: body.timeZone,
       capabilities, sourceTypes, knowledgeScope, collectionIds: canScope ? body.collectionIds : undefined }, req.signal);
     if (!response.ok) return Response.json({ error: safeBrainError(response.status) }, { status: response.status, headers });
     return new Response(response.body, { headers: { ...headers, "content-type": "application/json" } });

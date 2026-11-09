@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { creativeSettingsSchema, DEFAULT_CREATIVE, type CreativeSettings } from "@/lib/creative";
 import { useLiveCallReport, liveCallReportLabel } from "@/lib/use-live-call-report";
-import { savedCallReportQuery } from "@/lib/saved-call-report";
+import { savedCallReportQuery, callReportHistory } from "@/lib/saved-call-report";
 import { GenerationReceipt } from "./CreativeStudio";
 const CreativeStudio = dynamic(() => import("./CreativeStudio"));
 import {
@@ -728,7 +728,7 @@ export function ChatView({
   const busy = status === "submitted" || status === "streaming";
   const liveTarget = !busy && hasCap("chat.call_review") ? messages[messages.length - 1] : null;
   const liveQuery = liveTarget ? savedCallReportQuery(messages, messages.length - 1, timeZone) : null;
-  const liveReport = useLiveCallReport(liveQuery && liveTarget ? activeConversationId + ":" + liveTarget.id : null, liveQuery, timeZone, scopeBody);
+  const liveReport = useLiveCallReport(liveQuery && liveTarget ? activeConversationId + ":" + liveTarget.id : null, liveQuery, timeZone, scopeBody, callReportHistory(messages,messages.length-1));
   const liveMessageId = liveQuery && liveTarget ? liveTarget.id : null;
   const displayedContent = useCallback((m: Message) => m.id === liveMessageId && liveReport?.content ? liveReport.content : m.content, [liveMessageId, liveReport?.content]);
 

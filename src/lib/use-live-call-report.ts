@@ -20,9 +20,10 @@ export function liveCallReportLabel(report: LiveCallReport): string {
 }
 
 /** A live overlay, never a rewrite of historical messages or model memory. */
-export function useLiveCallReport(key: string | null, query: string | null, timeZone: string | undefined, scope: { knowledgeScope: string; collectionIds?: string[] }): LiveCallReport | null {
+export function useLiveCallReport(key: string | null, query: string | null, timeZone: string | undefined, scope: { knowledgeScope: string; collectionIds?: string[] }, history: {role:"user";content:string;createdAt?:string}[] = []): LiveCallReport | null {
   const [report, setReport] = useState<LiveCallReport | null>(null);
   const scopeKey = JSON.stringify(scope);
+  const historyKey = JSON.stringify(history);
   useEffect(() => {
     if (!key || !query) { setReport(null); return; }
     let disposed = false;
@@ -42,7 +43,7 @@ export function useLiveCallReport(key: string | null, query: string | null, time
       let nextDelay = 250;
       try {
         const res = await fetch("/api/call-reports", { method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...JSON.parse(scopeKey), query, timeZone, version, waitMs: version ? 20_000 : 0 }), cache: "no-store", signal: own.signal });
+          body: JSON.stringify({ ...JSON.parse(scopeKey), query, history:JSON.parse(historyKey), timeZone, version, waitMs: version ? 20_000 : 0 }), cache: "no-store", signal: own.signal });
         if ([400, 401, 403].includes(res.status)) { blocked = true; patch({ state: "unavailable", unavailableReason: res.status === 400 ? "query" : res.status === 401 ? "session" : "access" }); return; }
         if (!res.ok) throw Error("Live report unavailable");
         const data = await res.json();
@@ -69,6 +70,6 @@ export function useLiveCallReport(key: string | null, query: string | null, time
     window.addEventListener("online", resume); window.addEventListener("offline", resume);
     void poll();
     return () => { disposed = true; cancel(); document.removeEventListener("visibilitychange", resume); window.removeEventListener("online", resume); window.removeEventListener("offline", resume); };
-  }, [key, query, timeZone, scopeKey]);
+  }, [key, query, timeZone, scopeKey, historyKey]);
   return report?.key === key ? report : null;
 }

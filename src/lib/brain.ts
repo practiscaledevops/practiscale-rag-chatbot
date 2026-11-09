@@ -243,6 +243,7 @@ function authHeaders(): Record<string, string> {
 /** Metadata-only report subscription. No model tokens or conversation writes. */
 export function brainCallReport(body: {
   query: string; version?: string; waitMs: number; timeZone?: string;
+  history?: {role:"user";content:string;createdAt?:string}[];
   capabilities: string[]; sourceTypes?: string[]; knowledgeScope: string; collectionIds?: string[];
 }, signal: AbortSignal): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/call-reports`, { method: "POST", headers: authHeaders(),
