@@ -44,7 +44,11 @@ function LoginForm() {
   const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
   const [email, setEmail] = useState(demo ? "demo@practiscale.co" : "");
   const [password, setPassword] = useState(demo ? "demo" : "");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("portal_login_error") === "1"
+      ? "Could not complete sign-in from CEO Portal. Try again from CEO Portal, or sign in below. If another account is open here, sign out of it first."
+      : null
+  );
   const [pending, setPending] = useState(false);
   // Second-factor step: set once a password sign-in needs an authenticator code.
   const [mfa, setMfa] = useState<{ factorId: string } | null>(null);

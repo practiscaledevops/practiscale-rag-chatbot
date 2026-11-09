@@ -1,0 +1,28 @@
+name: Verify
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BRAIN_API_URL: https://brain.example.invalid
+      BRAIN_API_KEY: local-build-fixture-only
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-fixture-only
+      SUPABASE_SERVICE_ROLE_KEY: local-build-fixture-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

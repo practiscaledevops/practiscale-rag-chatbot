@@ -13,6 +13,11 @@ const PUBLIC_PATHS = ["/login"];
  * The session is read via `getUser()` (verified), never trusted from the cookie.
  */
 export async function middleware(request: NextRequest) {
+  // These two public bridge handlers perform their own state/PKCE/account gates.
+  // Do not refresh or redirect their session before they can validate the handoff.
+  if (["/auth/portal/start", "/auth/portal/callback"].includes(request.nextUrl.pathname)) {
+    return NextResponse.next({ request });
+  }
   // DEMO MODE: no Supabase session — let every route through (getUser() returns
   // the demo user via the fake client). Decided server-side from DEMO_MODE only
   // (never the public flag), and off in production — see lib/demo/mode.
@@ -99,7 +104,8 @@ export async function middleware(request: NextRequest) {
   // sent a DEACTIVATED account here (their session may still be valid for a
   // moment; bouncing them back to "/" would loop — the login page signs them out).
   const deactivated = request.nextUrl.searchParams.get("deactivated") === "1";
-  if (user && !needsMfa && !deactivated && pathname === "/login") {
+  const portalError = request.nextUrl.searchParams.get("portal_login_error") === "1";
+  if (user && !needsMfa && !deactivated && !portalError && pathname === "/login") {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";
