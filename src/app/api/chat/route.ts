@@ -30,6 +30,7 @@
 // stay under the Brain's per-turn char cap (else it answers 413).
 
 import { after } from "next/server";
+import { cancellableBody } from "@/lib/cancellable-stream";
 import { z } from "zod";
 import {
   attachmentCharBudget,
@@ -561,7 +562,11 @@ export async function POST(req: Request) {
   // user who cannot pick it. The capability set lets the Brain skip what the
   // user may not see (call reviews, performance numbers, learning detection,
   // source conflicts); it can only narrow the key's scope, never widen it.
-  const upstream = await brainChat(
+  const abort = new AbortController();
+  const requestSignal = AbortSignal.any([req.signal, abort.signal]);
+  let upstream: Response;
+  try {
+    upstream = await brainChat(
     brainMessages,
     selection,
     mode,
@@ -572,8 +577,16 @@ export async function POST(req: Request) {
     allowedModes(access),
     capabilities,
     parsed.data.timeZone,
-    creativeContext
-  );
+    creativeContext,
+    requestSignal
+    );
+  } catch (error) {
+    if (requestSignal.aborted) return new Response(null, { status: 499 });
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return Response.json({ error: timedOut
+      ? "The answer took too long. Please retry with a narrower request."
+      : "The Brain is temporarily unavailable. Please try again." }, { status: timedOut ? 504 : 502 });
+  }
 
   if (!upstream.ok || !upstream.body) {
     // Log the upstream body server-side only; the browser gets a generic,
@@ -615,7 +628,7 @@ export async function POST(req: Request) {
   else after(() => { void textStream.cancel().catch(() => {}); });
 
   // Pass the Brain's data-stream response straight through to the client.
-  return new Response(clientStream, {
+  return new Response(cancellableBody(clientStream, abort), {
     status: 200,
     headers: {
       "content-type":

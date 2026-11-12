@@ -438,10 +438,12 @@ export async function brainChat(
    * unusable = the Brain's business zone.
    */
   timeZone?: string,
-  creative?: Record<string, unknown>
+  creative?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
+    signal: AbortSignal.any([AbortSignal.timeout(280_000), ...(signal ? [signal] : [])]),
     headers: authHeaders(),
     body: JSON.stringify({
       messages,
