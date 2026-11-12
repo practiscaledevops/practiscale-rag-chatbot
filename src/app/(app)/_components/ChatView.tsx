@@ -993,12 +993,16 @@ export function ChatView({
       createdAt: isoOrUndefined(m.createdAt),
     }));
     try {
-      const result = await saveConversationTurn({
-        conversationId: conversationIdRef.current,
-        // Persist the tier bucket (a checked enum), derived from the selection.
-        tier: selection.tier,
-        messages: rows,
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversationIdRef.current ?? undefined, tier: selection.tier, messages: rows }),
       });
+      const payload = response.ok ? await response.json() : null;
+      const conversation = payload?.conversation;
+      const result = payload?.conversationId
+        ? { ok: true as const, conversationId: String(payload.conversationId), title: String(conversation?.title ?? "New chat") }
+        : { ok: false as const };
       if (!result.ok) {
         setSaveError("This conversation couldn't be saved. Your latest messages may be missing if you reload.");
         return;
