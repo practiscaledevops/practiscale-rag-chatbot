@@ -3,13 +3,13 @@ import { isoOrUndefined } from "@/lib/message-times";
 /** A saved answer is historical. Refresh its original date, not a newly shifted "yesterday". */
 export function savedCallReportQuery(messages: { role: string; content: string; createdAt?: unknown }[], index: number, timeZone?: string): string | null {
   const answer = messages[index];
-  if (answer?.role !== "assistant" || !/\b(call report|calls|consultant.wise summary)\b/i.test(answer.content)) return null;
+  if (answer?.role !== "assistant" || !/\b(call report|calls|consultant.wise summary|closings?|clients?|prospects?|CRM records)\b/i.test(answer.content)) return null;
   let user: typeof messages[number] | undefined;
   for (let i = index - 1; i >= 0; i--) if (messages[i].role === "user") { user = messages[i]; break; }
   if (!user || /\b(write|draft|coach|analy[sz]e|audit|why|post|script|email|blog|content)\b/i.test(user.content)) return null;
   if (/\b(create|generate)\b/i.test(user.content) && !/\b(report|summary|breakdown)\b/i.test(user.content)) return null;
   let query = user.content.replace(/\b(today|yesterday)(?:['’]?s)?(calls?)\b/gi, "$1 $2");
-  const operational=(q:string)=>/\b(calls?|closings?|report|summary)\b/i.test(q) && /\b(check|list|show|give|report|summary|today|yesterday|yesterdays|how many|total|count|number of|tally|breakdown)\b/i.test(q);
+  const operational=(q:string)=>(/\b(calls?|closings?|report|summary)\b/i.test(q) || (/\b(clients?|prospects?|customers?|deals?|names?)\b/i.test(q) && /\b(closed|won|pending|ht|lt|high[- ]ticket|low[- ]ticket)\b/i.test(q))) && /\b(check|list|show|give|names?|who|which|report|summary|today|yesterday|yesterdays|how many|total|count|number of|tally|breakdown)\b/i.test(q);
   if (!operational(query)) {
     if (query.split(/\s+/).length>12 || !/^(?:yes\b|all\s+calls?\b|and\b|what about\b|only\b|just\b|same for\b)/i.test(query)) return null;
     const users=callReportHistory(messages,index);users.pop();
