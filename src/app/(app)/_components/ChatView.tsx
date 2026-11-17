@@ -2401,7 +2401,7 @@ export function ChatView({
                   </div>
                 )}
 
-                {emptyOutput && (
+                {emptyOutput && !reportFailure && (
                   <div
                     role="alert"
                     className="mt-5 flex flex-col gap-1.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground"
