@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { savedCallReportQuery, callReportHistory } from "@/lib/saved-call-report";
 const thread = (content: string, createdAt: unknown = "2026-10-19T21:29:00Z") => [{ role: "user", content, createdAt }, { role: "assistant", content: "There are zero calls. Consultant-wise Summary" }];
 describe("saved report refresh", () => {
+  it.each(["Company-wide high ticket — 7 closings. Source: [Sales Payroll](https://payroll.practicescalingsystems.com/admin)", "Payroll performance — November. Closings: 22", "Source: Sales Payroll. Client names: A, B."])("never replaces a Payroll answer with scoring data: %s", content => {
+    expect(savedCallReportQuery([{role:"user",content:"List HT client names for November 2026."},{role:"assistant",content}],1)).toBeNull();
+  });
   it("refreshes client closing reports even when the request never says calls",()=>{
     const query="Give me names of clients closed on HT For the month of November";
     expect(savedCallReportQuery(thread(query),1)).toBe(query);

@@ -3,6 +3,10 @@ import { isoOrUndefined } from "@/lib/message-times";
 /** A saved answer is historical. Refresh its original date, not a newly shifted "yesterday". */
 export function savedCallReportQuery(messages: { role: string; content: string; createdAt?: unknown }[], index: number, timeZone?: string): string | null {
   const answer = messages[index];
+  // Payroll owns sales and personnel facts. A scoring overlay must never
+  // replace these answers merely because they mention clients or closings.
+  // The source marker is persisted in content, so this also survives reload.
+  if (answer && /payroll\.practicescalingsystems\.com|Source:\s*(?:\*\*)?\[?Sales Payroll|Payroll performance\s*[—-]/i.test(answer.content)) return null;
   if (answer?.role !== "assistant" || !/\b(call report|calls|consultant.wise summary|closings?|clients?|prospects?|CRM records)\b/i.test(answer.content)) return null;
   let user: typeof messages[number] | undefined;
   for (let i = index - 1; i >= 0; i--) if (messages[i].role === "user") { user = messages[i]; break; }
