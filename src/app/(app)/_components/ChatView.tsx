@@ -728,6 +728,8 @@ export function ChatView({
 
   const busy = status === "submitted" || status === "streaming";
   const reportFailure = !busy && (data ?? []).some(e => e && typeof e === "object" && "type" in e && e.type === "report_error");
+  const lastReportQuestion = [...messages].reverse().find(m=>m.role==='user')?.content??'';
+  const canRefreshAppointments = /\b(appointments?|meetings?|show[ -]?ups?|no[ -]?shows?|activity)\b/i.test(lastReportQuestion) && /\b(hours?|minutes?)\b|\b\d{1,2}:\d{2}\b/i.test(lastReportQuestion);
   const waitingForText = busy && (messages.at(-1)?.role !== "assistant" || !messages.at(-1)?.content?.trim());
   const liveTarget = !busy && hasCap("chat.call_review") ? messages[messages.length - 1] : null;
   const liveQuery = liveTarget ? savedCallReportQuery(messages, messages.length - 1, timeZone) : null;
@@ -2376,6 +2378,12 @@ export function ChatView({
                   )}
                 </ul>
 
+                {!busy && canRefreshAppointments && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <Button variant="secondary" size="sm" onClick={()=>{setData(undefined);reload({body:{...chatBody,refreshSource:true}});}}><RefreshCw size={14} />Refresh from GHL</Button>
+                    <span>Runs a new complete scan. This can take longer than the saved report.</span>
+                  </div>
+                )}
                 {reportFailure && (
                   <div role="alert" className="mt-5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm">
                     <p>The report was not completed. Retry reads the sources again; your question is preserved.</p>

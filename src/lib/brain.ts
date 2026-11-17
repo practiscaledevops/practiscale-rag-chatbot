@@ -440,7 +440,8 @@ export async function brainChat(
   timeZone?: string,
   creative?: Record<string, unknown>,
   signal?: AbortSignal,
-  sourceUserToken?: string
+  sourceUserToken?: string,
+  refreshSource?: boolean
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -467,6 +468,7 @@ export async function brainChat(
       ...(capabilities ? { capabilities: capabilityList(capabilities) } : {}),
       // The user's time zone for every date in the answer (see the parameter doc).
       ...timeZoneField(timeZone),
+      ...(refreshSource ? {refreshSource:true} : {}),
       ...(creative ? { creative } : {}),
     }),
   });

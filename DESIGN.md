@@ -71,3 +71,5 @@ decorative states. The server contract is in `docs/CEO-PORTAL-LOGIN.md`.
 - Do not redesign unrelated chat or administrative screens for this integration.
 
 Report waiting states use AnswerProgress with actual source stages and elapsed time, never estimated percentages. Source report failures retain the question and offer an explicit Retry report action; they do not automatically retry or change models.
+
+Hourly appointment reports show snapshot verification time and delayed-sync warnings. Refresh from GHL is an explicit full-scan action, does not change CRM records, and replaces the last answer only when complete.

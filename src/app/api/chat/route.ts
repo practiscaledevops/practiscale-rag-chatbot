@@ -131,6 +131,7 @@ const chatBodySchema = z.object({
   conversation_id: z.string().uuid().nullish(),
   creative: creativeSettingsSchema.optional(),
   persistTurn: z.boolean().optional(),
+  refreshSource: z.boolean().optional(),
 });
 
 /** A UUID (with a light shape check) or null — for the optional conversation id. */
@@ -584,7 +585,8 @@ export async function POST(req: Request) {
     parsed.data.timeZone,
     creativeContext,
     requestSignal,
-    sourceSession?.data.session?.access_token
+    sourceSession?.data.session?.access_token,
+    parsed.data.refreshSource
     );
   } catch (error) {
     if (requestSignal.aborted) return new Response(null, { status: 499 });
