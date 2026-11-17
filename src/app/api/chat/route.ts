@@ -65,6 +65,7 @@ import { DEMO_USER_ID } from "@/lib/demo/fixtures";
 import { timeZoneOrUndefined } from "@/lib/timezone";
 import { creativeSettingsSchema, composePromptLayers, isCreativeRequest } from "@/lib/creative";
 import { loadDraftMemory } from "@/lib/creative-memory";
+import { responsePolicy } from "@/lib/response-policy";
 
 export const runtime = "nodejs";
 // Co-locate with the Brain + this app's Supabase (all Singapore) so auth, the
@@ -472,10 +473,10 @@ export async function POST(req: Request) {
   // 3c. Executive mode: inject the user's OWN private memory as trusted
   //     directives — only when they may use Executive mode (super_admin or the
   //     "executive" feature). Never reaches anyone else.
-  let directives: string | undefined;
+  let directives: string | undefined = responsePolicy(mode);
   if (isExecutiveMode(mode) && canUseExecutive(access)) {
     const mem = await getCeoMemory(profile.userId);
-    if (mem.trim()) directives = mem;
+    if (mem.trim()) directives += "\n\n" + mem;
   }
 
   // 3c-ii. Project context: if this conversation belongs to a project, fold in
