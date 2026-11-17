@@ -1,5 +1,6 @@
 "use client";
 
+import { AnswerProgress } from "@/components/AnswerProgress";
 import { useChat, type Message } from "@ai-sdk/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -726,6 +727,8 @@ export function ChatView({
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const reportFailure = !busy && (data ?? []).some(e => e && typeof e === "object" && "type" in e && e.type === "report_error");
+  const waitingForText = busy && (messages.at(-1)?.role !== "assistant" || !messages.at(-1)?.content?.trim());
   const liveTarget = !busy && hasCap("chat.call_review") ? messages[messages.length - 1] : null;
   const liveQuery = liveTarget ? savedCallReportQuery(messages, messages.length - 1, timeZone) : null;
   const liveReport = useLiveCallReport(liveQuery && liveTarget ? activeConversationId + ":" + liveTarget.id : null, liveQuery, timeZone, scopeBody, callReportHistory(messages,messages.length-1));
@@ -2358,7 +2361,7 @@ export function ChatView({
                     </li>
                   )}
 
-                  {status === "submitted" && (
+                  {waitingForText && (
                     <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-2.5">
                       <OrbAvatar size={24} active className="mt-0.5 shrink-0" />
                       <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
@@ -2367,12 +2370,18 @@ export function ChatView({
                           <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:150ms]" />
                           <span className="typing-dot h-1.5 w-1.5 rounded-full bg-accent [animation-delay:300ms]" />
                         </span>
-                        <span className="text-sm text-muted-foreground">{activity.label ?? "Thinking"}…</span>
+                        <AnswerProgress label={activity.label} />
                       </div>
                     </li>
                   )}
                 </ul>
 
+                {reportFailure && (
+                  <div role="alert" className="mt-5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm">
+                    <p>The report was not completed. Retry reads the sources again; your question is preserved.</p>
+                    <Button variant="secondary" size="sm" className="mt-2" onClick={regenerate}><RefreshCw size={14} />Retry report</Button>
+                  </div>
+                )}
                 {error && (
                   <div
                     role="alert"
