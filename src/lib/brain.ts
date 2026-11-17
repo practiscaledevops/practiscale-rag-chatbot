@@ -439,12 +439,13 @@ export async function brainChat(
    */
   timeZone?: string,
   creative?: Record<string, unknown>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sourceUserToken?: string
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
     signal: AbortSignal.any([AbortSignal.timeout(280_000), ...(signal ? [signal] : [])]),
-    headers: authHeaders(),
+    headers: { ...authHeaders(), ...(sourceUserToken ? { "x-chatbot-user-token": sourceUserToken } : {}) },
     body: JSON.stringify({
       messages,
       model: model ?? process.env.DEFAULT_MODEL_TIER ?? "recommended",

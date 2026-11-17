@@ -567,6 +567,10 @@ export async function POST(req: Request) {
   const requestSignal = AbortSignal.any([req.signal, abort.signal]);
   let upstream: Response;
   try {
+    // Used only as a bearer token: Brain validates it with the issuing Auth
+    // server and checks live Payroll permissions before any source read.
+    const sourceSession = process.env.SOURCE_REPORTS_ENABLED === "true"
+      ? await sb.auth.getSession() : null;
     upstream = await brainChat(
     brainMessages,
     selection,
@@ -579,7 +583,8 @@ export async function POST(req: Request) {
     capabilities,
     parsed.data.timeZone,
     creativeContext,
-    requestSignal
+    requestSignal,
+    sourceSession?.data.session?.access_token
     );
   } catch (error) {
     if (requestSignal.aborted) return new Response(null, { status: 499 });
