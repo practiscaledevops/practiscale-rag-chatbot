@@ -162,7 +162,9 @@ describe("POST /api/chat capabilities", () => {
     expect(res.status).toBe(200);
     expect(m.loadProjectContextForConversation).not.toHaveBeenCalled();
     const { directives, attachments } = brainCall();
-    expect(directives).toBeUndefined();
+    // The standard response policy applies to all chats; private project
+    // instructions still require app.projects.
+    expect(directives).not.toContain("Keep answers short.");
     expect(attachments).toBeUndefined();
   });
 
