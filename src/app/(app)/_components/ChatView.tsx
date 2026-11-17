@@ -735,7 +735,7 @@ export function ChatView({
   const liveQuery = liveTarget ? savedCallReportQuery(messages, messages.length - 1, timeZone) : null;
   const liveReport = useLiveCallReport(liveQuery && liveTarget ? activeConversationId + ":" + liveTarget.id : null, liveQuery, timeZone, scopeBody, callReportHistory(messages,messages.length-1));
   const liveMessageId = liveQuery && liveTarget ? liveTarget.id : null;
-  const displayedContent = useCallback((m: Message) => m.id === liveMessageId && liveReport?.content ? liveReport.content : m.content, [liveMessageId, liveReport?.content]);
+  const displayedContent = useCallback((m: Message) => m.id === liveMessageId && liveReport?.content ? liveReport.content : (m.content || (!busy ? finishedContent(chatId,m.id) ?? "" : "")), [liveMessageId, liveReport?.content,busy,chatId]);
 
   const generationReceipt = useMemo(() => {
     const events = (data ?? []) as unknown as Record<string, unknown>[];
@@ -1848,7 +1848,7 @@ export function ChatView({
     !error &&
     !!lastMsg &&
     lastMsg.role === "assistant" &&
-    !lastMsg.content.trim();
+    !displayedContent(lastMsg).trim();
 
   // Context window usage: what the model will see (latest summary onward),
   // measured against the window the Brain actually keeps — tokens (capped at
