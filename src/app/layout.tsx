@@ -25,9 +25,11 @@ const sourceSerif = Source_Serif_4({
   display: "swap",
 });
 
-// Absolute base for resolving OG/icon URLs. Override in production via
-// NEXT_PUBLIC_SITE_URL; the fallback keeps local + preview builds happy.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://assistant.practiscale.co";
+// Resolve absolute metadata URLs using the configured app origin.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  process.env.AI_BRAIN_ORIGIN ??
+  "https://brain.practicescalingsystems.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

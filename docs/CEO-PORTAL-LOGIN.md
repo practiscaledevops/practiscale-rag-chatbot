@@ -11,8 +11,8 @@ Set these server-only variables in AI Brain's Vercel Production environment:
 | Variable                    | Value                                           |
 | --------------------------- | ----------------------------------------------- |
 | `PORTAL_LOGIN_ENABLED`      | `true` after configuration and deployment       |
-| `CEO_PORTAL_ORIGIN`         | `https://practiscale-ceo-portal.vercel.app`     |
-| `AI_BRAIN_ORIGIN`           | `https://practiscale-rag-chatbot.vercel.app`    |
+| `CEO_PORTAL_ORIGIN`         | `https://ceo.practicescalingsystems.com`        |
+| `AI_BRAIN_ORIGIN`           | `https://brain.practicescalingsystems.com`      |
 | `CEO_PORTAL_APP_ID`         | AI Brain's catalogue UUID in CEO Portal         |
 | `CEO_PORTAL_TARGET_USER_ID` | Existing AI Brain Supabase Auth UUID            |
 | `CEO_PORTAL_CLIENT_SECRET`  | New random connection secret, at least 32 bytes |
@@ -24,6 +24,11 @@ secret variables. No secret belongs in a `NEXT_PUBLIC_` variable or Git.
 In CEO Portal, add AI Brain with One-click login, register the exact public
 origin, grant only the CEO access, and link that identity to the existing AI
 Brain user UUID. Do not select an account by a supplied email address.
+
+Set the AI Brain Supabase Auth Site URL to
+`https://brain.practicescalingsystems.com`. The app uses that setting for
+new account invitations. The Supabase invite template uses
+`{{ .ConfirmationURL }}` to generate the invitation link.
 
 ## Protocol and safety
 
