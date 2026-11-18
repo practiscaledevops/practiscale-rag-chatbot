@@ -1,29 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Source_Serif_4 } from "next/font/google";
 import { PwaRegister } from "@/components/PwaRegister";
 import { ThemeSync } from "@/components/ThemeSync";
 import { TitleBar } from "@/components/TitleBar";
 import { THEME_INIT_SCRIPT } from "@/lib/theme-shared";
+import "./fonts/fonts.css";
 import "./globals.css";
-
-// Inter across the whole product (Light → Bold), self-hosted by next/font and
-// exposed as --font-inter for the --font-sans token (see globals.css).
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-// Source Serif 4 for the serif ("Claude-style") answer font, exposed as
-// --font-serif for Tailwind's font-serif (see tailwind.config.ts).
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-serif",
-  display: "swap",
-});
 
 // Resolve absolute metadata URLs using the configured app origin.
 const siteUrl =
@@ -59,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     // The init script sets the theme class before hydration, hence
     // suppressHydrationWarning on <html> (its class/style differ by design).
-    <html lang="en" className={`${inter.variable} ${sourceSerif.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>

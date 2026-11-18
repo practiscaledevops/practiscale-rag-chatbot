@@ -91,7 +91,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
-        // Source Serif 4 (next/font, see layout.tsx) for serif answers.
+        // Source Serif 4 from the bundled fonts stylesheet for serif answers.
         serif: ["var(--font-serif)", "Georgia", "Cambria", "serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "Liberation Mono", "monospace"],
       },

@@ -38,7 +38,8 @@ callout, with text and `role="alert"` rather than color alone.
 
 ## Typography
 
-Use the existing next/font Inter interface and Source Serif 4 answer typography.
+Use the bundled Inter interface and Source Serif 4 answer typography in
+`src/app/fonts/fonts.css`. The build uses local WOFF2 files for both families.
 Authentication uses the existing interface scale and sentence-case copy.
 
 ## Layout
