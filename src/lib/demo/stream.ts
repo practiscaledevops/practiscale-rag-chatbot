@@ -9,6 +9,32 @@
 const TOKEN_MS = 22;
 const LONG_TOKEN_MS = 40;
 
+const demoSources = [
+  {
+    id: "6fbfcee0-7fa4-430c-bff4-10de7081bf01",
+    source_type: "call_scorecard",
+    name: "Discovery and closing scorecard",
+    snippet: "In this sample, discovery averages 61/100 and closing averages 84/100 across the reviewed calls.",
+  },
+  {
+    id: "bea901c1-0b3a-4263-ab32-a3dd72e45ef3",
+    source_type: "coaching_note",
+    name: "Discovery coaching notes",
+    snippet: "Restate the buyer’s priority early and ask follow-up questions before switching to the pitch.",
+  },
+  {
+    id: "0ca489f4-94b0-40bc-897f-848d95256981",
+    source_type: "playbook",
+    name: "Sample NEMT sales playbook",
+    snippet: "Open with a proof point about reliability and on-time performance, then address the facility coordinator’s concern directly.",
+  },
+] as const;
+
+export function demoCitation(id: string) {
+  const matches = demoSources.filter(source => source.id === id || source.id.startsWith(id + "-"));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function isLongQuery(query: string): boolean {
   return /\blong\b/i.test(query || "");
 }
@@ -54,7 +80,18 @@ function pickAnswer(query: string): string {
     ].join("\n");
   }
   if (q.includes("discovery") || q.includes("improve") || q.includes("weak")) {
-    return "Based on the call-scoring data, reps score highest on closing (avg 84/100) and lowest on discovery (avg 61/100). The coaching notes suggest mirroring the customer's stated priority early, which correlates with a 23% higher close rate. Recommendation: tighten discovery questioning before pitching. [demo-chunk-1] [demo-chunk-2]";
+    return [
+      "## Coach discovery first",
+      "",
+      "In the sample scorecards, discovery averages **61/100** and closing averages **84/100**. [demo-chunk-1]",
+      "",
+      "**What to practice**",
+      "",
+      "1. **Restate the buyer’s priority** in their own words before introducing the offer. [demo-chunk-2]",
+      "2. **Ask a follow-up question.** Find out what they’ve tried and what the problem is costing them.",
+      "",
+      "**Next coaching session:** review one call together and replay the first five minutes. Have the rep try a different follow-up question.",
+    ].join("\n");
   }
   if (q.includes("nemt") || q.includes("email") || q.includes("pitch")) {
     return "For NEMT accounts, lead with reliability and on-time performance — facility coordinators treat price as secondary. Open with a proof point on on-time rate, then address the reliability objection directly. [demo-chunk-3]";
@@ -64,17 +101,21 @@ function pickAnswer(query: string): string {
 
 export function demoChatStreamResponse(query: string, attachmentNames: string[] = []): Response {
   const names = attachmentNames.filter((n) => typeof n === "string" && n.trim());
+  const answer = pickAnswer(query);
+  const sources = demoSources.filter((_, index) => answer.includes(`[demo-chunk-${index + 1}]`));
+  const citedAnswer = answer.replace(/\[demo-chunk-([1-3])\]/g, (_, index: string) => `[${demoSources[Number(index) - 1].id}]`);
   const text = names.length
     ? `Reading ${names.length === 1 ? "your attached file" : `your ${names.length} attached files`} (${names.join(", ")}). ` +
       `In demo mode I can't extract the file, but connected to the Brain I'd answer from its contents alongside the company knowledge base. ` +
-      pickAnswer(query)
-    : pickAnswer(query);
+      citedAnswer
+    : citedAnswer;
   const tokens = text.match(/\S+\s*/g) ?? [text];
   const delay = isLongQuery(query) ? LONG_TOKEN_MS : TOKEN_MS;
   const enc = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      controller.enqueue(enc.encode(`2:${JSON.stringify([{ type: "sources", sources }])}\n`));
       for (const tok of tokens) {
         controller.enqueue(enc.encode(`0:${JSON.stringify(tok)}\n`));
         await new Promise((r) => setTimeout(r, delay));

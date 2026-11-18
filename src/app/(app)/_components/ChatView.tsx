@@ -2,9 +2,10 @@
 
 import { AnswerProgress } from "@/components/AnswerProgress";
 import { useChat, type Message } from "@ai-sdk/react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { z } from "zod";
 import { creativeSettingsSchema, DEFAULT_CREATIVE, type CreativeSettings } from "@/lib/creative";
 import { useLiveCallReport, liveCallReportLabel } from "@/lib/use-live-call-report";
 import { savedCallReportQuery, callReportHistory } from "@/lib/saved-call-report";
@@ -13,8 +14,8 @@ const CreativeStudio = dynamic(() => import("./CreativeStudio"));
 import {
   AlertTriangle,
   ArrowDown,
-  ArrowRight,
   ArrowUp,
+  BookOpen,
   Check,
   CheckCheck,
   ChevronDown,
@@ -44,6 +45,9 @@ import {
   RefreshCw,
   RotateCw,
   SearchCheck,
+  Settings2,
+  Users,
+  CalendarDays,
   Sparkles,
   Square,
   ThumbsDown,
@@ -81,11 +85,13 @@ import { PREFS_EVENT, effectiveTimeZone, readPrefs, type ChatPrefs } from "@/lib
 import { UserAvatar } from "@/components/UserAvatar";
 import { copyMarkdown } from "@/lib/copy-format";
 import { cleanClipboard, type CopyNode } from "@/lib/clean-copy";
-import { isoOrUndefined } from "@/lib/message-times";
+import { chatMessageFields, isoOrUndefined, prepareChatRequest } from "@/lib/message-times";
 import { useChatLimits } from "@/lib/chat-limits";
+import { parseLearningCandidate, type LearningCandidate } from "@/lib/chat-learning";
 import {
   QUEUE_SETTLE_MS,
   abortChat,
+  activeChatAttachments,
   bindConversation,
   chatKeyFor,
   claimChat,
@@ -141,7 +147,8 @@ import {
   tablesFrom,
   type ExportMessage,
 } from "@/lib/export-doc";
-import { Markdown } from "./Markdown";
+import { CitationContext, Markdown, type CitationLinks } from "./Markdown";
+import { ghlOpportunityId, withGhlOpportunityCitations } from "@/lib/ghl-citations";
 import { saveConversationTurn } from "./actions";
 import { JobProgress } from "./JobProgress";
 import {
@@ -274,7 +281,7 @@ const MODE_SUGGESTIONS: Partial<Record<WorkMode, Suggestion[]>> = {
 const ROLES_TO_PERSIST = new Set(["user", "assistant", "system"]);
 
 /** The column the thread, its toolbar and the docked composer share. */
-const THREAD_COL = "mx-auto w-full max-w-[58rem] px-4 sm:px-6";
+const THREAD_COL = "mx-auto w-full max-w-[50rem] px-4 sm:px-6";
 
 // Executive (CEO mode) quick actions — prefill high-leverage prompts.
 const CEO_ACTIONS: { label: string; prompt: string }[] = [
@@ -314,6 +321,8 @@ interface SourceItem {
   /** ISO date of the source document, for a freshness indicator. */
   date?: string | null;
   snippet?: string;
+  scorecard?: { callDate: string | null; score: number | null; band: string | null };
+  opportunity?: { id: string; status: string; pipelineId: string; stageId: string; lastStatusChangeAt: string | null };
   /** Operating Intelligence lane + object identity (when the chunk belongs to a knowledge object). */
   lane?: string | null;
   ref?: string | null;
@@ -324,18 +333,18 @@ interface SourceItem {
   via?: string | null;
 }
 
-/** "Save as Organizational Learning?" — a candidate the Brain detected in the conversation. */
-interface LearningCandidate {
-  kind: "decision" | "implementation" | "experiment" | "result" | "learning";
-  title: string;
-  change: string;
-  observedResult: string | null;
-  department: string | null;
-  relatedRefs: string[];
-  missingEvidence: string[];
-  confidence: number;
-}
+const reportDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((day) => Number.isFinite(Date.parse(day)));
+const reportDates = z.object({ from: reportDate, through: reportDate });
+const reportScopeEvent = reportDates.extend({
+  type: z.literal("report_scope"),
+  source: z.enum(["Sales Payroll", "Call Scoring", "GoHighLevel"]),
+  team: z.string().min(1).max(120),
+  comparison: reportDates.optional(),
+  demo: z.boolean().optional(),
+});
+type ReportScope = z.infer<typeof reportScopeEvent>;
 
+/** "Save as Organizational Learning?" — a candidate the Brain detected in the conversation. */
 const LANE_LABEL: Record<string, string> = {
   reality: "Reality",
   learning: "Learning",
@@ -423,7 +432,7 @@ export function ChatView({
   initialMessages,
   initialInput,
 }: ChatViewProps) {
-  const { selection, setSelection, options, addUsage, firstName, avatarUrl, email, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap } =
+  const { selection, setSelection, options, addUsage, firstName, avatarUrl, email, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap, chatLimits } =
     useAppShell();
   const router = useRouter();
   const [studioOpen, setStudioOpen] = useState(false);
@@ -457,7 +466,7 @@ export function ChatView({
 
   // Workspace chat limits (admin Settings → Chat & context): context budget,
   // compaction threshold, upload sizes.
-  const limits = useChatLimits();
+  const limits = useChatLimits(chatLimits);
   const limitsRef = useRef(limits);
   useEffect(() => {
     limitsRef.current = limits;
@@ -693,7 +702,6 @@ export function ChatView({
     append,
     input,
     setInput,
-    handleInputChange,
     handleSubmit,
     status,
     stop,
@@ -704,6 +712,7 @@ export function ChatView({
   } = useChat({
     id: chatId,
     api: "/api/chat",
+    experimental_prepareRequestBody: (request) => prepareChatRequest(request, chatBody),
     // Registers each request's abort handle under the chat, so Stop works on a
     // stream this view re-attached to (started by an earlier view or a runner).
     fetch: trackedFetch(chatId),
@@ -712,9 +721,8 @@ export function ChatView({
     // Seeded from `/?prompt=` (only read on mount; a later prompt on the same
     // mounted page is applied by the effect below).
     initialInput: initialInput ?? "",
-    // Coalesce stream chunks into at most ~20 state updates/s: a fast model can
-    // deliver 60+ chunks/s and each one re-rendered this whole view. The reveal
-    // effect below smooths the visible text between updates anyway.
+    // Coalesce chunks into at most ~20 state updates/s. Render each available
+    // batch as-is so the reader immediately sees the text the server sent.
     experimental_throttle: 50,
     // Captured when a request starts, so it runs (once) even if this view has
     // unmounted by the time the answer finishes: usage is metered exactly once.
@@ -726,9 +734,13 @@ export function ChatView({
     },
   });
 
+  const [promptEdit, setPromptEdit] = useState<{ id: string; text: string; attachments: ChatAttachment[] } | null>(null);
+  const isEditingPrompt = promptEdit !== null;
+  const composerValue = promptEdit?.text ?? input;
   const busy = status === "submitted" || status === "streaming";
   const reportFailure = !busy && (data ?? []).some(e => e && typeof e === "object" && "type" in e && e.type === "report_error");
-  const lastReportQuestion = [...messages].reverse().find(m=>m.role==='user')?.content??'';
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  const lastReportQuestion = lastUserMessage?.content ?? "";
   const canRefreshAppointments = /\b(appointments?|meetings?|show[ -]?ups?|no[ -]?shows?|activity)\b/i.test(lastReportQuestion) && /\b(hours?|minutes?)\b|\b\d{1,2}:\d{2}\b/i.test(lastReportQuestion);
   const waitingForText = busy && (messages.at(-1)?.role !== "assistant" || !messages.at(-1)?.content?.trim());
   const liveTarget = !busy && hasCap("chat.call_review") ? messages[messages.length - 1] : null;
@@ -812,13 +824,6 @@ export function ChatView({
     setChatTitle(chatId, title ?? firstUserText);
   }, [chatId, title, firstUserText]);
 
-  // Re-opened mid-answer: that answer continues on screen from where it is
-  // (StreamingMarkdown `resume`) instead of re-typing from the start.
-  const [resumedId] = useState<string | null>(() => {
-    const last = messages[messages.length - 1];
-    return busy && last?.role === "assistant" ? last.id : null;
-  });
-
   // Turns the user sent while an answer was streaming (sent in order after it).
   const session = useChatSession(chatId);
   const queue = session.queue;
@@ -834,6 +839,7 @@ export function ChatView({
     let label: string | null = null;
     let sourcesCount: number | null = null;
     let sources: SourceItem[] = [];
+    let reportScope: ReportScope | null = null;
     let confidence: number | null = null;
     let routedTier: string | null = null;
     let modeInfo: { mode: string; label: string; auto: boolean; intent: string } | null = null;
@@ -844,6 +850,10 @@ export function ChatView({
     let performance: PerformanceMetric[] = [];
     for (const it of items) {
       if (it?.type === "status" && typeof it.label === "string") label = it.label;
+      if (it?.type === "report_scope") {
+        const parsed = reportScopeEvent.safeParse(it);
+        if (parsed.success) reportScope = parsed.data;
+      }
       const pairs = canSeeConflicts ? parseConflictsEvent(it) : null;
       if (pairs) conflicts = pairs;
       const metrics = canSeePerformance ? parsePerformanceEvent(it) : null;
@@ -864,31 +874,20 @@ export function ChatView({
           intent: typeof it.intent === "string" ? (it.intent as string) : "",
         };
       }
-      if (canSaveLearning && it?.type === "learning_candidate" && typeof it.title === "string") {
-        const kinds = ["decision", "implementation", "experiment", "result", "learning"] as const;
-        const kind = kinds.includes(it.kind as (typeof kinds)[number]) ? (it.kind as LearningCandidate["kind"]) : "learning";
-        learning = {
-          kind,
-          title: it.title as string,
-          change: typeof it.change === "string" ? (it.change as string) : "",
-          observedResult: typeof it.observedResult === "string" ? (it.observedResult as string) : null,
-          department: typeof it.department === "string" ? (it.department as string) : null,
-          relatedRefs: Array.isArray(it.relatedRefs) ? (it.relatedRefs as string[]) : [],
-          missingEvidence: Array.isArray(it.missingEvidence) ? (it.missingEvidence as string[]) : [],
-          confidence: typeof it.confidence === "number" ? (it.confidence as number) : 0,
-        };
-      }
+      if (canSaveLearning) learning = parseLearningCandidate(it) ?? learning;
       if (it?.type === "status" && it.stage === "retrieved" && typeof it.count === "number") {
         sourcesCount = it.count as number;
       }
     }
-    return { label, sourcesCount, sources, confidence, routedTier, modeInfo, learning, conflicts, performance };
+    return { label, sourcesCount, sources, reportScope, confidence, routedTier, modeInfo, learning, conflicts, performance };
   }, [data, canSeeConflicts, canSeePerformance, canSaveLearning]);
 
-  // "Save as Organizational Learning?" — per-turn state keyed by the candidate title.
-  const [learningState, setLearningState] = useState<{ key: string; status: "idle" | "saving" | "saved" | "ignored" | "error"; ref?: string; error?: string }>({ key: "", status: "idle" });
-  const saveLearning = useCallback(async (c: LearningCandidate, notes?: string) => {
-    setLearningState({ key: c.title, status: "saving" });
+  const [learningStates, setLearningStates] = useState<Record<string, LearningCardState>>({});
+  const setLearningState = useCallback((key: string, state: LearningCardState) => {
+    setLearningStates(previous => ({ ...previous, [key]: state }));
+  }, []);
+  const saveLearning = useCallback(async (key: string, c: LearningCandidate, notes?: string) => {
+    setLearningState(key, { status: "saving" });
     try {
       const res = await fetch("/api/learning", {
         method: "POST",
@@ -907,11 +906,11 @@ export function ChatView({
       });
       const json = (await res.json().catch(() => ({}))) as { ref?: string; error?: string };
       if (!res.ok) throw new Error(json.error || "Couldn't save the learning");
-      setLearningState({ key: c.title, status: "saved", ref: json.ref });
+      setLearningState(key, { status: "saved", ref: json.ref });
     } catch (e) {
-      setLearningState({ key: c.title, status: "error", error: e instanceof Error ? e.message : "Couldn't save the learning" });
+      setLearningState(key, { status: "error", error: e instanceof Error ? e.message : "Couldn't save the learning" });
     }
-  }, []);
+  }, [setLearningState]);
 
   // Manual "Save as learning" from ANY answer. The automatic card only appears
   // when the Brain detects a decision/result in the user's own message; the
@@ -1172,6 +1171,7 @@ export function ChatView({
       // answer (only for users with "chat.compaction").
       const lim = limitsRef.current;
       if (
+        !promptEdit &&
         canCompact &&
         lim.autoCompact &&
         shouldAutoCompact(messagesRef.current, lim.contextWindowTokens, lim.compactAtPct)
@@ -1227,7 +1227,7 @@ export function ChatView({
     if (!el) return;
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [input]);
+  }, [composerValue]);
 
   const submit = useCallback(async () => {
     const hasText = input.trim().length > 0;
@@ -1456,7 +1456,7 @@ export function ChatView({
       const upto = messages
         .slice(0, idx + 1)
         .filter((m) => ROLES_TO_PERSIST.has(m.role))
-        .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
+        .map(({ role, content, createdAt }) => chatMessageFields({ role: role as "user" | "assistant" | "system", content, createdAt }));
       if (upto.length === 0) return;
       setBranching(true);
       try {
@@ -1498,7 +1498,7 @@ export function ChatView({
     // (a compacted chat's earlier context) plus every turn after it.
     return effectiveMessages(messages.slice(0, lastUser + 1))
       .filter((m) => m.role === "user" || m.role === "assistant" || isSummaryMessage(m))
-      .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
+      .map(({ role, content, createdAt }) => chatMessageFields({ role: role as "user" | "assistant" | "system", content, createdAt }));
   }, [messages]);
 
   // Recovery path: switch to the Recommended tier (always available, Brain-
@@ -1534,53 +1534,78 @@ export function ChatView({
 
   // --- Edit & resend a user message --------------------------------------
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [pendingSend, setPendingSend] = useState<string | null>(null);
+  const [pendingSend, setPendingSend] = useState<{ text: string; attachments: ChatAttachment[] } | null>(null);
 
   const submitEdit = useCallback(
-    (id: string, newContent: string) => {
+    (id: string, newContent: string, files: ChatAttachment[] = []) => {
       const text = newContent.trim();
       const idx = messages.findIndex((m) => m.id === id);
+      if (idx === -1 || !text || busy || compactingRef.current) return false;
+
+      // The edited turn replaces the old prompt and its reply. Wait for the
+      // new history to reach the hook before submitting the replacement.
       setEditingId(null);
-      // Don't truncate under a running compaction (it splices into this list).
-      if (idx === -1 || !text || compactingRef.current) return;
-      // Drop the edited message and everything after it, then resend the edit
-      // once the truncation has committed (so `append` builds on the trimmed
-      // history, not the stale one).
       setMessages(messages.slice(0, idx));
       stickRef.current = true;
       setData(undefined);
-      setPendingSend(text);
+      setPendingSend({ text, attachments: files });
+      return true;
     },
-    [messages, setMessages, setData]
+    [busy, messages, setMessages, setData]
   );
 
   useEffect(() => {
-    // Waits for a running compaction to finish (re-runs when `compacting` flips).
-    if (pendingSend == null || status !== "ready" || compacting) return;
-    const content = pendingSend;
+    if (pendingSend == null || busy || compacting) return;
+    const { text, attachments: files } = pendingSend;
     setPendingSend(null);
-    void append({ role: "user", content }, { body: chatBody });
-  }, [pendingSend, status, compacting, append, chatBody]);
+    markInflight(chatId);
+    void append({ role: "user", content: text }, {
+      body: files.length ? { ...chatBody, attachments: files } : chatBody,
+    });
+  }, [pendingSend, busy, compacting, append, chatBody, chatId]);
 
   // Send the next queued turn once the chat is idle: the answer settled (and
   // its save started), no compaction or edit-resend is pending, and the queue
   // isn't held. The settle delay lets useChat's last throttled update land
   // first, so the next request carries the full answer.
   useEffect(() => {
-    if (busy || compacting || pendingSend != null || queuePaused || queue.length === 0) return;
+    if (busy || compacting || promptEdit || pendingSend != null || queuePaused || queue.length === 0) return;
     if (session.inflight || session.preparing) return;
     const timer = window.setTimeout(() => flushNextRef.current(), QUEUE_SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [busy, compacting, pendingSend, queuePaused, queue.length, session.inflight, session.preparing]);
+  }, [busy, compacting, promptEdit, pendingSend, queuePaused, queue.length, session.inflight, session.preparing]);
 
   // Stop the answer — whichever instance started it (this view, an earlier
   // one, or a background runner) — and hold any queued turns for the user.
   const stopAnswer = useCallback(() => {
+    setQueuePaused(chatId, true);
     stop();
     abortChat(chatId);
-    setQueuePaused(chatId, true);
     focusComposer(); // Stop unmounts once the answer settles
   }, [stop, chatId, focusComposer]);
+
+  function stopAndEdit() {
+    if (!busy || !lastUserMessage || promptEdit) return;
+    setEditingId(null);
+    setPromptEdit({
+      id: lastUserMessage.id,
+      text: lastUserMessage.content,
+      attachments: activeChatAttachments(chatId),
+    });
+    taRef.current?.focus({ preventScroll: true });
+    stopAnswer();
+    requestAnimationFrame(() => {
+      const input = taRef.current;
+      input?.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+
+  function cancelPromptEdit() {
+    setPromptEdit(null);
+    taRef.current?.focus({ preventScroll: true });
+    focusComposer();
+  }
+
   // Each of these unmounts the control it was pressed on (the paused bar, a
   // chip), so focus moves on to the composer (focusComposer).
   const sendQueuedNow = useCallback(() => {
@@ -1604,20 +1629,37 @@ export function ChatView({
     if (takeComposerFocus(conversationId)) focusComposer();
   }, [conversationId, focusComposer]);
 
+  function sendComposerPrompt() {
+    if (pendingSend) return;
+    if (!promptEdit) {
+      void submit();
+      return;
+    }
+    if (submitEdit(promptEdit.id, promptEdit.text, promptEdit.attachments)) {
+      setPromptEdit(null);
+      focusComposer();
+    }
+  }
+
   function onFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    submit();
+    sendComposerPrompt();
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      submit();
+      sendComposerPrompt();
     }
   }
 
+  const updateComposerValue = useCallback((text: string) => {
+    if (isEditingPrompt) setPromptEdit((current) => current && { ...current, text });
+    else setInput(text);
+  }, [isEditingPrompt, setInput]);
+
   const prefill = useCallback((text: string) => {
-    setInput(text);
+    updateComposerValue(text);
     // Focus and drop the caret at the end.
     requestAnimationFrame(() => {
       const el = taRef.current;
@@ -1625,7 +1667,7 @@ export function ChatView({
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
-  }, [setInput]);
+  }, [updateComposerValue]);
 
   // Insert a dictated transcript at the caret (or append when the composer isn't
   // focused). The user reviews and sends — dictation never auto-submits.
@@ -1732,6 +1774,68 @@ export function ChatView({
 
   // Evidence side panel (sources for the latest answer).
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [selectedCitation, setSelectedCitation] = useState<{ source?: SourceItem; ordinal?: number; error?: string } | null>(null);
+  const citationLoad = useRef<AbortController | null>(null);
+  useEffect(() => () => citationLoad.current?.abort(), [activeConversationId]);
+  const closeCitation = useCallback(() => {
+    citationLoad.current?.abort();
+    setSelectedCitation(null);
+  }, []);
+  const savedCitationLinks = useMemo<CitationLinks | undefined>(() => {
+    if (!activeConversationId) return undefined;
+    const isSavedId = (id: string) => Boolean(ghlOpportunityId(id)) || /^[a-f0-9]{8}(?:-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/i.test(id);
+    return {
+      // The server renders saved citation chips before React can handle clicks.
+      disabled: !hydrated,
+      titleFor: id => ghlOpportunityId(id) ? "GoHighLevel opportunity" : isSavedId(id) ? "Saved source" : undefined,
+      open(id, ordinal) {
+        if (!hydrated || !isSavedId(id)) return;
+        citationLoad.current?.abort();
+        const controller = new AbortController();
+        citationLoad.current = controller;
+        setSelectedCitation({ ordinal });
+        const params = new URLSearchParams({ conversationId: activeConversationId, id });
+        void fetch(`/api/chat/citations?${params}`, { signal: controller.signal }).then(async response => {
+          if (controller.signal.aborted) return;
+          if (!response.ok) {
+            const error = response.status === 404 ? "This source is unavailable." : "The source could not load. Close this preview and try again.";
+            setSelectedCitation({ ordinal, error });
+            return;
+          }
+          const source: SourceItem = await response.json();
+          if (!controller.signal.aborted) setSelectedCitation({ ordinal, source });
+        }).catch(() => {
+          if (!controller.signal.aborted) {
+            setSelectedCitation({ ordinal, error: "The source could not load. Close this preview and try again." });
+          }
+        });
+      },
+    };
+  }, [activeConversationId, hydrated]);
+  const citationLinks = useMemo<CitationLinks | undefined>(() => {
+    if (busy || !activity.sources.length) return savedCitationLinks;
+    function findSource(id: string) {
+      const key = id.toLowerCase();
+      const exact = activity.sources.find((source) => source.id.toLowerCase() === key);
+      if (exact || !/^[0-9a-f]{8}$/.test(key)) return exact;
+      const matches = activity.sources.filter((source) => source.id.toLowerCase().startsWith(key + "-"));
+      return matches.length === 1 ? matches[0] : undefined;
+    }
+    return {
+      titleFor(id) {
+        const source = findSource(id);
+        return source ? sourceTitle(source) : savedCitationLinks?.titleFor(id);
+      },
+      open(id, ordinal) {
+        const source = findSource(id);
+        if (source) {
+          citationLoad.current?.abort();
+          setSelectedCitation({ source, ordinal });
+        } else savedCitationLinks?.open(id, ordinal);
+      },
+    };
+  }, [activity.sources, busy, savedCitationLinks]);
   // Executive (CEO) private-memory editor.
   const [memoryOpen, setMemoryOpen] = useState(false);
   const isCeoMode = isExecutiveMode(mode);
@@ -1837,7 +1941,7 @@ export function ChatView({
     }
   }, [approvalFor, approvalBusy, approvalTitle, messages, mode, selection.value]);
 
-  const empty = messages.length === 0;
+  const empty = messages.length === 0 && pendingSend === null && !session.inflight;
   const lastIndex = messages.length - 1;
 
   // The upstream returned 200 but produced no text (e.g. a mid-stream provider
@@ -1872,7 +1976,10 @@ export function ChatView({
 
   const attachUploading = attachments.some((a) => a.status === "uploading");
   const attachReadyCount = attachments.filter((a) => a.status === "ready").length;
-  const canSend = (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading && !compacting;
+  const canSend = promptEdit
+    ? !busy && !compacting && promptEdit.text.trim().length > 0
+    : (input.trim().length > 0 || attachReadyCount > 0) && !attachUploading && !compacting && pendingSend === null;
+  const editingPromptIndex = promptEdit ? messages.findIndex((message) => message.id === promptEdit.id) : -1;
 
   // --- Deep research (toggles the "Deep analysis" preset) -----------------
   const deepOption = useMemo(() => options.find((o) => o.value === "deep" && o.available) ?? null, [options]);
@@ -1893,7 +2000,6 @@ export function ChatView({
 
   // --- Client-only bits: timestamps (viewer's time zone) + read aloud ------
   // Rendered after mount so server (UTC) and browser times never disagree.
-  const [hydrated, setHydrated] = useState(false);
   const [canSpeak, setCanSpeak] = useState(false);
   useEffect(() => {
     setHydrated(true);
@@ -1925,101 +2031,64 @@ export function ChatView({
 
   const composerCore = {
     textareaRef: taRef,
-    value: input,
-    onChange: handleInputChange,
+    value: composerValue,
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => updateComposerValue(e.target.value),
     onKeyDown,
     onSubmit: onFormSubmit,
     busy,
     onStop: stopAnswer,
+    onStopAndEdit: busy && lastUserMessage && !promptEdit ? stopAndEdit : undefined,
+    promptEditing: promptEdit ? { files: promptEdit.attachments, cancel: cancelPromptEdit } : undefined,
     onSlashSelect: prefill,
-    attachments,
+    attachments: promptEdit ? [] : attachments,
     onAttachFiles: addFiles,
     onRemoveAttachment: removeAttachment,
     onRetryAttachment: retryAttachment,
     // null hides the attach control (no extract.* file kind granted).
-    attachAccept: canAttach ? attachAccept : null,
+    attachAccept: canAttach && !promptEdit ? attachAccept : null,
     attachLabel,
-    onDictate: canDictate ? insertDictation : null,
+    onDictate: canDictate && !promptEdit ? insertDictation : null,
     canSend,
     maxFiles: limits.maxFiles,
     onOpenLibrary: () => setLibraryOpen(true),
   };
 
-  // New-chat composer card: deep research, mode + format on the left; model +
-  // knowledge scope (icon-only) on the right, next to mic + send.
-  const heroComposer = (
-    <Composer
-      {...composerCore}
-      variant="hero"
-      leftTools={
-        <>
-          {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} />}
-          <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} />
-          <OutputFormatPicker value={outputType} onChange={setOutputType} iconOnly />
-          <button type="button" onClick={() => setStudioOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-2 text-xs font-medium"><Wand2 size={14} aria-hidden /> Writing studio</button>
-        </>
-      }
-      rightTools={
-        <>
-          <ModelQualityPicker options={options} value={selection} onChange={setSelection} iconOnly align="right" />
-          {canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} iconOnly align="right" />}
-        </>
-      }
-    />
+  const searchTool = canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} labelled />;
+  const advancedTools = (
+    <>
+      <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} />
+      <ModelQualityPicker options={options} value={selection} onChange={setSelection} />
+      <OutputFormatPicker value={outputType} onChange={setOutputType} />
+      {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} />}
+      <button type="button" onClick={() => setStudioOpen(true)} className={composerToolClass}>
+        <Wand2 size={15} aria-hidden /> Writing studio
+      </button>
+    </>
   );
-
-  // In-thread: a compact settings row above the pill composer. Pickers and
-  // status chips wrap inside the left group; Evidence / Export keep a fixed
-  // top-right column. Format + scope are icon-only here, as on the hero card.
-  const toolbar = (
-    <div className="mb-2 flex items-start gap-2">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-        <WorkModePicker modes={modeDefs} value={mode} onChange={setMode} size="sm" />
-        <ModelQualityPicker options={options} value={selection} onChange={setSelection} size="sm" />
-        <OutputFormatPicker value={outputType} onChange={setOutputType} size="sm" iconOnly />
-        <button type="button" onClick={() => setStudioOpen(true)} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs font-medium"><Wand2 size={14} aria-hidden /> Writing studio</button>
-        {canScope && <SourceScopePicker value={searchScope} onChange={setSearchScope} size="sm" iconOnly />}
-        {deepOption && <DeepResearchToggle on={deepOn} onToggle={toggleDeep} size="sm" />}
-        {selection.value === "smart" && activity.routedTier && (
-          <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full bg-surface-muted px-2.5 text-xs text-muted-foreground">
-            Smart Route → {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
-          </span>
-        )}
-        {mode === "auto" && activity.modeInfo && (
-          <span
-            className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-soft px-2.5 text-xs font-medium text-accent-strong"
-            title="The Brain picked this expert for your last message. Choose a mode to override."
-          >
-            <Sparkles size={14} className="shrink-0" aria-hidden /> Auto → {activity.modeInfo.label}
-          </span>
-        )}
-      </div>
-      <div className="flex h-7 shrink-0 items-center gap-0.5">
-        {activity.sourcesCount ? (
-          <button
-            type="button"
-            onClick={() => setEvidenceOpen((o) => !o)}
-            className="hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
-          >
-            <PanelRight size={14} aria-hidden />
-            {evidenceOpen ? "Hide evidence" : `Evidence (${activity.sourcesCount})`}
-          </button>
-        ) : null}
-        <ContextMeter
-          used={contextTokens}
-          budget={contextBudget}
-          pct={contextPct}
-          turns={contextTurns}
-          maxTurns={BRAIN_MODEL_TURNS}
-          threshold={limits.compactAtPct}
-          autoCompact={limits.autoCompact}
-          compacting={compacting}
-          disabled={busy}
-          onCompact={canCompact ? () => void compact("manual") : null}
-        />
-        <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
-      </div>
-    </div>
+  const threadTools = (
+    <>
+      {selection.value === "smart" && activity.routedTier && (
+        <span className="text-xs text-muted-foreground">
+          Last model: {TIER_FRIENDLY[activity.routedTier] ?? activity.routedTier}
+        </span>
+      )}
+      {mode === "auto" && activity.modeInfo && (
+        <span className="text-xs text-muted-foreground">Last mode: {activity.modeInfo.label}</span>
+      )}
+      <ContextMeter
+        used={contextTokens}
+        budget={contextBudget}
+        pct={contextPct}
+        turns={contextTurns}
+        maxTurns={BRAIN_MODEL_TURNS}
+        threshold={limits.compactAtPct}
+        autoCompact={limits.autoCompact}
+        compacting={compacting}
+        disabled={busy}
+        onCompact={canCompact ? () => void compact("manual") : null}
+      />
+      <ExportMenu onExport={exportAs} exporting={exporting} hasTables={hasTables} />
+    </>
   );
 
   const suggestions: Suggestion[] = (MODE_SUGGESTIONS[mode] ?? SUGGESTIONS).slice(0, 3);
@@ -2046,8 +2115,21 @@ export function ChatView({
         requestContext={chatBody}
       />
       <PromptLibrary open={libraryOpen} onClose={() => setLibraryOpen(false)} onInsert={prefill} />
-      {studioOpen && <CreativeStudio open={studioOpen} onClose={() => setStudioOpen(false)} value={creativeSettings} onChange={updateCreativeSettings} draft={input} onApplyPrompt={setInput} />}
+      {studioOpen && <CreativeStudio open={studioOpen} onClose={() => setStudioOpen(false)} value={creativeSettings} onChange={updateCreativeSettings} draft={composerValue} onApplyPrompt={updateComposerValue} />}
       <ObjectDrawer refId={drawerRef} onClose={() => setDrawerRef(null)} onAsk={askAbout} />
+      <Modal
+        open={selectedCitation !== null}
+        title={selectedCitation?.ordinal ? `Source ${selectedCitation.ordinal}` : "Source"}
+        onClose={closeCitation}
+        className="max-h-[min(80dvh,34rem)] overflow-y-auto"
+      >
+        {selectedCitation?.source ? <SourceExcerpt source={selectedCitation.source} onOpenRef={(ref) => {
+          closeCitation();
+          setDrawerRef(ref);
+        }} /> : selectedCitation?.error
+          ? <p className="py-2 text-sm text-muted-foreground" role="alert">{selectedCitation.error}</p>
+          : <p className="py-2 text-sm text-muted-foreground" role="status">Loading source…</p>}
+      </Modal>
       {empty ? (
         // -------- New chat (reference "Cortex"): orb, greeting, composer card,
         //          suggestion cards --------------------------------------------
@@ -2063,7 +2145,7 @@ export function ChatView({
               </p>
             </div>
 
-            <div className="mt-6">{heroComposer}</div>
+            <div className="mt-6"><Composer {...composerCore} variant="hero" searchTool={searchTool} advancedTools={advancedTools} /></div>
 
             {isCeoMode ? (
               <>
@@ -2117,7 +2199,7 @@ export function ChatView({
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
             <div ref={scrollRef} onScroll={onScroll} onCopy={onThreadCopy} className="flex-1 overflow-y-auto">
-              <div className={cn(THREAD_COL, "pb-6 pt-5")}>
+              <div className={cn(THREAD_COL, "pb-6 pt-5 sm:pt-9")}>
                 {/* Remembered audit cards poll /api/jobs/[id], which needs the same capability. */}
                 {canDeepAudit && audits.length > 0 && (
                   <div className="mb-5 space-y-3">
@@ -2131,8 +2213,9 @@ export function ChatView({
                     ))}
                   </div>
                 )}
-                <ul className="space-y-6">
+                <ul className="space-y-7 sm:space-y-9">
                   {messages.map((m, idx) => {
+                    if (editingPromptIndex >= 0 && idx > editingPromptIndex) return null;
                     const time = hydrated ? messageTime(m) : null;
                     const streamingThis = idx === lastIndex && busy;
                     const refreshReport = !busy && (idx !== lastIndex || !generationReceipt) ? savedCallReportQuery(messages, idx, timeZone) : null;
@@ -2168,8 +2251,8 @@ export function ChatView({
                                   {m.content}
                                   {time && <MessageTime label={time} className="float-right ml-3 mt-[7px]" />}
                                 </div>
-                                {!busy && (
-                                  <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                                {!busy && !promptEdit && (
+                                  <div className="mt-1 flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 focus-within:opacity-100 group-hover:opacity-100">
                                     <IconButton
                                       aria-label={copiedId === m.id ? "Copied" : "Copy message"}
                                       size="sm"
@@ -2192,20 +2275,38 @@ export function ChatView({
 
                     const shownContent = displayedContent(m);
                     const { text, options: choices } = parseOptions(shownContent);
+                    if (streamingThis && waitingForText) return null;
+                    const previous = messages[idx - 1];
+                    const detectedLearning = canSaveLearning && !streamingThis
+                      ? (previous?.role === "user" ? session.learningByTurn?.[previous.id] : null)
+                        ?? (idx === lastIndex && !busy ? activity.learning : null)
+                      : null;
+                    const autoLearningKey = `auto:${m.id}`;
+                    const manualLearningKey = `manual:${m.id}`;
+                    const autoLearningState = learningStates[autoLearningKey];
                     const approved = approvedIds.has(m.id);
-                    // Answers read as plain, full-width text (no bubble), in the
-                    // chosen answer typeface; tables/code bring their own sans/mono.
                     return (
                       <li key={m.id}>
-                        <div className="group">
+                        <article aria-label="AI Brain answer" className="group min-w-0">
+                          <div className="mb-3 flex items-center gap-2.5 sm:mb-4">
+                            <OrbAvatar size={27} active={streamingThis} className="shrink-0" />
+                            <span className="text-[13px] font-semibold tracking-tight text-foreground">AI Brain</span>
+                          </div>
+                          {idx === lastIndex && !busy && activity.reportScope && (
+                            <ReportScopeSummary scope={activity.reportScope} />
+                          )}
                           <div className="min-w-0">
                             <div
                               className={cn(
-                                "min-w-0 text-[15px] leading-[1.7] text-foreground",
+                                "min-w-0 text-base leading-[1.7] text-foreground",
                                 responseFont === "sans" ? "font-sans" : "font-serif"
                               )}
                             >
-                              <StreamingMarkdown content={text} animate={streamingThis} resume={m.id === resumedId} />
+                              <StreamingMarkdown
+                                content={text}
+                                animate={streamingThis}
+                                citationLinks={idx === lastIndex ? citationLinks : savedCitationLinks}
+                              />
                               {idx === lastIndex && !busy && choices.length > 0 && (
                                 <div className="font-sans text-sm leading-6">
                                   <OptionsPicker options={choices} onPick={pickOption} disabled={busy} />
@@ -2223,38 +2324,53 @@ export function ChatView({
                                 Limited supporting knowledge — verify before relying on this.
                               </div>
                             ) : null}
-                            {idx === lastIndex && !busy && activity.sourcesCount ? (
-                              <SourcesDisclosure count={activity.sourcesCount} sources={activity.sources} />
-                            ) : null}
-                            {idx === lastIndex && !busy && generationReceipt && <GenerationReceipt receipt={generationReceipt} />}
-                            {m.id === liveMessageId && liveReport && <div data-live-call-report data-version={liveReport.version} data-updated-at={liveReport.updatedAt ?? ""} data-state={liveReport.state} className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground" role="status"><span className={liveReport.state === "live" ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-amber-500"} aria-hidden /><span>{liveCallReportLabel(liveReport)}</span>{liveReport.updatedAt && <time dateTime={liveReport.updatedAt}>Updated {new Intl.DateTimeFormat(undefined, { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(liveReport.updatedAt))}</time>}</div>}
+                            {m.id === liveMessageId && liveReport && (
+                              <div
+                                data-live-call-report
+                                data-version={liveReport.version}
+                                data-updated-at={liveReport.updatedAt ?? ""}
+                                data-state={liveReport.state}
+                                className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground"
+                                role="status"
+                              >
+                                <span className={liveReport.state === "live" ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-amber-500"} aria-hidden />
+                                <span>{liveCallReportLabel(liveReport)}</span>
+                                {liveReport.updatedAt && (
+                                  <time dateTime={liveReport.updatedAt}>
+                                    Updated {new Intl.DateTimeFormat(undefined, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(liveReport.updatedAt))}
+                                  </time>
+                                )}
+                              </div>
+                            )}
                             {refreshReport && m.id !== liveMessageId && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-muted p-3 text-xs text-muted-foreground"><span>Saved report · refresh to fetch current statuses for the original date.</span><button type="button" onClick={() => pickOption(refreshReport)} title={refreshReport} className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-1.5 font-medium text-foreground"><RefreshCw size={13} aria-hidden /> Refresh this report</button></div>}
                             {idx === lastIndex && !busy && generationReceipt?.creative === true && <div className="mt-2 flex flex-wrap gap-2">{([['angle', 'Fresh angle'], ['format', 'New format'], ['example', 'Different example']] as const).map(([kind, label]) => <button type="button" key={kind} onClick={() => freshTake(kind)} className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-surface-muted">{label}</button>)}</div>}
-                            {idx === lastIndex &&
-                            !busy &&
-                            activity.learning &&
-                            !(learningState.key === activity.learning.title && learningState.status === "ignored") ? (
+                            {detectedLearning && autoLearningState?.status !== "ignored" ? (
                               <LearningCard
-                                candidate={activity.learning}
-                                state={
-                                  learningState.key === activity.learning.title
-                                    ? learningState
-                                    : { key: activity.learning.title, status: "idle" }
-                                }
-                                onSave={(notes) => saveLearning(activity.learning!, notes)}
-                                onIgnore={() => setLearningState({ key: activity.learning!.title, status: "ignored" })}
+                                candidate={detectedLearning}
+                                state={autoLearningState ?? { status: "idle" }}
+                                onSave={(notes) => saveLearning(autoLearningKey, detectedLearning, notes)}
+                                onIgnore={() => setLearningState(autoLearningKey, { status: "ignored" })}
                               />
                             ) : null}
                             {canSaveLearning && manualLearning?.messageId === m.id ? (
                               <LearningCard
                                 candidate={manualLearning.candidate}
-                                state={
-                                  learningState.key === manualLearning.candidate.title
-                                    ? learningState
-                                    : { key: manualLearning.candidate.title, status: "idle" }
-                                }
-                                onSave={(notes) => saveLearning(manualLearning.candidate, notes)}
+                                state={learningStates[manualLearningKey] ?? { status: "idle" }}
+                                onSave={(notes) => saveLearning(manualLearningKey, manualLearning.candidate, notes)}
                                 onIgnore={() => setManualLearning(null)}
+                              />
+                            ) : null}
+
+                            {idx === lastIndex && !busy && activity.reportScope && (
+                              <ReportFollowupActions scope={activity.reportScope} onDraft={prefill} />
+                            )}
+                            {idx === lastIndex && !busy && activity.sourcesCount ? (
+                              <SourcesDisclosure
+                                count={activity.sourcesCount}
+                                sources={activity.sources}
+                                onOpenRef={setDrawerRef}
+                                onToggleEvidence={() => setEvidenceOpen((open) => !open)}
+                                evidenceOpen={evidenceOpen}
                               />
                             ) : null}
 
@@ -2262,10 +2378,8 @@ export function ChatView({
                             {!streamingThis && m.content.trim() && (
                               <div
                                 className={cn(
-                                  "-ml-1.5 mt-1.5 flex items-center gap-0.5 transition-opacity",
-                                  idx === lastIndex
-                                    ? "opacity-100"
-                                    : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+                                  "-ml-1.5 mt-2 flex flex-wrap items-center gap-0.5 text-muted-foreground transition-opacity",
+                                  idx !== lastIndex && "[@media(hover:hover)]:opacity-0 focus-within:opacity-100 group-hover:opacity-100"
                                 )}
                               >
                                 {idx === lastIndex && (
@@ -2348,8 +2462,11 @@ export function ChatView({
                                 {time && <MessageTime label={time} className="ml-1.5" />}
                               </div>
                             )}
+                            {idx === lastIndex && !busy && generationReceipt && (
+                              <GenerationReceipt receipt={generationReceipt} />
+                            )}
                           </div>
-                        </div>
+                        </article>
                       </li>
                     );
                   })}
@@ -2363,7 +2480,7 @@ export function ChatView({
                     </li>
                   )}
 
-                  {waitingForText && (
+                  {waitingForText && !promptEdit && (
                     <li aria-live="polite" aria-label="Assistant is working" className="flex items-start gap-2.5">
                       <OrbAvatar size={24} active className="mt-0.5 shrink-0" />
                       <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
@@ -2384,13 +2501,13 @@ export function ChatView({
                     <span>Runs a new complete scan. This can take longer than the saved report.</span>
                   </div>
                 )}
-                {reportFailure && (
+                {reportFailure && !promptEdit && (
                   <div role="alert" className="mt-5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm">
                     <p>The report was not completed. Retry reads the sources again; your question is preserved.</p>
                     <Button variant="secondary" size="sm" className="mt-2" onClick={regenerate}><RefreshCw size={14} />Retry report</Button>
                   </div>
                 )}
-                {error && (
+                {error && !promptEdit && (
                   <div
                     role="alert"
                     className="mt-5 flex flex-col gap-1.5 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[13px] text-danger"
@@ -2409,7 +2526,7 @@ export function ChatView({
                   </div>
                 )}
 
-                {emptyOutput && !reportFailure && (
+                {emptyOutput && !reportFailure && !promptEdit && (
                   <div
                     role="alert"
                     className="mt-5 flex flex-col gap-1.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px] text-foreground"
@@ -2507,17 +2624,16 @@ export function ChatView({
                     {compactNote.text}
                   </p>
                 )}
-                {toolbar}
                 <QueuedTurns
                   items={queue}
                   paused={queuePaused}
                   onRemove={removeQueued}
-                  onSendNow={sendQueuedNow}
+                  onSendNow={promptEdit ? undefined : sendQueuedNow}
                   onClear={clearQueued}
                 />
-                <Composer {...composerCore} variant="dock" />
+                <Composer {...composerCore} variant="dock" searchTool={searchTool} advancedTools={advancedTools} threadTools={threadTools} />
                 <p className="mt-1.5 hidden text-center text-[11px] text-subtle-foreground sm:block">
-                  Grounded in your knowledge base · Enter to send, Shift+Enter for a new line
+                  Enter to send · Shift+Enter for a new line
                 </p>
               </div>
             </div>
@@ -2788,6 +2904,9 @@ function speakableText(md: string): string {
  * the left of the send button, which keeps its rightmost slot and queues the
  * message for when the answer finishes (disabled until there's text).
  */
+const composerToolClass =
+  "inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 function Composer({
   variant,
   textareaRef,
@@ -2797,6 +2916,8 @@ function Composer({
   onSubmit,
   busy,
   onStop,
+  onStopAndEdit,
+  promptEditing,
   onSlashSelect,
   attachments,
   onAttachFiles,
@@ -2808,8 +2929,9 @@ function Composer({
   canSend,
   maxFiles,
   onOpenLibrary,
-  leftTools,
-  rightTools,
+  searchTool,
+  advancedTools,
+  threadTools,
 }: {
   variant: "hero" | "dock";
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -2819,6 +2941,8 @@ function Composer({
   onSubmit: (e: React.FormEvent) => void;
   busy: boolean;
   onStop: () => void;
+  onStopAndEdit?: () => void;
+  promptEditing?: { files: ChatAttachment[]; cancel: () => void };
   onSlashSelect: (text: string) => void;
   attachments: PendingAttachment[];
   onAttachFiles: (files: FileList | File[]) => void;
@@ -2833,9 +2957,13 @@ function Composer({
   canSend: boolean;
   maxFiles: number;
   onOpenLibrary: () => void;
-  leftTools?: React.ReactNode;
-  rightTools?: React.ReactNode;
+  searchTool?: React.ReactNode;
+  advancedTools: React.ReactNode;
+  threadTools?: React.ReactNode;
 }) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsId = useId();
+  const optionsTrigger = useRef<HTMLButtonElement>(null);
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -2869,6 +2997,7 @@ function Composer({
   };
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.nativeEvent.isComposing) return;
     if (slashOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -2936,11 +3065,11 @@ function Composer({
       tabIndex={-1}
     />
   ) : null;
-  const mic = onDictate ? <VoiceInput onText={onDictate} /> : null;
+  const mic = onDictate ? <VoiceInput onText={onDictate} className="h-10 w-10" /> : null;
 
   const tray =
     attachments.length > 0 ? (
-      <ul className={cn("flex flex-wrap gap-1.5", variant === "hero" ? "mb-2" : "mb-2 px-1")}>
+      <ul className="mb-2 flex flex-wrap gap-1.5">
         {attachments.map((a) => (
           <AttachmentChip
             key={a.id}
@@ -2966,162 +3095,155 @@ function Composer({
     onDrop,
   };
 
-  const textarea = (placeholder: string, className: string) => (
-    <>
-      <label htmlFor="chat-input" className="sr-only">
-        Message the assistant
-      </label>
-      <textarea
-        id="chat-input"
-        ref={textareaRef}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        rows={variant === "hero" ? 2 : 1}
-        placeholder={placeholder}
-        className={className}
-      />
-    </>
-  );
-
-  // Mid-answer, Send queues the message (it goes out when the answer finishes).
-  const sendLabel = busy ? "Queue message" : "Send message";
-  const sendTitle = busy ? "Queue: sends when the current answer finishes" : undefined;
-
-  const stopButton = (className: string) => (
-    <button
-      type="button"
-      aria-label="Stop generating"
-      title="Stop generating"
-      onClick={onStop}
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-ink text-ink-foreground transition-transform duration-100 hover:bg-ink-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        className
-      )}
+  // While a response streams, the same Send slot queues the next turn.
+  const sendLabel = promptEditing ? "Resend edited prompt" : busy ? "Queue message" : "Send message";
+  return (
+    <form
+      noValidate
+      onSubmit={onSubmit}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        if (optionsOpen) {
+          e.preventDefault();
+          setOptionsOpen(false);
+          optionsTrigger.current?.focus();
+        } else if (promptEditing) {
+          e.preventDefault();
+          promptEditing.cancel();
+        }
+      }}
+      className="relative"
     >
-      <Square size={13} className="fill-current" />
-    </button>
-  );
-
-  if (variant === "hero") {
-    return (
-      <form onSubmit={onSubmit} className="relative">
-        {slashMenu}
-        <div
-          {...dragProps}
-          className={cn(
-            "rounded-2xl border bg-surface shadow-float transition-[border-color,box-shadow] duration-200",
-            dragging
-              ? "border-accent/60 ring-4 ring-accent/15"
-              : "border-border focus-within:border-accent/40 focus-within:ring-4 focus-within:ring-accent/10"
-          )}
-        >
-          {fileInput}
-          <div className="px-4 pt-3">
-            {tray}
-            {textarea(
-              "Ask me anything…  (type / for templates)",
-              "block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
+      {slashMenu}
+      <div
+        {...dragProps}
+        className={cn(
+          "rounded-[22px] border bg-surface transition-[border-color,box-shadow] duration-200",
+          variant === "hero" && "shadow-float",
+          dragging
+            ? "border-accent/60 ring-4 ring-accent/15"
+            : "border-border focus-within:border-accent/40 focus-within:ring-2 focus-within:ring-accent/10"
+        )}
+      >
+        {fileInput}
+        {(onStopAndEdit || promptEditing) && (
+          <div className="flex min-h-10 items-center gap-2 border-b border-border px-3 sm:px-4">
+            {promptEditing ? (
+              <>
+                <span role="status" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-strong">
+                  <Pencil size={14} aria-hidden /> Editing prompt
+                </span>
+                <button type="button" onClick={promptEditing.cancel} className={cn(composerToolClass, "ml-auto h-9")}>
+                  Cancel edit
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={onStopAndEdit} className={cn(composerToolClass, "ml-auto h-9 text-foreground")}>
+                <Pencil size={14} aria-hidden /> Stop &amp; edit
+              </button>
             )}
           </div>
-          <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-1.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{leftTools}</div>
-            <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              {rightTools}
-              {mic}
-              {/* Stop sits LEFT of Send/Queue, which keeps the rightmost slot. */}
-              {busy && stopButton("ml-1 mr-1.5 h-8 w-8")}
-              <button
-                type="submit"
-                aria-label={sendLabel}
-                title={sendTitle}
-                disabled={!canSend}
-                className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-white shadow-[0_4px_12px_-4px_rgb(14_158_139/0.7)] transition-[transform,opacity,box-shadow] duration-150 hover:shadow-[0_6px_16px_-4px_rgb(14_158_139/0.9)] active:scale-95 disabled:opacity-40 disabled:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <ArrowUp size={16} />
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-border bg-accent-softer px-2.5 py-1.5">
-            <button
-              type="button"
-              onClick={onOpenLibrary}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-accent-strong transition-colors hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Sparkles size={14} className="shrink-0" aria-hidden />
-              Saved prompts
-            </button>
+        )}
+        <div className="px-3.5 pt-3 sm:px-4">
+          {tray}
+          {!!promptEditing?.files.length && (
+            <ul aria-label="Files from the original prompt" className="mb-2 flex flex-wrap gap-1.5">
+              {promptEditing.files.map((file, index) => (
+                <li key={index} className="flex max-w-full items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs text-muted-foreground">
+                  <Paperclip size={13} className="shrink-0" aria-hidden />
+                  <span className="truncate">{file.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label htmlFor="chat-input" className="sr-only">Message the assistant</label>
+          <textarea
+            id="chat-input"
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            rows={variant === "hero" ? 2 : 1}
+            placeholder={promptEditing ? "Revise your prompt…" : busy ? "Queue a follow-up…" : variant === "hero" ? "Ask PractiScale AI Brain…" : "Ask a follow-up…"}
+            className={cn(
+              "block max-h-[200px] w-full resize-none bg-transparent text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground",
+              variant === "hero" ? "min-h-[52px]" : "min-h-7"
+            )}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0.5 px-2 pb-2 pt-1 sm:px-2.5">
+          <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
             {canAttach && (
               <button
                 type="button"
                 onClick={pickFiles}
                 disabled={atMax}
+                aria-label={atMax ? `Attachment limit reached (${maxFiles})` : "Attach files"}
                 title={atMax ? `Up to ${maxFiles} files` : `Attach files · ${attachLabel}`}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-surface-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={cn(composerToolClass, "w-10 px-0 disabled:opacity-40")}
               >
-                <Paperclip size={14} className="shrink-0" aria-hidden />
-                Attach file
+                <Paperclip size={18} aria-hidden />
               </button>
             )}
+            {searchTool}
+            <button
+              ref={optionsTrigger}
+              type="button"
+              aria-label="More options"
+              aria-expanded={optionsOpen}
+              aria-controls={optionsId}
+              title="More options"
+              onClick={() => setOptionsOpen((open) => !open)}
+              className={cn(composerToolClass, "min-w-10", optionsOpen && "bg-surface-muted text-foreground")}
+            >
+              <Settings2 size={17} aria-hidden />
+              <span className="hidden sm:inline">More options</span>
+            </button>
+          </div>
+          <div className="ml-auto flex h-10 shrink-0 items-center gap-0.5">
+            {mic}
+            {busy && !promptEditing && (
+              <button
+                type="button"
+                aria-label="Stop generating"
+                title="Stop generating"
+                onClick={onStop}
+                className={cn(composerToolClass, "w-10 px-0")}
+              >
+                <Square size={14} className="fill-current" aria-hidden />
+              </button>
+            )}
+            <button
+              type="submit"
+              aria-label={sendLabel}
+              title={busy && !promptEditing ? "Queue: sends when the current answer finishes" : sendLabel}
+              disabled={!canSend}
+              className={cn(
+                "ml-1 flex h-10 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                promptEditing ? "gap-1.5 px-3.5 text-xs font-semibold" : "w-10"
+              )}
+            >
+              {promptEditing && <span>Resend</span>}
+              <ArrowUp size={promptEditing ? 16 : 20} aria-hidden />
+            </button>
           </div>
         </div>
-      </form>
-    );
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="relative">
-      {slashMenu}
-      {tray}
-      <div
-        {...dragProps}
-        className={cn(
-          "flex items-end gap-1 rounded-[24px] border p-2 transition-[border-color,background-color,box-shadow] duration-200",
-          dragging
-            ? "border-accent/60 bg-surface ring-4 ring-accent/15"
-            : "border-border bg-surface-muted focus-within:border-accent/35 focus-within:bg-surface focus-within:shadow-float"
-        )}
-      >
-        {fileInput}
-        {canAttach && (
-          <button
-            type="button"
-            onClick={pickFiles}
-            disabled={atMax}
-            aria-label={atMax ? `Attachment limit reached (${maxFiles})` : "Attach files"}
-            title={atMax ? `Up to ${maxFiles} files` : `Attach files · ${attachLabel}`}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-ink-foreground transition-[transform,background-color] duration-150 hover:bg-ink-hover active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <Paperclip size={16} />
-          </button>
-        )}
-        {textarea(
-          busy ? "Queue a follow-up…" : "Type your prompt here…",
-          "block max-h-[200px] min-h-[32px] flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-6 text-foreground outline-none placeholder:text-subtle-foreground"
-        )}
-        <div className="flex h-8 shrink-0 items-center gap-0.5">
-          <IconButton
-            type="button"
-            aria-label="Saved prompts"
-            title="Saved prompts"
-            onClick={onOpenLibrary}
-            className="hidden sm:inline-flex"
-          >
-            <Sparkles size={16} />
-          </IconButton>
-          {mic}
-          {/* Stable slots: Send (Queue while an answer streams) always holds the
-              rightmost spot, so typing never moves it; Stop sits to its left. */}
-          {busy && stopButton("ml-0.5 mr-1.5 h-8 w-8")}
-          <button
-            type="submit"
-            aria-label={sendLabel}
-            title={sendTitle}
-            disabled={!canSend}
-            className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tea text-tea-foreground transition-[transform,background-color,opacity] duration-150 hover:bg-tea-hover active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <ArrowRight size={16} />
-          </button>
+        <div id={optionsId} hidden={!optionsOpen} className="border-t border-border px-3 pb-2 pt-2.5">
+          {optionsOpen && (
+            <>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                {advancedTools}
+                <button type="button" onClick={onOpenLibrary} className={composerToolClass}>
+                  <Sparkles size={15} aria-hidden /> Saved prompts
+                </button>
+              </div>
+              {threadTools && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-border pt-1.5">
+                  {threadTools}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </form>
@@ -3144,7 +3266,7 @@ function QueuedTurns({
   items: readonly QueuedTurn[];
   paused: boolean;
   onRemove: (turnId: string) => void;
-  onSendNow: () => void;
+  onSendNow?: () => void;
   onClear: () => void;
 }) {
   const count = items.length;
@@ -3163,7 +3285,7 @@ function QueuedTurns({
               <Pause size={14} className="shrink-0 text-warning" aria-hidden />
               <span className="min-w-0 flex-1">Queued messages paused</span>
               <span className="flex shrink-0 items-center gap-1">
-                <Button size="sm" onClick={onSendNow}>
+                <Button size="sm" onClick={onSendNow} disabled={!onSendNow}>
                   Send now
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onClear}>
@@ -3508,48 +3630,161 @@ function RegenerateMenu({
   );
 }
 
-/** The "Grounded in N sources" line, expandable to the retrieved source snippets. */
-function SourcesDisclosure({ count, sources }: { count: number; sources: SourceItem[] }) {
-  const [open, setOpen] = useState(false);
-  const has = sources.length > 0;
+function reportPeriod({ from, through }: { from: string; through: string }) {
+  const start = new Date(from + "T00:00:00Z");
+  const end = new Date(through + "T00:00:00Z");
+  const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
+  if (from === through) return formatter.format(start);
+  return from < through && typeof formatter.formatRange === "function"
+    ? formatter.formatRange(start, end)
+    : formatter.format(start) + " – " + formatter.format(end);
+}
+
+function ReportScopeSummary({ scope }: { scope: ReportScope }) {
   return (
-    <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => has && setOpen((o) => !o)}
-        aria-expanded={has ? open : undefined}
-        className={cn(
-          "inline-flex h-7 items-center gap-1 rounded-full px-1.5 text-xs font-medium text-muted-foreground transition-colors",
-          has && "hover:text-accent-strong"
-        )}
-      >
-        {has && (
-          <ChevronRight
-            size={12}
-            className={cn("shrink-0 transition-transform", open && "rotate-90")}
-            aria-hidden
-          />
-        )}
-          Retrieved {count} evidence chunk{count === 1 ? "" : "s"}
-      </button>
-      {open && has && (
-        <ul className="mt-1 space-y-1.5">
-          {sources.map((s, i) => (
-            <li
-              key={s.id}
-              className="rounded-xl border border-border bg-surface px-3 py-2.5 text-xs leading-5"
-            >
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium capitalize leading-4 text-muted-foreground">
-                <FileText size={12} className="shrink-0" aria-hidden />
-                <span>
-                  {i + 1}. {(s.source_type || "source").replace(/_/g, " ")}
-                </span>
-              </div>
-              <p className="text-muted-foreground/90">{s.snippet || "(no preview)"}</p>
-            </li>
-          ))}
-        </ul>
+    <div
+      role="group"
+      aria-label="Report scope"
+      className="mb-4 flex flex-wrap gap-x-4 gap-y-2 rounded-xl border border-border bg-surface-muted/70 px-3 py-2.5 text-xs text-muted-foreground"
+    >
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <Users size={14} className="shrink-0 text-accent-strong" aria-hidden />
+        <span className="sr-only">Team: </span>
+        <span className="break-words font-medium text-foreground">{scope.team}</span>
+      </span>
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <CalendarDays size={14} className="shrink-0 text-accent-strong" aria-hidden />
+        <span className="sr-only">Dates: </span>
+        <span>{reportPeriod(scope)}{scope.comparison && <> <span className="font-medium">vs</span> {reportPeriod(scope.comparison)}</>}</span>
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Database size={14} className="shrink-0 text-accent-strong" aria-hidden />
+        <span className="sr-only">Source: </span>
+        {scope.source}
+      </span>
+    </div>
+  );
+}
+
+function ReportFollowupActions({ scope, onDraft }: { scope: ReportScope; onDraft: (draft: string) => void }) {
+  const teamPrompt = scope.team === "All teams" ? "Just my team" : "All teams";
+  const actions = [
+    ...(scope.source === "Sales Payroll" ? [teamPrompt] : []),
+    ...(!scope.comparison ? ["Compare with last week"] : []),
+  ];
+  return (
+    <div className="mt-4 flex flex-wrap gap-2" aria-label="Report follow-ups" role="group">
+      {actions.map((action) => (
+        <button
+          key={action}
+          type="button"
+          onClick={() => onDraft(action)}
+          className="min-h-8 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-accent/40 hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {action}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function sourceTitle(source: SourceItem) {
+  return source.name?.trim() || source.source_type?.replace(/_/g, " ") || "Source excerpt";
+}
+
+function SourceExcerpt({ source, onOpenRef }: { source: SourceItem; onOpenRef: (ref: string) => void }) {
+  const date = source.date?.slice(0, 10);
+  const ref = source.ref;
+  const scorecard = source.scorecard;
+  const opportunity = source.opportunity;
+  return (
+    <div className="min-w-0 break-words">
+      <p className="text-sm font-semibold first-letter:uppercase">{sourceTitle(source)}</p>
+      {opportunity && (
+        <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <dt>Current status</dt><dd className="font-semibold capitalize text-foreground">{opportunity.status}</dd>
+          <dt>Opportunity ID</dt><dd>{opportunity.id}</dd>
+          <dt>Pipeline ID</dt><dd>{opportunity.pipelineId}</dd>
+          <dt>Stage ID</dt><dd>{opportunity.stageId}</dd>
+          {opportunity.lastStatusChangeAt && <><dt>Last status change</dt><dd><time dateTime={opportunity.lastStatusChangeAt}>{opportunity.lastStatusChangeAt.slice(0, 10)}</time></dd></>}
+        </dl>
       )}
+      {scorecard && (
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Call Scoring scorecard
+          {scorecard.score != null && <> · {scorecard.score}/100</>}
+          {scorecard.band && <> · {scorecard.band}</>}
+          {scorecard.callDate && <> · <span className="whitespace-nowrap">Call on <time dateTime={scorecard.callDate}>{scorecard.callDate}</time></span></>}
+        </p>
+      )}
+      {date && /^\d{4}-\d{2}-\d{2}$/.test(date) && (
+        <p className="mt-0.5 text-xs text-muted-foreground">Source dated <time dateTime={date}>{date}</time></p>
+      )}
+      {source.snippet && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{source.snippet}</p>}
+      {ref && (
+        <button
+          type="button"
+          onClick={() => onOpenRef(ref)}
+          className="mt-1 rounded py-1.5 text-xs font-semibold text-accent-strong hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Open source
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SourcesDisclosure({
+  count,
+  sources,
+  onOpenRef,
+  onToggleEvidence,
+  evidenceOpen,
+}: {
+  count: number;
+  sources: SourceItem[];
+  onOpenRef: (ref: string) => void;
+  onToggleEvidence: () => void;
+  evidenceOpen: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-surface-muted/60 font-sans">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 px-2.5">
+        {sources.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            aria-controls={id}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-medium text-foreground hover:text-accent-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <BookOpen size={15} className="text-accent-strong" aria-hidden />
+            Sources
+            <span className="text-xs font-normal text-muted-foreground">{sources.length}</span>
+            <ChevronDown size={13} aria-hidden className={cn("text-muted-foreground", open && "rotate-180")} />
+          </button>
+        ) : (
+          <p className="py-2.5 text-xs text-muted-foreground">Retrieved {count} source excerpt{count === 1 ? "" : "s"}</p>
+        )}
+        <button
+          type="button"
+          aria-expanded={evidenceOpen}
+          onClick={onToggleEvidence}
+          className="hidden min-h-10 items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:inline-flex"
+        >
+          <PanelRight size={14} aria-hidden />
+          {evidenceOpen ? "Hide evidence panel" : "Evidence panel"}
+        </button>
+      </div>
+      <ul id={id} hidden={!open} className="divide-y divide-border border-t border-border px-3">
+        {open && sources.map((source) => (
+          <li key={source.id} className="py-2.5">
+            <SourceExcerpt source={source} onOpenRef={onOpenRef} />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -3641,6 +3876,12 @@ function OptionsPicker({
  * detected a concrete decision / implementation / result / lesson in what the
  * user said. A human confirms before anything becomes institutional memory.
  */
+type LearningCardState = {
+  status: "idle" | "saving" | "saved" | "ignored" | "error";
+  ref?: string;
+  error?: string;
+};
+
 function LearningCard({
   candidate,
   state,
@@ -3648,7 +3889,7 @@ function LearningCard({
   onIgnore,
 }: {
   candidate: LearningCandidate;
-  state: { status: "idle" | "saving" | "saved" | "ignored" | "error"; ref?: string; error?: string };
+  state: LearningCardState;
   onSave: (notes?: string) => void;
   onIgnore: () => void;
 }) {
@@ -3800,12 +4041,11 @@ function EvidencePanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {sources.length === 0 ? (
           <p className="px-1 py-2 text-xs text-muted-foreground">
-            The sources used to ground the latest answer will appear here, with the
-            same numbers as the inline citations.
+            Evidence retrieved for the latest answer will appear here.
           </p>
         ) : (
           <ul className="space-y-1.5">
-            {sources.map((s, i) => (
+            {sources.map((s) => (
               <li
                 key={s.id}
                 className="rounded-xl border border-border bg-surface px-3 py-2.5 text-xs leading-5 shadow-soft"
@@ -3814,7 +4054,7 @@ function EvidencePanel({
                   <span className="flex min-w-0 items-center gap-1.5">
                     <FileText size={12} className="shrink-0" aria-hidden />
                     <span className="truncate">
-                      {i + 1}. {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
+                      {s.lane ? LANE_LABEL[s.lane] ?? s.lane : (s.source_type || "source").replace(/_/g, " ")}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 normal-case text-muted-foreground/70">
@@ -4037,95 +4277,25 @@ function CeoMemoryModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-// Minimum time between two reveal commits while streaming. Each commit re-renders
-// the message (the last Markdown block re-parses), so ~25 commits/s keeps the
-// glide smooth while capping the render work — a 60/s cadence on a long answer
-// starved the main thread and, with the whole document re-parsing, ran the tab
-// out of memory.
-const REVEAL_INTERVAL_MS = 40;
-
-/**
- * Progressive character reveal for a smooth typewriter effect while streaming.
- * `resume`: the answer was already under way when the view mounted (a chat
- * re-opened mid-answer) — keep what's there and glide on from it, rather than
- * re-typing it from the start.
- */
-function useSmoothText(text: string, active: boolean, resume = false): string {
-  const textRef = useRef(text);
-  textRef.current = text;
-  const [shown, setShown] = useState(text);
-  const posRef = useRef(text.length);
-
-  useEffect(() => {
-    if (!active) {
-      // Not streaming: always show the complete text.
-      posRef.current = textRef.current.length;
-      setShown(textRef.current);
-      return;
-    }
-    // Reveal this turn from the start (or, resumed, from what's already shown).
-    posRef.current = resume ? textRef.current.length : 0;
-    let raf = 0;
-    let lastCommit = 0;
-    const tick = (now: number) => {
-      const full = textRef.current;
-      // requestAnimationFrame is paused/throttled while the tab is hidden, so if
-      // a tick does run while hidden (or the text shrank on a new turn), snap to
-      // the full text — the streamed answer must never freeze or blank out on a
-      // tab/window switch.
-      if ((typeof document !== "undefined" && document.hidden) || posRef.current > full.length) {
-        posRef.current = full.length;
-        setShown(full);
-        lastCommit = now;
-      } else if (posRef.current < full.length && now - lastCommit >= REVEAL_INTERVAL_MS) {
-        // Reveal proportional to the backlog so it glides and always catches up.
-        const step = Math.max(3, Math.ceil((full.length - posRef.current) / 5));
-        posRef.current = Math.min(full.length, posRef.current + step);
-        setShown(full.slice(0, posRef.current));
-        lastCommit = now;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    // When the tab regains focus, immediately show everything received while it
-    // was backgrounded (rAF was paused), then keep gliding from there.
-    const onVisible = () => {
-      if (typeof document !== "undefined" && !document.hidden) {
-        posRef.current = textRef.current.length;
-        setShown(textRef.current);
-      }
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-    // `resume` only matters when streaming starts (it's fixed per message).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  return active ? shown : text;
-}
-
 // Memoized so that when one message streams, the other (settled) messages don't
 // re-parse their markdown on every animation frame.
 const MemoMarkdown = memo(Markdown);
 
-/** Markdown that reveals smoothly while streaming, then renders in full. */
+/** Render the latest streamed text and show a caret while the reply is active. */
 function StreamingMarkdown({
   content,
   animate,
-  resume = false,
+  citationLinks,
 }: {
   content: string;
   animate: boolean;
-  /** Already streaming when the view mounted: continue, don't re-type (see useSmoothText). */
-  resume?: boolean;
+  citationLinks?: CitationLinks;
 }) {
-  const shown = useSmoothText(content, animate, resume);
   return (
     <>
-      <MemoMarkdown content={shown} />
+      <CitationContext.Provider value={citationLinks ?? null}>
+        <MemoMarkdown content={animate ? content : withGhlOpportunityCitations(content)} />
+      </CitationContext.Provider>
       {animate && (
         <span
           className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-accent align-text-bottom"

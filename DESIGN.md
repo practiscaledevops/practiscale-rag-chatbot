@@ -73,3 +73,15 @@ decorative states. The server contract is in `docs/CEO-PORTAL-LOGIN.md`.
 Report waiting states use AnswerProgress with actual source stages and elapsed time, never estimated percentages. Source report failures retain the question and offer an explicit Retry report action; they do not automatically retry or change models.
 
 Hourly appointment reports show snapshot verification time and delayed-sync warnings. Refresh from GHL is an explicit full-scan action, does not change CRM records, and replaces the last answer only when complete.
+
+Weekly Sales Review lives in the authenticated workspace. Use the native week-start date field, existing buttons and report progress component. Keep Payroll outcomes, CRM statuses, and transcript evidence in separate source sections. Partial failure preserves the other sections, and a failed GHL refresh can display the last verified snapshot for the same week.
+
+New chats and follow-ups use the same composer controls. Attachments, source selection, and send stay visible. More options holds the advanced settings and, in a conversation, context and export controls.
+
+Answers use a single reading column, with citations alongside the claims and source previews below the answer. Open live citations in the source preview. Resolve saved citations when clicked and check current source access before showing the excerpt. Show source dates when provided.
+
+For scoped reports, show the team or audience, dates, and data source together above the answer. Follow-up shortcuts draft an editable message. Show both periods for a comparison and keep the report’s original date range visible.
+
+During a reply, Stop & edit puts the active prompt in the composer. Focus moves to the text. Resend replaces the interrupted turn and reuses its attachments. Cancel restores the draft that was in the composer, and queued turns stay paused after stopping.
+
+Learning suggestions may appear under the answer that prompted them while another turn is in progress. A completed answer releases the composer even when the suggestion is pending. Saving a suggestion still requires confirmation.

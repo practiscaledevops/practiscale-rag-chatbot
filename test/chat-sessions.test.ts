@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   abortChat,
+  activeChatAttachments,
   bindChatSessionsOwner,
   bindConversation,
   chatKeyFor,
@@ -329,6 +330,56 @@ describe("finished content + usage", () => {
 });
 
 describe("trackedFetch + abortChat", () => {
+  it("completes the answer before a late learning suggestion and keeps it on the original turn", async () => {
+    const encoder = new TextEncoder();
+    const answer = '0:"Café reply"\nd:{"finishReason":"stop"}\n';
+    let upstream!: ReadableStreamDefaultController<Uint8Array>;
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { upstream = controller; },
+    }), { headers: { "x-brain-deferred-learning": "1" } });
+    const fetch = vi.fn().mockResolvedValueOnce(response).mockResolvedValueOnce(new Response("next answer"));
+    vi.stubGlobal("fetch", fetch);
+    const chatFetch = trackedFetch("learning-chat");
+    const original = await chatFetch("/api/chat", { body: JSON.stringify({ learningTurnId: "first" }) });
+    const bytes = encoder.encode(answer);
+    const split = bytes.indexOf(0xc3) + 1;
+    upstream.enqueue(bytes.slice(0, split));
+    upstream.enqueue(bytes.slice(split, bytes.length - 2));
+    upstream.enqueue(bytes.slice(bytes.length - 2));
+    expect(await original.text()).toBe(answer);
+    expect(getChatSession("learning-chat").learningByTurn).toBeUndefined();
+
+    const next = await chatFetch("/api/chat", { body: JSON.stringify({ learningTurnId: "follow-up" }) });
+    expect(await next.text()).toBe("next answer");
+    upstream.enqueue(encoder.encode('2:[{"type":"learning_candidate","kind":"result","title":"First experiment"}]\n'));
+    upstream.close();
+    await vi.waitFor(() => {
+      expect(getChatSession("learning-chat").learningByTurn).toEqual({
+        first: expect.objectContaining({ title: "First experiment" }),
+      });
+    });
+  });
+
+  it("aborts older learning tails on sign-out so a different user cannot see them", async () => {
+    const encoder = new TextEncoder();
+    let upstream!: ReadableStreamDefaultController<Uint8Array>;
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      start(controller) { upstream = controller; },
+    }), { headers: { "x-brain-deferred-learning": "1" } })).mockResolvedValueOnce(new Response("next"));
+    vi.stubGlobal("fetch", fetch);
+    const chatFetch = trackedFetch("learning-chat");
+    const original = await chatFetch("/api/chat", { body: '{"learningTurnId":"first"}' });
+    upstream.enqueue(encoder.encode('d:{"finishReason":"stop"}\n'));
+    await original.text();
+    await chatFetch("/api/chat", { body: '{"learningTurnId":"next"}' });
+    resetChatSessions();
+    expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    upstream.enqueue(encoder.encode('2:[{"type":"learning_candidate","title":"Old user"}]\n'));
+    upstream.close();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(getChatSession("learning-chat").learningByTurn).toBeUndefined();
+  });
+
   it("is one stable wrapper per chat", () => {
     expect(trackedFetch("a")).toBe(trackedFetch("a"));
     expect(trackedFetch("a")).not.toBe(trackedFetch("b"));
@@ -357,6 +408,27 @@ describe("trackedFetch + abortChat", () => {
     expect(signals[0].aborted).toBe(true);
     // Nothing left to stop.
     expect(abortChat("a")).toBe(false);
+  });
+
+  it("keeps the current turn's attachments available for editing until the request settles", () => {
+    stubFetch();
+    const files = [{ name: "notes.txt", text: "original attachment" }];
+    trackedFetch("editing")("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ attachments: files }),
+    });
+    expect(activeChatAttachments("editing")).toEqual(files);
+    expect(activeChatAttachments("other-chat")).toEqual([]);
+
+    markDone("editing");
+    expect(activeChatAttachments("editing")).toEqual([]);
+
+    trackedFetch("editing")("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ attachments: files }),
+    });
+    expect(abortChat("editing")).toBe(true);
+    expect(activeChatAttachments("editing")).toEqual([]);
   });
 
   it("still honours useChat's own stop() (its signal is linked)", () => {

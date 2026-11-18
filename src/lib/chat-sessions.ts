@@ -29,6 +29,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/attachments-shared";
+import { DEFERRED_LEARNING_HEADER, separateLearningTail, type LearningCandidate } from "@/lib/chat-learning";
 
 /**
  * How long a chat waits after an answer settles before sending its next queued
@@ -61,6 +62,7 @@ export interface ChatSession {
   /** The saved conversation this chat writes to, once known. */
   conversationId: string | null;
   title: string | null;
+  learningByTurn?: Readonly<Record<string, LearningCandidate>>;
 }
 
 /** Fired when a chat that is NOT on screen finishes generating. */
@@ -92,6 +94,10 @@ const listeners = new Set<() => void>();
 const finishedListeners = new Set<(e: ChatFinishedEvent) => void>();
 /** Latest request's abort handle per chat (see trackedFetch). */
 const controllers = new Map<string, AbortController>();
+/** Optional learning can still arrive after the next turn has started. */
+const learningStreams = new Map<string, Map<string, AbortController>>();
+/** The active request body stays in memory only while the turn is in flight. */
+const requestBodies = new WeakMap<AbortController, string>();
 /** One stable fetch wrapper per chat (useChat re-creates its callbacks when `fetch` changes). */
 const fetchers = new Map<string, typeof globalThis.fetch>();
 /** The complete text of each chat's last finished answer (see recordFinished). */
@@ -286,6 +292,8 @@ export function markInflight(id: string): void {
 
 /** The chat's answer settled (finished, failed or stopped). */
 export function markDone(id: string): void {
+  const controller = controllers.get(id);
+  if (controller) requestBodies.delete(controller);
   if (getChatSession(id).inflight) touchChat(id);
   patch(id, { inflight: false });
 }
@@ -553,6 +561,17 @@ export function notifyChatFinished(id: string, ok: boolean): boolean {
 // Abort wiring
 // ---------------------------------------------------------------------------
 
+function learningTurnFrom(body: BodyInit | null | undefined): string | null {
+  if (typeof body !== "string" || !body.includes('"learningTurnId"')) return null;
+  try {
+    const { learningTurnId } = JSON.parse(body) as { learningTurnId?: unknown };
+    return typeof learningTurnId === "string" && learningTurnId && learningTurnId.length <= 128
+      ? learningTurnId : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A fetch for useChat's `fetch` option. Each request gets its own
  * AbortController — linked to the signal useChat passes, so the starting
@@ -574,11 +593,67 @@ export function trackedFetch(id: string): typeof globalThis.fetch {
         else outer.addEventListener("abort", () => ctrl.abort(outer.reason), { once: true });
       }
       controllers.set(id, ctrl);
-      return globalThis.fetch(input, { ...init, signal: ctrl.signal });
+      if (typeof init?.body === "string" && init.body.includes('"attachments":')) {
+        requestBodies.set(ctrl, init.body);
+      }
+      const request = globalThis.fetch(input, { ...init, signal: ctrl.signal });
+      const turn = learningTurnFrom(init?.body);
+      if (!turn) return request;
+      let streams = learningStreams.get(id);
+      if (!streams) {
+        streams = new Map();
+        learningStreams.set(id, streams);
+      }
+      streams.get(turn)?.abort();
+      streams.set(turn, ctrl);
+      update(id, (session) => {
+        if (!session.learningByTurn || !Object.hasOwn(session.learningByTurn, turn)) return session;
+        const learningByTurn = { ...session.learningByTurn };
+        delete learningByTurn[turn];
+        return { ...session, learningByTurn };
+      });
+      const close = () => {
+        const active = learningStreams.get(id);
+        if (active?.get(turn) !== ctrl) return;
+        active.delete(turn);
+        if (!active.size) learningStreams.delete(id);
+      };
+      return request.then((response) => {
+        if (!response.ok || !response.body || response.headers.get(DEFERRED_LEARNING_HEADER) !== "1") {
+          close();
+          return response;
+        }
+        return separateLearningTail(response, (candidate) => {
+          if (ctrl.signal.aborted || learningStreams.get(id)?.get(turn) !== ctrl) return;
+          update(id, (session) => {
+            const recent = Object.entries(session.learningByTurn ?? {}).slice(-15);
+            return { ...session, learningByTurn: Object.fromEntries([...recent, [turn, candidate]]) };
+          });
+        }, close);
+      }, (error) => {
+        close();
+        throw error;
+      });
     };
     fetchers.set(id, f);
   }
   return f;
+}
+
+/** Reuse the active turn's files without touching the next draft's attachment tray. */
+export function activeChatAttachments(id: string): ChatAttachment[] {
+  const controller = controllers.get(id);
+  if (!controller || controller.signal.aborted) return [];
+  const body = requestBodies.get(controller);
+  if (!body) return [];
+  try {
+    const { attachments } = JSON.parse(body) as { attachments?: unknown };
+    return Array.isArray(attachments)
+      ? attachments.filter((file): file is ChatAttachment => file != null && typeof file.name === "string" && typeof file.text === "string")
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Stop the chat's current request, whoever started it. Returns whether there was one to stop. */
@@ -598,10 +673,12 @@ export function abortChat(id: string): boolean {
 export function discardChat(conversationId: string): void {
   const id = chatKeyFor(conversationId);
   abortChat(id);
+  for (const controller of learningStreams.get(id)?.values() ?? []) controller.abort();
+  learningStreams.delete(id);
   touched.delete(id);
   knownThreads.delete(id);
   if (!state.sessions[id]) return;
-  patch(id, { queue: [], paused: false, handedOff: false, inflight: false, preparing: false });
+  patch(id, { queue: [], paused: false, handedOff: false, inflight: false, preparing: false, learningByTurn: undefined });
 }
 
 // ---------------------------------------------------------------------------
@@ -616,6 +693,10 @@ export function discardChat(conversationId: string): void {
  */
 export function resetChatSessions(): void {
   for (const ctrl of controllers.values()) ctrl.abort();
+  for (const streams of learningStreams.values()) {
+    for (const ctrl of streams.values()) ctrl.abort();
+  }
+  learningStreams.clear();
   controllers.clear();
   finished.clear();
   aliases.clear();

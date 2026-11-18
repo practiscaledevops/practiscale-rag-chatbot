@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { canOpenWeeklySalesReview } from "@/lib/weekly-sales-review-access";
 import { getUser } from "@/lib/auth";
 import { getSessionProfile } from "@/lib/admin";
 import type { ModelTier } from "@/lib/brain";
@@ -123,11 +124,13 @@ export default async function AppLayout({
       email={profile.email ?? ""}
       avatarUrl={avatarUrl}
       isAdmin={isAdmin}
+      weeklySalesReview={canOpenWeeklySalesReview(profile.role)}
       // The user's RESOLVED capability ids (not the legacy feature keys): the
       // mode picker (allowedModeDefs) treats a capability list as authoritative,
       // so it shows exactly the experts this user was granted.
       features={profile.capabilities}
       initialTokens={monthTokens}
+      chatLimits={settings.chat}
     >
       {children}
     </AppChrome>

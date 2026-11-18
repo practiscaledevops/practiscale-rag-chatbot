@@ -1,6 +1,9 @@
-import { Fragment, memo, type ReactNode } from "react";
+"use client";
+
+import { createContext, Fragment, memo, useContext, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import {
+  CITATION_ID_PATTERN,
   LIST_ITEM_RE,
   TASK_RE,
   parseListRun,
@@ -12,8 +15,13 @@ import { CopyCodeButton } from "./CopyCodeButton";
 import { TableBlock } from "./TableBlock";
 import { normalizeTableMarkdown } from "@/lib/table-markdown";
 
-// No "use client": this is a pure, hook-free renderer, so it stays a shared
-// component (rendered inside the client ChatView today, reusable server-side).
+export interface CitationLinks {
+  disabled?: boolean;
+  titleFor: (id: string) => string | undefined;
+  open: (id: string, ordinal?: number) => void;
+}
+
+export const CitationContext = createContext<CitationLinks | null>(null);
 
 /**
  * A small, dependency-free Markdown renderer for assistant messages.
@@ -34,7 +42,7 @@ import { normalizeTableMarkdown } from "@/lib/table-markdown";
  *
  * Citations: the Brain tags supporting chunks as [chunk-uuid]. We map each unique
  * id to a small ordinal ([1], [2], …) so answers read cleanly instead of showing
- * raw 36-char UUIDs; the full id stays in the chip's tooltip.
+ * raw 36-char UUIDs. The chat can supply a matching source preview.
  *
  * Streaming cost: the content is split into top-level blocks (blank-line
  * separated, fenced code kept whole) and each block is a memoized component.
@@ -398,8 +406,7 @@ function renderList(
 // A full chunk uuid, the model's 8-char shortening of one ([018d99c0]), or a
 // short ordinal. Long answers routinely shorten ids, and an un-chipped
 // "[018d99c0] [7e7f59f1]" tail reads as noise.
-const CITE_RE =
-  /\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{8}|\d{1,3})\]/g;
+const CITE_RE = new RegExp(`\\[(${CITATION_ID_PATTERN})\\]`, "g");
 
 // Inline token patterns, checked at each position; the earliest match wins.
 // Emphasis must hug its text ("a * b * c" is arithmetic, not italics) and
@@ -488,23 +495,35 @@ function renderInline(
 }
 
 /**
- * A compact inline source chip for a `[id]` citation. Shows a small ordinal
- * ([1], [2], …) with the full chunk id in the tooltip, so answers read cleanly.
- * Non-interactive for now (the Brain does not yet return per-citation source
- * metadata to link to); the ordinal + tooltip already make sources traceable.
+ * Open live evidence or resolve an eligible saved reference through the chat.
  */
 function CitationChip({ id, ordinal }: { id: string; ordinal?: number }) {
+  const links = useContext(CitationContext);
   const label = ordinal ?? id.slice(0, 4);
+  const title = links?.titleFor(id);
+  const styles = "inline-flex min-w-5 items-center justify-center rounded-full bg-accent-soft px-1.5 font-sans text-[11px] font-semibold leading-none text-accent-strong ring-1 ring-inset ring-accent/20";
   return (
-    <sup className="mx-0.5">
-      <span
-        className="inline-flex h-4 items-center rounded-full bg-accent-soft px-1.5 font-sans text-[10px] font-semibold leading-none text-accent-strong ring-1 ring-inset ring-accent/20"
-        title={`Source ${id}`}
-        aria-label={`Source ${ordinal ? `${ordinal}` : id}`}
-      >
-        {label}
-      </span>
-    </sup>
+    <span className="mx-0.5 whitespace-nowrap align-baseline">
+      {links && title ? (
+        <button
+          type="button"
+          disabled={links.disabled}
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            links.open(id, ordinal);
+          }}
+          className={cn(styles, "h-6 enabled:hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70")}
+          title={title}
+          aria-label={`Open source ${label}: ${title}`}
+        >
+          {label}
+        </button>
+      ) : (
+        <span className={cn(styles, "h-5")} title={`Source ${id}`} aria-label={`Source ${ordinal ?? id}`}>
+          {label}
+        </span>
+      )}
+    </span>
   );
 }
 

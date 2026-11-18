@@ -9,6 +9,7 @@ import { Modal } from "@/components/Modal";
 import { discardChat } from "@/lib/chat-sessions";
 import type { ModelTier } from "@/lib/brain";
 import type { BrainModel } from "@/lib/models";
+import type { ChatLimits } from "@/lib/attachments-shared";
 
 // Full history/project shapes (a superset of the Sidebar's display items).
 export interface Conversation {
@@ -49,6 +50,7 @@ export interface AppChromeProps {
   avatarUrl?: string | null;
   /** Whether to surface the Admin link (role resolved server-side). */
   isAdmin?: boolean;
+  weeklySalesReview?: boolean;
   /**
    * The user's resolved capability ids (SessionProfile.capabilities). AppShell
    * exposes them to the chrome and the chat (useCapability) to hide what the
@@ -57,6 +59,7 @@ export interface AppChromeProps {
   features?: string[];
   /** Tokens the user has already spent this month, for the persisted meter. */
   initialTokens?: number;
+  chatLimits?: ChatLimits;
   children: React.ReactNode;
 }
 
@@ -155,8 +158,10 @@ export function AppChrome({
   email = "",
   avatarUrl = null,
   isAdmin = false,
+  weeklySalesReview = false,
   features = NO_FEATURES,
   initialTokens = 0,
+  chatLimits,
   children,
 }: AppChromeProps) {
   const router = useRouter();
@@ -408,8 +413,10 @@ export function AppChrome({
         email={email}
         avatarUrl={avatarUrl}
         isAdmin={isAdmin}
+        weeklySalesReview={weeklySalesReview}
         features={features}
         initialTokens={initialTokens}
+        chatLimits={chatLimits}
         title={activeTitle}
         onNewChat={handleNewChat}
         onNewProject={() => setProjectOpen(true)}

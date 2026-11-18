@@ -14,14 +14,8 @@
 // Metering is best-effort: it is scheduled with `after()` and never blocks or
 // breaks the response.
 //
-// Long-chat safety net: the Brain keeps only the last 40 user/assistant turns
-// (each ≤ 40,000 chars) within 120,000 chars for the model. Before forwarding,
-// the conversation is fitted (lib/brain → fitMessagesForBrain): the latest
-// "[Conversation summary]" system turn (from /api/compact) leads and the turns
-// it already folds in are dropped, then the most recent turns are kept so the
-// total is ≤ 41 (summary + 40); other system turns are dropped (the Brain
-// discards them anyway) and each turn is clipped to 40,000 chars. Only the
-// UPSTREAM copy is fitted — persistence keeps the full history.
+// The upstream request keeps a short recent window, the latest compaction
+// summary, and selected earlier context. Persistence keeps the full history.
 //
 // Attachments: at most BRAIN_MAX_ATTACHMENTS entries reach the Brain (its
 // ChatBodySchema cap). The user's own files go first; every project file is
@@ -38,7 +32,6 @@ import {
   brainModelHeaders,
   fetchBrainKnowledgeScopes,
   fitAttachmentsForBrain,
-  fitMessagesForBrain,
   safeBrainChatError,
   type ModelSelection,
 } from "@/lib/brain";
@@ -49,7 +42,7 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { resolveMode, canUseExecutive, allowedModes, isExecutiveMode } from "@/lib/work-modes";
 import { accessFromProfile, allowedSourceTypes, effectiveCapabilities, SENSITIVE_SOURCE_TYPES } from "@/lib/access";
 import { getCeoMemory } from "@/lib/ceo-memory";
-import { loadProjectContextForConversation } from "@/lib/project-context";
+import { loadProjectContext } from "@/lib/project-context";
 import { audit } from "@/lib/audit";
 import { fetchBrainModels, isSelectionAllowed } from "@/lib/models";
 import { CHAT_LIMIT_BOUNDS, loadWorkspaceSettings } from "@/lib/settings";
@@ -57,6 +50,8 @@ import { OUTPUT_TYPES, type OutputType } from "@/lib/output-types";
 import { meterStreamAndRecord, type UsageContext } from "@/lib/usage";
 import { rateLimit } from "@/lib/ratelimit";
 import { isDemo } from "@/lib/demo/mode";
+import { DEFERRED_LEARNING_HEADER } from "@/lib/chat-learning";
+import { fitChatContext } from "@/lib/chat-history-context";
 import { demoChatStreamResponse } from "@/lib/demo/stream";
 import { isoOrUndefined, rowTimestamps } from "@/lib/message-times";
 import { previousTurnIndex, storedAnswerIndex, storedLeadsTo, turnAlreadySaved, type StoredTurnRow } from "@/lib/turn-capture";
@@ -85,8 +80,8 @@ const OUTPUT_TYPE_IDS = OUTPUT_TYPES.map((o) => o.id) as [OutputType, ...OutputT
 // same conversation payload validates identically wherever it enters the app.
 // This is an authenticated-but-untrusted body: without these caps a client could
 // forward an unbounded messages array (and arbitrarily large content) straight to
-// the Brain on the scoped key. Unknown per-message fields (id, createdAt, parts…)
-// are stripped — only { role, content } is forwarded upstream.
+// the Brain on the scoped key. Only role, content, and valid send times are
+// forwarded upstream.
 const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"]),
   content: z.string().max(100_000),
@@ -150,10 +145,43 @@ function asUuid(v: unknown): string | null {
 interface OwnedConversation {
   id: string;
   version: string;
+  projectId: string | null;
 }
 
-function toOwned(data: { id?: unknown; updated_at?: unknown } | null): OwnedConversation | null {
-  return data?.id ? { id: String(data.id), version: data.updated_at ? String(data.updated_at) : "" } : null;
+function toOwned(data: { id?: unknown; updated_at?: unknown; project_id?: unknown } | null): OwnedConversation | null {
+  return data?.id ? {
+    id: String(data.id),
+    version: data.updated_at ? String(data.updated_at) : "",
+    projectId: typeof data.project_id === "string" ? data.project_id : null,
+  } : null;
+}
+
+/** Only spend a history read on a terse request to transform the preceding reply. */
+async function hasSavedAnswer(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  conversation: OwnedConversation | null,
+  userId: string,
+  messages: readonly { role: string; content: string }[],
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!conversation) return false;
+  const [reply, request] = messages.filter(message => message.role !== "system").slice(-2);
+  if (reply?.role !== "assistant" || request?.role !== "user" || request.content.length > 100 || reply.content.length > 12_000) return false;
+  const initialWords = /^(?:please\s+)?(?:(?:turn|put|format|show|present|make|shorten|summari[sz]e|explain)\s+(?:it|that|this|the (?:last|previous) (?:answer|reply))\b|explain (?:point|step|item)\s+)/i;
+  if (!initialWords.test(request.content.trim())) return false;
+  try {
+    const lookup = supabase.from("messages")
+      .select("role, content")
+      .eq("conversation_id", conversation.id)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const { data, error } = await (isDemo() ? lookup : lookup.abortSignal(AbortSignal.any([signal, AbortSignal.timeout(750)])))
+      .maybeSingle();
+    return !error && data?.role === "assistant" && data.content.trim() === reply.content.trim();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -162,13 +190,15 @@ function toOwned(data: { id?: unknown; updated_at?: unknown } | null): OwnedConv
  * fabricated id (the body is client-controlled) resolves to null rather than
  * being written into usage_events / the audit log.
  */
-async function ownedConversation(id: string | null): Promise<OwnedConversation | null> {
+async function ownedConversation(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  id: string | null,
+): Promise<OwnedConversation | null> {
   if (!id) return null;
   try {
-    const supabase = await createSupabaseServerClient();
     const { data } = await supabase
       .from("conversations")
-      .select("id, updated_at")
+      .select("id, updated_at, project_id")
       .eq("id", id)
       .maybeSingle();
     return toOwned(data);
@@ -336,11 +366,34 @@ export async function POST(req: Request) {
           .map((a: any) => (typeof a?.name === "string" ? a.name : ""))
           .filter(Boolean)
       : [];
-    const demo = demoChatStreamResponse(last?.content ?? "", attachmentNames);
+    const prior = z.array(chatMessageSchema).max(2000).safeParse(demoMessages);
+    const demoConversation = await ownedDemoConversation(body?.conversationId);
+    // The optional loopback Brain demo exercises the same resolver as a live
+    // report. Regular demo chats still use the standalone sample responses.
+    const demoBrain = process.env.LOCAL_BRAIN_REPORT_DEMO_URL;
+    let demo: Response | undefined;
+    if (process.env.NODE_ENV !== "production" && demoBrain && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(demoBrain)
+      && prior.success && !attachmentNames.length) {
+      const { messages: fittedMessages, earlierContext } = fitChatContext(prior.data);
+      const savedConversation = await hasSavedAnswer(await createSupabaseServerClient(), demoConversation, DEMO_USER_ID, fittedMessages, req.signal);
+      const upstream = await fetch(`${demoBrain}/api/v1/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: fittedMessages,
+          timeZone: timeZoneOrUndefined(body?.timeZone),
+          savedConversation,
+          earlierContext,
+        }),
+        signal: AbortSignal.any([req.signal, AbortSignal.timeout(15_000)]),
+        redirect: "error",
+      }).catch(() => null);
+      if (upstream?.ok && (upstream.headers.get("x-brain-demo-report") === "1" || upstream.headers.get("x-brain-demo-chat") === "1")) demo = upstream;
+      else await upstream?.body?.cancel().catch(() => {});
+    }
+    demo ??= demoChatStreamResponse(last?.content ?? "", attachmentNames);
     // Save the finished answer server-side like the real path does, so a chat
     // that finishes in the background (navigated away, queued turns) is kept.
-    const demoConversation = await ownedDemoConversation(body?.conversationId);
-    const prior = z.array(chatMessageSchema).max(2000).safeParse(demoMessages);
     if (!demoConversation || !prior.success || !demo.body) return demo;
     const [demoClient, demoText] = demo.body.tee();
     after(() => captureAndSaveTurn(demoText, demoConversation, prior.data, DEMO_USER_ID));
@@ -349,7 +402,9 @@ export async function POST(req: Request) {
 
   // 1. Identity + permissions, resolved SERVER-SIDE from the session — BEFORE
   //    the (untrusted) body is even read, so an anonymous caller costs nothing.
+  const requestStartedAt = performance.now();
   const profile = await getSessionProfile();
+  const authorizationMs = Math.round(performance.now() - requestStartedAt);
   if (!profile) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -376,11 +431,10 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  // Forward only the sanitized { role, content } turns upstream.
+  // Forward only the sanitized turns upstream.
   const safeMessages = parsed.data.messages;
-  // The copy the Brain sees: ≤ 60 turns (latest summary first), each ≤ 40,000 chars.
-  // `safeMessages` stays untouched for persistence (captureAndSaveTurn).
-  const brainMessages = fitMessagesForBrain(safeMessages);
+  // Keep the full transcript for persistence and send a smaller model window.
+  const { messages: brainMessages, earlierContext } = fitChatContext(safeMessages);
   if (brainMessages.length === 0) {
     return Response.json({ error: "Invalid request", detail: "No messages to send." }, { status: 400 });
   }
@@ -397,10 +451,11 @@ export async function POST(req: Request) {
   //    allowlist) and the workspace settings supply the admin denylist +
   //    pricing overrides; the conversation id is verified as the caller's own
   //    (and its version as of now kept for the server-side save).
+  const sb = await createSupabaseServerClient();
   const [catalog, { settings }, owned] = await Promise.all([
     fetchBrainModels(),
     loadWorkspaceSettings(),
-    ownedConversation(asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
+    ownedConversation(sb, asUuid(parsed.data.conversationId ?? parsed.data.conversation_id)),
   ]);
   const conversationId = owned?.id ?? null;
   const selection: ModelSelection = requestedSelection || settings.defaultModel || "gpt-6.1-sol";
@@ -457,11 +512,21 @@ export async function POST(req: Request) {
   //         otherwise, or for an id the Brain doesn't advertise, it silently
   //         becomes "auto". The Brain re-intersects with the key scope.
   const requestedScope = canScopeSources ? parsed.data.knowledgeScope : undefined;
+  const projectId = owned?.projectId;
+  const [availableScopes, executiveMemory, projectContext, savedConversation] = await Promise.all([
+    // Only an id this app doesn't know yet needs the Brain's (cached) catalogue.
+    requestedScope && !isKnownKnowledgeScope(requestedScope) ? fetchBrainKnowledgeScopes() : null,
+    isExecutiveMode(mode) && canUseExecutive(access) ? getCeoMemory(profile.userId) : "",
+    // Project membership comes from the same RLS-scoped read as the save version.
+    projectId && capabilities.includes("app.projects")
+      ? loadProjectContext(sb, projectId)
+      : null,
+    parsed.data.attachments?.length ? false : hasSavedAnswer(sb, owned, profile.userId, brainMessages, req.signal),
+  ]);
   const knowledgeScope = resolveKnowledgeScope(requestedScope, {
     allowedSourceTypes: sourceTypes,
     sensitiveSourceTypes: SENSITIVE_SOURCE_TYPES,
-    // Only an id this app doesn't know yet needs the Brain's (cached) catalogue.
-    available: requestedScope && !isKnownKnowledgeScope(requestedScope) ? await fetchBrainKnowledgeScopes() : null,
+    available: availableScopes,
   });
 
   // 3b-iv. Per-message attachments (extracted text). Drop any empty ones; the
@@ -475,38 +540,21 @@ export async function POST(req: Request) {
   //     directives — only when they may use Executive mode (super_admin or the
   //     "executive" feature). Never reaches anyone else.
   let directives: string | undefined = responsePolicy(mode);
-  if (isExecutiveMode(mode) && canUseExecutive(access)) {
-    const mem = await getCeoMemory(profile.userId);
-    if (mem.trim()) directives += "\n\n" + mem;
-  }
+  if (executiveMemory.trim()) directives += "\n\n" + executiveMemory;
 
   // 3c-ii. Project context: if this conversation belongs to a project, fold in
   //        its instructions (as trusted directives) and its files (as data-only
   //        attachments) — Claude Projects' shared knowledge. Only for users
   //        holding "app.projects". Best-effort: a project lookup never breaks
   //        the chat.
-  let projectFiles: { name: string; text: string }[] = [];
-  if (conversationId && capabilities.includes("app.projects")) {
-    try {
-      const supabase = await createSupabaseServerClient();
-      const pctx = await loadProjectContextForConversation(supabase, conversationId);
-      if (pctx) {
-        if (pctx.instructions) {
-          const nl = String.fromCharCode(10);
-          const label = `Project "${pctx.name}" instructions:`;
-          const block = label + nl + pctx.instructions;
-          directives = directives ? directives + nl + nl + block : block;
-        }
-        projectFiles = pctx.files.map((f) => ({ name: f.name, text: f.text }));
-      }
-    } catch {
-      /* project context is best-effort */
-    }
+  if (projectContext?.instructions) {
+    const block = `Project "${projectContext.name}" instructions:\n${projectContext.instructions}`;
+    directives = directives ? directives + "\n\n" + block : block;
   }
+  const projectFiles = projectContext?.files ?? [];
 
   const creativeSettings = creativeSettingsSchema.parse(parsed.data.creative ?? {});
   const latestQuery = [...brainMessages].reverse().find(m => m.role === "user")?.content ?? "";
-  const sb = await createSupabaseServerClient();
   const warnings: string[] = [];
   let layers: { title: string; body: string }[] = [];
   if (creativeSettings.promptIds.length) {
@@ -529,7 +577,9 @@ export async function POST(req: Request) {
   const fitted = fitAttachmentsForBrain(
     attachments ?? [],
     projectFiles,
-    attachmentCharBudget(brainMessages, directives, BRAIN_TURN_CHARS - JSON.stringify(creativeContext).length)
+    attachmentCharBudget(brainMessages, directives, BRAIN_TURN_CHARS - JSON.stringify(creativeContext).length
+      - (earlierContext?.excerpts?.length
+        ? JSON.stringify(earlierContext.excerpts).replace(/[<>]/g, "\\u003c").length + 320 : 0))
   );
   if (fitted.tooLarge) {
     return Response.json(
@@ -567,11 +617,13 @@ export async function POST(req: Request) {
   const abort = new AbortController();
   const requestSignal = AbortSignal.any([req.signal, abort.signal]);
   let upstream: Response;
+  let upstreamStartedAt: number;
   try {
     // Used only as a bearer token: Brain validates it with the issuing Auth
     // server and checks live Payroll permissions before any source read.
     const sourceSession = process.env.SOURCE_REPORTS_ENABLED === "true"
       ? await sb.auth.getSession() : null;
+    upstreamStartedAt = performance.now();
     upstream = await brainChat(
     brainMessages,
     selection,
@@ -586,7 +638,11 @@ export async function POST(req: Request) {
     creativeContext,
     requestSignal,
     sourceSession?.data.session?.access_token,
-    parsed.data.refreshSource
+    parsed.data.refreshSource,
+    profile.team?.name,
+    combinedAttachments.length === 1 && !attachments?.length && projectFiles.length > 0,
+    savedConversation,
+    earlierContext
     );
   } catch (error) {
     if (requestSignal.aborted) return new Response(null, { status: 499 });
@@ -596,6 +652,7 @@ export async function POST(req: Request) {
       : "The Brain is temporarily unavailable. Please try again." }, { status: timedOut ? 504 : 502 });
   }
 
+  const upstreamHeadersAt = performance.now();
   if (!upstream.ok || !upstream.body) {
     // Log the upstream body server-side only; the browser gets a generic,
     // status-appropriate message (never the Brain's internal detail).
@@ -636,12 +693,15 @@ export async function POST(req: Request) {
   else after(() => { void textStream.cancel().catch(() => {}); });
 
   // Pass the Brain's data-stream response straight through to the client.
+  const serverTiming = `chat-auth;dur=${authorizationMs}, chat-setup;dur=${Math.round(upstreamStartedAt - requestStartedAt)}, brain-headers;dur=${Math.round(upstreamHeadersAt - upstreamStartedAt)}`;
   return new Response(cancellableBody(clientStream, abort), {
     status: 200,
     headers: {
       "content-type":
         upstream.headers.get("content-type") ?? "text/plain; charset=utf-8",
       "x-vercel-ai-data-stream": upstream.headers.get("x-vercel-ai-data-stream") ?? "v1",
+      "server-timing": serverTiming,
+      ...(upstream.headers.get(DEFERRED_LEARNING_HEADER) === "1" ? { [DEFERRED_LEARNING_HEADER]: "1" } : {}),
       ...(resolvedModel ? { "x-model": resolvedModel } : {}),
       ...(provider ? { "x-provider": provider } : {}),
     },

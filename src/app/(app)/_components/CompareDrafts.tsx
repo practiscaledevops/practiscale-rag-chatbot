@@ -21,6 +21,7 @@ export interface ComparePane {
 interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  createdAt?: string;
 }
 
 /** Parse the AI SDK data stream, calling onText for each `0:"..."` text part. */

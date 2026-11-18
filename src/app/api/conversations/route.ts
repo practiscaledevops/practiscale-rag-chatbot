@@ -32,7 +32,7 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { loadConversations } from "@/lib/conversations-read";
-import { rowTimestamps } from "@/lib/message-times";
+import { isoOrUndefined, rowTimestamps } from "@/lib/message-times";
 import { replaceConversationMessages } from "@/lib/replace-messages";
 
 export const runtime = "nodejs";
@@ -52,6 +52,7 @@ const UNIQUE_VIOLATION = "23505";
 const messageInput = z.object({
   role: z.enum(["user", "assistant", "system"]),
   content: z.string().max(100_000),
+  createdAt: z.unknown().optional().transform(isoOrUndefined),
 });
 
 const postSchema = z.object({
@@ -184,7 +185,7 @@ async function replaceMessages(
   userId: string,
   messages: MessageInput[]
 ) {
-  const times = rowTimestamps(messages as { createdAt?: unknown }[]);
+  const times = rowTimestamps(messages);
   const rows = messages.map((m, i) => ({
     role: m.role,
     content: m.content,

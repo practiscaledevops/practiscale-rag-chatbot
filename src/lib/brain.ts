@@ -22,6 +22,7 @@ import {
 import { isCapabilityId } from "@/lib/capabilities-shared";
 import { BRAIN_MAX_ATTACHMENTS } from "@/lib/attachments-shared";
 import { timeZoneOrUndefined } from "@/lib/timezone";
+import type { EarlierChatContext } from "@/lib/chat-history-context";
 
 const BRAIN_URL = resolveBrainUrl();
 const BRAIN_KEY = process.env.BRAIN_API_KEY ?? "";
@@ -240,6 +241,21 @@ function authHeaders(): Record<string, string> {
   return { authorization: `Bearer ${BRAIN_KEY}`, "content-type": "application/json" };
 }
 
+/** Company-wide report; the browser never sees the server-side Brain key. */
+export function brainWeeklySalesReview(
+  body: { from: string; refreshGhl?: boolean; canReviewCalls: boolean },
+  userToken: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  return fetch(`${BRAIN_URL}/api/v1/weekly-sales-review`, {
+    method: "POST",
+    headers: { ...authHeaders(), "x-chatbot-user-token": userToken },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.any([signal, AbortSignal.timeout(115_000)]),
+  });
+}
+
 /** Metadata-only report subscription. No model tokens or conversation writes. */
 export function brainCallReport(body: {
   query: string; version?: string; waitMs: number; timeZone?: string;
@@ -441,7 +457,11 @@ export async function brainChat(
   creative?: Record<string, unknown>,
   signal?: AbortSignal,
   sourceUserToken?: string,
-  refreshSource?: boolean
+  refreshSource?: boolean,
+  reportTeam?: string,
+  projectFilesOnly?: boolean,
+  savedConversation?: boolean,
+  earlierContext?: EarlierChatContext
 ): Promise<Response> {
   return fetch(`${BRAIN_URL}/api/v1/chat`, {
     method: "POST",
@@ -469,6 +489,10 @@ export async function brainChat(
       // The user's time zone for every date in the answer (see the parameter doc).
       ...timeZoneField(timeZone),
       ...(refreshSource ? {refreshSource:true} : {}),
+      ...(reportTeam?.trim() ? { reportTeam: reportTeam.trim().slice(0, 120) } : {}),
+      ...(projectFilesOnly ? { projectFilesOnly: true } : {}),
+      ...(savedConversation ? { savedConversation: true } : {}),
+      ...(earlierContext ? { earlierContext } : {}),
       ...(creative ? { creative } : {}),
     }),
   });
@@ -597,6 +621,18 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
   }
   const s = sp.toString();
   return s ? `?${s}` : "";
+}
+
+/** Resolve a stored evidence ID through the Brain's scoped citation lookup. */
+export function brainGetCitation(id: string, signal: AbortSignal, sourceTypes?: readonly string[], loopbackUrl?: string, sourceUserToken?: string) {
+  const url = new URL(`${loopbackUrl ?? BRAIN_URL}/api/v1/citations/${encodeURIComponent(id)}`);
+  sourceTypes?.forEach(type => url.searchParams.append("sourceType", type));
+  return fetch(url, {
+    headers: loopbackUrl ? {} : { ...authHeaders(), ...(sourceUserToken ? { "x-chatbot-user-token": sourceUserToken } : {}) },
+    cache: "no-store",
+    redirect: "error",
+    signal,
+  });
 }
 
 /** The Brain's `{ error }` message when present, else a fallback. */

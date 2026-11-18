@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Markdown } from "@/app/(app)/_components/Markdown";
+import { CitationContext, Markdown } from "@/app/(app)/_components/Markdown";
+import { withGhlOpportunityCitations } from "@/lib/ghl-citations";
+import { markdownToPlainText } from "@/lib/copy-format";
 
 const render = (content: string) => renderToStaticMarkup(createElement(Markdown, { content }));
 
@@ -49,9 +51,34 @@ describe("Markdown streaming safety", () => {
     expect(html.match(/>1</g)?.length).toBe(2);
   });
 
+  it("renders a saved citation in place while its click handler is getting ready", () => {
+    const id = "11111111-1111-1111-1111-111111111111";
+    const citation = (disabled: boolean) => renderToStaticMarkup(createElement(CitationContext.Provider, {
+      value: { disabled, titleFor: () => "Saved source", open: () => {} },
+    }, createElement(Markdown, { content: `Rule [${id}].` })));
+
+    const loading = citation(true);
+    expect(loading).toContain('aria-label="Open source 1: Saved source"');
+    expect(loading).toMatch(/<button[^>]+disabled=""/);
+    const ready = citation(false);
+    expect(ready).toContain('aria-label="Open source 1: Saved source"');
+    expect(ready).not.toMatch(/<button[^>]+disabled=""/);
+  });
+
   it("keeps fenced code (even with blank lines inside) as one code block", () => {
     const html = render("Before\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nAfter");
     expect(html.match(/<pre/g)?.length).toBe(1);
     expect(html).toContain("const b = 2;");
+  });
+
+  it("restores old GHL report rows as a single case-preserving citation chip", () => {
+    const id = "Mixed_CaseOpportunity123";
+    const report = `**GHL / CRM — Owner**\n\n| Opportunity | CRM ID | Recorded value | Last status change | Period treatment |\n| --- | --- | --- | --- | --- |\n| Client | ${id} | 10 | Not recorded | Date unknown; excluded from period count |\n\nSource: GoHighLevel live opportunity search. Checked 2026-11-18.`;
+    const withSources = withGhlOpportunityCitations(report);
+    expect(withGhlOpportunityCitations(withSources)).toBe(withSources);
+    expect(render(withSources)).toContain(`title="Source ghl-opportunity:${id}"`);
+    expect(markdownToPlainText(withSources)).toContain(`Client\t${id}\t10`);
+    expect(markdownToPlainText(withSources)).not.toContain("ghl-opportunity:");
+    expect(withGhlOpportunityCitations(`Opportunity: ${id}`)).toBe(`Opportunity: ${id}`);
   });
 });

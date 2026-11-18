@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { useAppShell } from "@/components/AppShell";
+import { prepareChatRequest } from "@/lib/message-times";
 import {
   QUEUE_SETTLE_MS,
   bindChatSessionsOwner,
@@ -46,6 +47,7 @@ export function BackgroundChatRunner({ id }: { id: string }) {
   const { status, append, setData } = useChat({
     id,
     api: "/api/chat",
+    experimental_prepareRequestBody: prepareChatRequest,
     fetch: trackedFetch(id),
     experimental_throttle: 100,
     onFinish: (message, { usage }) => {

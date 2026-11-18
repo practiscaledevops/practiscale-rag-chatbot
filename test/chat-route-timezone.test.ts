@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase-server", () => ({
     return { from: () => builder };
   },
 }));
-vi.mock("@/lib/project-context", () => ({ loadProjectContextForConversation: vi.fn(async () => null) }));
+vi.mock("@/lib/project-context", () => ({ loadProjectContext: vi.fn(async () => null) }));
 vi.mock("@/lib/ceo-memory", () => ({ getCeoMemory: vi.fn(async () => "") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/models", () => ({ fetchBrainModels: vi.fn(async () => []), isSelectionAllowed: () => true }));

@@ -353,7 +353,8 @@ export function SourceScopePicker({
   size = "md",
   iconOnly = false,
   align = "left",
-}: { value: SearchScopeValue; onChange: (v: SearchScopeValue) => void } & TriggerStyle) {
+  labelled = false,
+}: { value: SearchScopeValue; onChange: (v: SearchScopeValue) => void; labelled?: boolean } & TriggerStyle) {
   const options = useSearchOptions();
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [collectionsOpen, setCollectionsOpen] = React.useState(false);
@@ -380,7 +381,22 @@ export function SourceScopePicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  if (!scopes) return null;
+  if (!scopes) {
+    return labelled ? (
+      <button
+        type="button"
+        disabled
+        aria-label="Loading search sources"
+        className={cn(triggerClass(size, false, "neutral"), "h-10 text-muted-foreground")}
+      >
+        <Layers size={14} aria-hidden />
+        <span className="hidden text-xs sm:inline">Search in</span>
+        <span className="sm:hidden">Sources</span>
+        <span className="hidden sm:inline">Auto</span>
+        <ChevronDown size={12} className="opacity-60" aria-hidden />
+      </button>
+    ) : null;
+  }
 
   const current = scopes.find((s) => s.id === value.scope) ?? scopes[0];
   const CurrentIcon = knowledgeScopeIcon(current.id);
@@ -422,6 +438,7 @@ export function SourceScopePicker({
   }
 
   const tone: Tone = current.id !== DEFAULT_KNOWLEDGE_SCOPE || narrowedCount > 0 ? "accent" : "neutral";
+  const showMobileSourcesLabel = labelled && tone === "neutral";
 
   return (
     <div className="relative" ref={ref}>
@@ -433,12 +450,24 @@ export function SourceScopePicker({
         aria-label={a11yLabel}
         title={a11yLabel}
         onClick={() => setOpen((o) => !o)}
-        className={triggerClass(size, iconOnly, tone)}
+        onKeyDown={(e) => {
+          if (open && e.key === "Escape") {
+            e.preventDefault();
+            close();
+          }
+        }}
+        className={cn(triggerClass(size, iconOnly, tone), labelled && "h-10")}
       >
         <CurrentIcon size={triggerIconSize(size, iconOnly)} className={tone === "neutral" && !iconOnly ? "shrink-0 text-accent" : "shrink-0"} aria-hidden />
         {!iconOnly && (
           <>
-            <span className="max-w-[10rem] truncate">
+            {labelled && <span className="hidden text-xs text-muted-foreground sm:inline">Search in</span>}
+            {showMobileSourcesLabel && <span className="sm:hidden">Sources</span>}
+            <span className={cn(
+              "truncate",
+              labelled ? "max-w-16 sm:max-w-40" : "max-w-[10rem]",
+              showMobileSourcesLabel && "hidden sm:inline"
+            )}>
               {current.label}
               {narrowedCount > 0 && <span className="opacity-70"> · {narrowedCount}</span>}
             </span>

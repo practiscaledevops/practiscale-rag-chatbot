@@ -26,7 +26,7 @@ vi.mock("@/lib/supabase-server", async () => {
   const { fakeSupabase } = await import("@/lib/demo/client");
   return { createSupabaseServerClient: async () => fakeSupabase() };
 });
-vi.mock("@/lib/project-context", () => ({ loadProjectContextForConversation: vi.fn(async () => null) }));
+vi.mock("@/lib/project-context", () => ({ loadProjectContext: vi.fn(async () => null) }));
 vi.mock("@/lib/ceo-memory", () => ({ getCeoMemory: vi.fn(async () => "") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/models", () => ({ fetchBrainModels: vi.fn(async () => []), isSelectionAllowed: () => true }));
@@ -156,6 +156,17 @@ describe("POST /api/chat — server-side save of a finished turn", () => {
       { role: "user", content: "q1" },
       { role: "assistant", content: "A1" },
     ]);
+  });
+
+  it("saves the entire old transcript when the Brain received a shorter history", async () => {
+    const older = Array.from({ length: 62 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant", content: "Turn " + i,
+    }));
+    const current = [...older, { role: "user", content: "What is the latest?" }];
+    seed(older);
+    await sendTurn(current, "Cited reply [8cd8e503-34f1-4da0-a105-536d76336c2b].");
+    expect(m.brainChat.mock.calls.at(-1)?.[0].length).toBeLessThanOrEqual(12);
+    expect(thread()).toEqual([...current, { role: "assistant", content: "Cited reply [8cd8e503-34f1-4da0-a105-536d76336c2b]." }]);
   });
 
   it("saves a second queued turn that finished in the background", async () => {

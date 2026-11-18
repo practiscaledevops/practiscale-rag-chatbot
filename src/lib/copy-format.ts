@@ -12,6 +12,8 @@
 // HTML-escaped, raw HTML in the Markdown is NOT passed through (it comes out as
 // visible, escaped text), and links are only emitted for http(s) / mailto URLs.
 
+import { ghlOpportunityCitationPattern } from "@/lib/ghl-citations";
+
 export type TableAlign = "left" | "center" | "right";
 
 /** One list item: inline Markdown (continuation lines joined by "\n") plus nested lists. */
@@ -413,11 +415,10 @@ type Inline =
 
 // A citation id: a chunk uuid, the model's 8-hex shortening of one, or a short
 // ordinal — the same ids the chat renders as source chips.
-const CITE_ID =
-  "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{8}|\\d{1,3}";
+export const CITATION_ID_PATTERN = String.raw`[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|[0-9a-fA-F]{8}|\d{1,3}|${ghlOpportunityCitationPattern.source}`;
 // A run of citations ("[1]", "[1][2]", "[1], [2]") with the whitespace before it,
 // never a link's text ("[12](https://…)").
-const CITE_RUN = `\\s*\\[(?:${CITE_ID})\\](?:\\s*[,;]?\\s*\\[(?:${CITE_ID})\\])*(?!\\()`;
+const CITE_RUN = `\\s*\\[(?:${CITATION_ID_PATTERN})\\](?:\\s*[,;]?\\s*\\[(?:${CITATION_ID_PATTERN})\\])*(?!\\()`;
 const CITE_RUN_RE_SINGLE = new RegExp(CITE_RUN, "g");
 
 type RuleName =

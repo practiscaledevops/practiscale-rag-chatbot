@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  ChartNoAxesCombined,
   Folder,
   Lightbulb,
   ListChecks,
@@ -63,6 +64,7 @@ export interface SidebarProps {
   generatingIds?: ReadonlySet<string>;
   /** Show the Admin link (role admin/super_admin, resolved server-side). */
   isAdmin?: boolean;
+  weeklySalesReview?: boolean;
   /**
    * The user's resolved capability ids: "knowledge.map" shows the Brain map
    * link, "learning.read" Learnings, "app.projects" the New project actions.
@@ -186,6 +188,7 @@ export function Sidebar({
   activeConversationId = null,
   generatingIds,
   isAdmin = false,
+  weeklySalesReview = false,
   capabilities,
   fullName = "",
   email = "",
@@ -564,6 +567,10 @@ export function Sidebar({
         <div className="scrollbar-none fade-bottom flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5 pb-5">
           <div className="space-y-0.5">
             <RailButton icon={Plus} label="New chat" onClick={leavingSelection(onNewChat)} />
+            {weeklySalesReview && (
+              <RailButton icon={ChartNoAxesCombined} label="Weekly Sales Review" active={pathname === "/weekly-sales-review"}
+                onClick={leavingSelection(() => { router.push("/weekly-sales-review"); onCloseMobile?.(); })} />
+            )}
             <label className={cn(ROW, ROW_IDLE, "cursor-text focus-within:bg-sidebar-item-hover")}>
               <span className={ICON_BOX}>
                 <Search size={16} strokeWidth={1.75} aria-hidden />
@@ -818,9 +825,9 @@ const TRAILING_BTN =
 const BAR_BTN =
   "inline-flex h-8 min-w-0 items-center justify-center whitespace-nowrap rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40";
 
-function RailButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick?: () => void }) {
+function RailButton({ icon: Icon, label, onClick, active }: { icon: LucideIcon; label: string; onClick?: () => void; active?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={cn(ROW, ROW_IDLE, "font-medium")}>
+    <button type="button" onClick={onClick} aria-current={active ? "page" : undefined} className={cn(ROW, active ? ROW_ACTIVE : ROW_IDLE, "font-medium")}>
       <span className={ICON_BOX}>
         <Icon size={16} strokeWidth={1.75} aria-hidden />
       </span>

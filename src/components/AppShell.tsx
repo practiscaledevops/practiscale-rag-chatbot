@@ -19,6 +19,7 @@ import { DEFAULT_OUTPUT_TYPE, isOutputType, type OutputType } from "@/lib/output
 import { PREFS_EVENT, readPrefs, writePrefs, type ChatPrefs } from "@/lib/prefs";
 import { capabilitySet } from "@/lib/capabilities-client";
 import { useBackgroundGeneratingCount, useInflightChats } from "@/lib/chat-sessions";
+import type { ChatLimits } from "@/lib/attachments-shared";
 
 // ---------------------------------------------------------------------------
 // Model selection
@@ -200,6 +201,7 @@ interface AppShellContextValue {
   email: string;
   /** Profile picture URL, or null for initials. */
   avatarUrl: string | null;
+  chatLimits?: ChatLimits;
   /** Whether the user may see the Admin link. */
   isAdmin: boolean;
   /** Active work mode (persona), forwarded to /api/chat. */
@@ -281,6 +283,7 @@ export interface AppShellProps
   /** Profile picture URL, or null for initials. */
   avatarUrl?: string | null;
   isAdmin?: boolean;
+  weeklySalesReview?: boolean;
   /**
    * The user's resolved capability ids (SessionProfile.capabilities): gates the
    * work modes offered, the sidebar links and the chat controls (see
@@ -289,6 +292,7 @@ export interface AppShellProps
   features?: string[];
   /** Tokens already spent this month (persisted), used to seed the meter. */
   initialTokens?: number;
+  chatLimits?: ChatLimits;
   /**
    * Rendered inside the shell's context, outside the page: the background
    * chat runners and their "answer ready" notices (they meter usage through
@@ -318,8 +322,10 @@ export function AppShell({
   email = "",
   avatarUrl = null,
   isAdmin = false,
+  weeklySalesReview = false,
   features = NO_FEATURES,
   initialTokens = 0,
+  chatLimits,
   onNewChat,
   onNewProject,
   onSelectProject,
@@ -433,8 +439,8 @@ export function AppShell({
   const hasCap = useCallback((id: string) => capSet.has(id), [capSet]);
 
   const value = useMemo<AppShellContextValue>(
-    () => ({ selection, setSelection, options, usage, addUsage, firstName, fullName, email, avatarUrl, isAdmin, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap }),
-    [selection, options, usage, addUsage, firstName, fullName, email, avatarUrl, isAdmin, mode, modeDefs, outputType, capabilities, hasCap]
+    () => ({ selection, setSelection, options, usage, addUsage, firstName, fullName, email, avatarUrl, chatLimits, isAdmin, mode, setMode, modeDefs, outputType, setOutputType, capabilities, hasCap }),
+    [selection, options, usage, addUsage, firstName, fullName, email, avatarUrl, chatLimits, isAdmin, mode, modeDefs, outputType, capabilities, hasCap]
   );
 
   return (
@@ -459,6 +465,7 @@ export function AppShell({
           activeConversationId={activeConversationId}
           generatingIds={generatingIds}
           isAdmin={isAdmin}
+          weeklySalesReview={weeklySalesReview}
           capabilities={capabilities}
           fullName={fullName}
           email={email}

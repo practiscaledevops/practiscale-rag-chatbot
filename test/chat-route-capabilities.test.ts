@@ -7,12 +7,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const CONVERSATION_ID = "22222222-2222-4222-8222-222222222222";
 const COLLECTION_ID = "33333333-3333-4333-8333-333333333333";
+const PROJECT_ID = "44444444-4444-4444-8444-444444444444";
+const STANDALONE_ID = "55555555-5555-4555-8555-555555555555";
 
 const m = vi.hoisted(() => ({
   getSessionProfile: vi.fn(),
   brainChat: vi.fn(),
   fetchBrainKnowledgeScopes: vi.fn(),
-  loadProjectContextForConversation: vi.fn(),
+  loadProjectContext: vi.fn(),
+  readSavedAnswer: vi.fn(),
   getCeoMemory: vi.fn(),
 }));
 
@@ -32,13 +35,20 @@ vi.mock("@/lib/supabase-server", () => ({
         builder.id = value;
         return builder;
       },
-      maybeSingle: async () => ({ data: { id: builder.id }, error: null }),
+      maybeSingle: async () => ({
+        data: { id: builder.id, project_id: builder.id === CONVERSATION_ID ? PROJECT_ID : null },
+        error: null,
+      }),
       id: null as unknown,
     };
-    return { from: () => builder };
+    const saved = {
+      select: () => saved, eq: () => saved, order: () => saved, limit: () => saved,
+      abortSignal: () => saved, maybeSingle: m.readSavedAnswer,
+    };
+    return { from: (table: string) => table === "messages" ? saved : builder };
   },
 }));
-vi.mock("@/lib/project-context", () => ({ loadProjectContextForConversation: m.loadProjectContextForConversation }));
+vi.mock("@/lib/project-context", () => ({ loadProjectContext: m.loadProjectContext }));
 vi.mock("@/lib/ceo-memory", () => ({ getCeoMemory: m.getCeoMemory }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/models", () => ({ fetchBrainModels: vi.fn(async () => []), isSelectionAllowed: () => true }));
@@ -98,7 +108,7 @@ beforeEach(() => {
   );
   m.fetchBrainKnowledgeScopes.mockResolvedValue([]);
   m.getCeoMemory.mockResolvedValue("");
-  m.loadProjectContextForConversation.mockResolvedValue({
+  m.loadProjectContext.mockResolvedValue({
     name: "Launch",
     instructions: "Keep answers short.",
     files: [{ name: "brief.md", text: "Project brief" }],
@@ -106,6 +116,16 @@ beforeEach(() => {
 });
 
 describe("POST /api/chat capabilities", () => {
+  it("passes the signed-in profile team and ignores team names supplied by the browser", async () => {
+    m.getSessionProfile.mockResolvedValue({
+      ...profile(MEMBER),
+      team: { id: "team-fahad", name: "Team Fahad" },
+    });
+    const response = await POST(chatRequest({ reportTeam: "Team Mike" }));
+    expect(response.status).toBe(200);
+    expect(m.brainChat.mock.calls[0][14]).toBe("Team Fahad");
+  });
+
   it("requires a signed-in user", async () => {
     m.getSessionProfile.mockResolvedValueOnce(null);
     const res = await POST(chatRequest({}));
@@ -160,7 +180,7 @@ describe("POST /api/chat capabilities", () => {
     m.getSessionProfile.mockResolvedValueOnce(profile(MEMBER));
     const res = await POST(chatRequest({ conversationId: CONVERSATION_ID }));
     expect(res.status).toBe(200);
-    expect(m.loadProjectContextForConversation).not.toHaveBeenCalled();
+    expect(m.loadProjectContext).not.toHaveBeenCalled();
     const { directives, attachments } = brainCall();
     // The standard response policy applies to all chats; private project
     // instructions still require app.projects.
@@ -172,10 +192,34 @@ describe("POST /api/chat capabilities", () => {
     m.getSessionProfile.mockResolvedValueOnce(profile([...MEMBER, "app.projects"]));
     const res = await POST(chatRequest({ conversationId: CONVERSATION_ID }));
     expect(res.status).toBe(200);
-    expect(m.loadProjectContextForConversation).toHaveBeenCalledTimes(1);
+    expect(m.loadProjectContext).toHaveBeenCalledTimes(1);
+    expect(m.loadProjectContext).toHaveBeenCalledWith(expect.anything(), PROJECT_ID);
     const { directives, attachments } = brainCall();
     expect(directives).toContain("Keep answers short.");
     expect(attachments).toEqual([{ name: "Project files", text: "## brief.md\nProject brief" }]);
+    expect(m.brainChat.mock.calls[0][15]).toBe(true);
+  });
+
+  it("skips the project read for a verified standalone conversation", async () => {
+    m.getSessionProfile.mockResolvedValueOnce(profile([...MEMBER, "app.projects"]));
+    const res = await POST(chatRequest({ conversationId: STANDALONE_ID, projectId: PROJECT_ID }));
+    expect(res.status).toBe(200);
+    expect(m.loadProjectContext).not.toHaveBeenCalled();
+    expect(res.headers.get("server-timing")).toMatch(/^chat-auth;dur=\d+, chat-setup;dur=\d+, brain-headers;dur=\d+$/);
+  });
+
+  it("marks a follow-up only when the previous answer matches the owned saved row", async () => {
+    const messages = [
+      { role: "user", content: "How do reminders work?" },
+      { role: "assistant", content: "The first reminder is sent 24 hours before the appointment." },
+      { role: "user", content: "Make it shorter." },
+    ];
+    await POST(chatRequest({ messages, savedConversation: true }));
+    m.readSavedAnswer.mockResolvedValueOnce({ data: messages[1], error: null });
+    await POST(chatRequest({ messages, conversationId: STANDALONE_ID }));
+    m.readSavedAnswer.mockResolvedValueOnce({ data: { ...messages[1], content: "Other history." }, error: null });
+    await POST(chatRequest({ messages, conversationId: STANDALONE_ID, savedConversation: true }));
+    expect(m.brainChat.mock.calls.map(call => call[16])).toEqual([false, true, false]);
   });
 
   it("400s more attachments than the Brain accepts, before calling it", async () => {
@@ -188,7 +232,7 @@ describe("POST /api/chat capabilities", () => {
 
   it("folds many project files into one entry and never sends more than 5 attachments", async () => {
     m.getSessionProfile.mockResolvedValueOnce(profile([...MEMBER, "app.projects"]));
-    m.loadProjectContextForConversation.mockResolvedValueOnce({
+    m.loadProjectContext.mockResolvedValueOnce({
       name: "Launch",
       instructions: "",
       files: Array.from({ length: 8 }, (_, i) => ({ name: `p${i}.md`, text: `project ${i}` })),
@@ -198,6 +242,7 @@ describe("POST /api/chat capabilities", () => {
     expect(res.status).toBe(200);
     const { attachments } = brainCall();
     expect(attachments).toHaveLength(4);
+    expect(m.brainChat.mock.calls[0][15]).toBe(false);
     // The user's own files first, then ONE project entry.
     expect(attachments.slice(0, 3).map((a: { name: string }) => a.name)).toEqual(["f0.txt", "f1.txt", "f2.txt"]);
     expect(attachments[3].name).toBe("Project files");
@@ -224,7 +269,7 @@ describe("POST /api/chat capabilities", () => {
 
   it("clips project files to the per-turn budget left after the user's own files", async () => {
     m.getSessionProfile.mockResolvedValueOnce(profile([...MEMBER, "app.projects"]));
-    m.loadProjectContextForConversation.mockResolvedValueOnce({
+    m.loadProjectContext.mockResolvedValueOnce({
       name: "Launch",
       instructions: "",
       files: [{ name: "huge.md", text: "p".repeat(60_000) }],

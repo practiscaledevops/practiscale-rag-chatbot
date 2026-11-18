@@ -1,4 +1,4 @@
-// Server-only: resolve the project context for a conversation so /api/chat can
+// Server-only: load the context for a verified project so /api/chat can
 // inject it — the project's instructions (as trusted directives) and its files'
 // text (as data-only attachments), just like Claude Projects' shared knowledge.
 
@@ -15,28 +15,19 @@ export interface ProjectContext {
 }
 
 /**
- * Load the project a conversation belongs to (its name, instructions, and file
- * text). Returns null when the conversation has no project, the project is gone,
- * or anything fails — chat must never break because a project lookup did.
+ * Load a project's name, instructions and file text. The caller supplies the
+ * project id from the conversation it already verified. Missing context is
+ * best-effort so a project lookup cannot break the chat.
  * `supabase` must be the RLS-scoped client for the signed-in user.
  */
-export async function loadProjectContextForConversation(
+export async function loadProjectContext(
   supabase: SupabaseClient,
-  conversationId: string,
-  opts?: { filesMaxChars?: number }
+  projectId: string,
 ): Promise<ProjectContext | null> {
   try {
-    const { data: convo } = await supabase
-      .from("conversations")
-      .select("project_id")
-      .eq("id", conversationId)
-      .maybeSingle();
-    const projectId = (convo as { project_id?: string | null } | null)?.project_id;
-    if (!projectId) return null;
-
     const [{ data: project }, files] = await Promise.all([
       supabase.from("projects").select("id, name, system_prompt").eq("id", projectId).maybeSingle(),
-      loadProjectFilesText(supabase, projectId, opts?.filesMaxChars ?? 60_000),
+      loadProjectFilesText(supabase, projectId, 60_000),
     ]);
     if (!project) return null;
 

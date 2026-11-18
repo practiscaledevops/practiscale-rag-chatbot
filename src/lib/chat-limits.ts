@@ -6,7 +6,8 @@
 // the SAME defaults and bounds without importing this module — it imports React
 // hooks, which Next forbids in the server graph.
 //
-// useChatLimits() fetches GET /api/chat-limits once per page load: a SUCCESSFUL
+// The authenticated layout supplies the limits it already loaded. Without
+// that initial value, useChatLimits fetches GET /api/chat-limits. A SUCCESSFUL
 // answer is cached at module level and shared by every caller. A failure (a
 // network blip, a 401 during a session refresh) returns the defaults but is NOT
 // cached — the next caller retries, and a mounted hook retries with backoff and
@@ -67,12 +68,13 @@ export function loadChatLimits(): Promise<ChatLimits> {
  * The workspace chat limits. Returns DEFAULT_CHAT_LIMITS until the shared
  * GET /api/chat-limits request succeeds, then the workspace values. Never throws.
  */
-export function useChatLimits(): ChatLimits {
+export function useChatLimits(initialLimits?: ChatLimits): ChatLimits {
   // Only the first render of the page starts from the defaults; components that
   // mount after the request settled read the cached value straight away.
   const [limits, setLimits] = useState<ChatLimits>(() => resolved ?? DEFAULT_CHAT_LIMITS);
 
   useEffect(() => {
+    if (initialLimits) return;
     let alive = true;
     let attempt = 0;
     let timer: number | undefined;
@@ -106,9 +108,9 @@ export function useChatLimits(): ChatLimits {
       window.removeEventListener("online", retry);
       window.removeEventListener("focus", retry);
     };
-  }, []);
+  }, [initialLimits]);
 
-  return limits;
+  return initialLimits ?? limits;
 }
 
 function sameLimits(a: ChatLimits, b: ChatLimits): boolean {

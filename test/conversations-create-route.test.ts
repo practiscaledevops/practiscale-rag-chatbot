@@ -117,6 +117,30 @@ beforeEach(() => {
 });
 
 describe("POST /api/conversations — client-supplied id", () => {
+  it("keeps original timestamps when replacing a saved project's messages", async () => {
+    const conversationId = randomUUID();
+    const projectId = randomUUID();
+    const calls = fakeSupabase((call) => ({
+      data: call.table === "conversations"
+        ? { id: conversationId, title: "Sales reporting", project_id: projectId }
+        : null,
+      error: null,
+    }));
+    const { POST } = await loadRoute();
+    const res = must(await POST(post({ conversationId, messages: [
+      { role: "user", content: "Show closings this week.", createdAt: "2026-10-29T17:00:00+05:00" },
+      { role: "assistant", content: "October 26 through 29.", createdAt: "2026-10-29T12:00:02Z" },
+    ] })));
+    expect(res.status).toBe(200);
+    expect(calls.find((call) => call.op === "rpc")?.payload).toMatchObject({
+      p_conversation_id: conversationId,
+      p_rows: [
+        { role: "user", created_at: "2026-10-29T12:00:00.000Z" },
+        { role: "assistant", created_at: "2026-10-29T12:00:02.000Z" },
+      ],
+    });
+  });
+
   it("creates the caller's row with the chat's own id", async () => {
     const id = randomUUID();
     const calls = fakeSupabase(created(randomUUID()));
