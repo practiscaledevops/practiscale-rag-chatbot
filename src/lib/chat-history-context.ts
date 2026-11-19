@@ -8,6 +8,7 @@ const MAX_EXCERPTS = 6;
 const MAX_EXCERPT_CHARS = 700;
 const broadHistory = /\b(?:entire|whole|full) (?:chat|conversation|thread|history)\b|\beverything (?:we|in this)\b|\b(?:summari[sz]e|recap|review) (?:our|this) (?:chat|conversation|thread|history)\b/i;
 const reportRequest = /\b(?:payroll|ghl|crm|go high level|calls?|consultants?|scor(?:e|ing|ed)|show[- ]?rate|closings?|sales|deals?|commissions?|earn(?:ed|ings)?|report|reporting source|(?:our|my|same|earlier|previous) scope|compare|audit|dates?|teams?|week|month|today|yesterday|last \d+ days?)\b|\b\d{4}-\d{2}-\d{2}\b|\b(?:details?|breakdown) (?:of |for )?(?:these|those|them)\b|^(?:and|what about|how about)\b/i;
+const comparisonFollowUp = /\b(?:difference|gap)\b|\b(?:they|the totals) match\b/i;
 const recallLabel = /^(?:what|which)\s+(?:exact\s+)?([\p{L}\p{N}][\p{L}\p{N} '’-]{0,55}?)\s+did i\s+(?:give|tell|share|mention|provide|specify|say)(?:\s+(?:with you|to you|you))?(?:\s+(?:earlier|before|in this (?:chat|thread|conversation)))?[?.! ]*$/iu;
 const repeatPrompt = /^(?:repeat|quote|show) my (?:previous|last) (?:message|prompt)[?.! ]*$/i;
 const ignored = new Set(["about", "after", "answer", "before", "could", "earlier", "explain", "have", "said", "should", "that", "their", "them", "this", "what", "which", "with", "would", "your"]);
@@ -112,7 +113,10 @@ export function fitChatContext(transcript: BrainMessage[]): { messages: BrainMes
   const older = turns.slice(0, turns.length - messages.length + Number(hasSummary));
   const label = recallLabel.exec(latest)?.[1];
   const exactRecall = !!label || repeatPrompt.test(latest);
-  const userTurns = exactRecall ? recallHistory(older, label) : reportRequest.test(latest) ? reportHistory(older) : [];
+  const earlierComparison = comparisonFollowUp.test(latest) && older.some(message =>
+    message.role === "user" && /\bpayroll\b/i.test(message.content) && /\bcall[ -]scoring\b/i.test(message.content));
+  const userTurns = exactRecall ? recallHistory(older, label)
+    : reportRequest.test(latest) || earlierComparison ? reportHistory(older) : [];
   const excerpts = exactRecall ? [] : relevantExcerpts(older, latest);
   const assistantCitations = (excerpts: Excerpt[]) => excerpts.filter(excerpt => excerpt.role === "assistant")
     .flatMap(excerpt => excerpt.citationIds ?? citationIds(excerpt.content));

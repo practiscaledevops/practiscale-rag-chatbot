@@ -62,6 +62,15 @@ describe("compact chat requests", () => {
     ]);
   });
 
+  it("carries the timestamped two-source comparison into a short saved follow-up", () => {
+    const original = turn("compare this month total HT+LT calls from sales payroll and call scoring app");
+    const completed = answer("HT/LT comparison.");
+    const repeats = Array.from({ length: 8 }, () => [turn("What’s the gap?"), completed]).flat();
+    const result = fitChatContext([original, completed, ...repeats, turn("is there any difference?")]);
+    expect(result.messages).not.toContainEqual(original);
+    expect(result.earlierContext?.userTurns?.[0]).toEqual({ content: original.content, createdAt: at });
+  });
+
   it("keeps an original citation at the end of the relevant paragraph without keeping unrelated citations", () => {
     const other = "7eaf8791-17dd-45bc-84e4-111a93ffe293";
     const passage = "For appointment attendance, count only appointments with a status of Showed.";
