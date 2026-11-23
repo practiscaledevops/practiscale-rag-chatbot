@@ -12,6 +12,8 @@ export function savedCallReportQuery(messages: { role: string; content: string; 
   for (let i = index - 1; i >= 0; i--) if (messages[i].role === "user") { user = messages[i]; break; }
   if (!user || /\b(write|draft|coach|analy[sz]e|audit|why|post|script|email|blog|content)\b/i.test(user.content)) return null;
   if (/\b(create|generate)\b/i.test(user.content) && !/\b(report|summary|breakdown)\b/i.test(user.content)) return null;
+  // A call-score refresh cannot answer personal pay, even when the saved reply mentions calls.
+  if(/\b(earning|earnings|earned|salary|salaries|commission|payroll|payslip|pay|paid)\b/i.test(user.content))return null;
   let query = user.content.replace(/\b(today|yesterday)(?:['’]?s)?(calls?)\b/gi, "$1 $2");
   const operational=(q:string)=>(/\b(calls?|closings?|report|summary)\b/i.test(q) || (/\b(clients?|prospects?|customers?|deals?|names?)\b/i.test(q) && /\b(closed|won|pending|ht|lt|high[- ]ticket|low[- ]ticket)\b/i.test(q))) && /\b(check|list|show|give|names?|who|which|report|summary|today|yesterday|yesterdays|how many|total|count|number of|tally|breakdown)\b/i.test(q);
   if (!operational(query)) {

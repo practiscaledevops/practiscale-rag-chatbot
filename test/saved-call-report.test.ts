@@ -27,3 +27,5 @@ describe("saved report refresh", () => {
     expect(savedCallReportQuery(thread("write a post about yesterday calls"), 1)).toBeNull();
   });
 });
+
+it.each(['total closings of kate melody this month and earning','Kate Melody closings and salary','HT and LT earnings of Kate Melody'])('never replaces a combined pay request with a scoring refresh: %s',query=>{expect(savedCallReportQuery([{role:'user',content:query},{role:'assistant',content:'Call report — Kate Melody. 7 calls.'}],1)).toBeNull();});
